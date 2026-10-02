@@ -1,4 +1,4 @@
-// 临时原型：验证原生桌面入口、浮动面板、真实示例文件移动和位置／尺寸恢复。
+// 临时原型：验证头部与下方展示区、多 Folder 不重叠布局及真实示例文件移动。
 // 桌面宿主使用 Explorer 内部窗口，仅用于实验，不作为正式实现的稳定契约。
 using System;
 using System.Collections.Generic;
@@ -25,13 +25,15 @@ public sealed class FolderState
     public string Name { get; set; } = "工作";
     public int X { get; set; } = 250;
     public int Y { get; set; } = 160;
-    public double Width { get; set; } = 180;
-    public double Height { get; set; } = 154;
+    public double Width { get; set; } = 300;
+    public double Height { get; set; } = 48;
     public double PanelWidth { get; set; } = 460;
-    public double PanelHeight { get; set; } = 400;
-    public string Color { get; set; } = "#26364D";
-    public double Opacity { get; set; } = .92;
+    public double PanelHeight { get; set; } = 260;
+    public string Color { get; set; } = "#666666";
+    public double Opacity { get; set; } = .68;
     public bool Grid { get; set; } = true;
+    public bool Expanded { get; set; }
+    public int LayoutVersion { get; set; }
 }
 
 public static class Program
@@ -43,7 +45,6 @@ public static class Program
     internal static Application App = null!;
     internal static Forms.NotifyIcon Tray = null!;
     internal static Window Controller = null!;
-    internal static ContentWindow? Panel;
     internal static bool Capturing;
     internal static bool ProbeDesktop;
     private static bool shuttingDown;
@@ -58,6 +59,7 @@ public static class Program
         var directory = new DirectoryInfo(AppContext.BaseDirectory);
         while (directory != null && !File.Exists(Path.Combine(directory.FullName, "DesktopFolderPrototype.csproj"))) directory = directory.Parent;
         Home = directory?.FullName ?? AppContext.BaseDirectory;
+        if (args.Contains("--make-icons")) { IconChoices.Generate(); return; }
         Capturing = args.Contains("--capture");
         ProbeDesktop = args.Contains("--desktop-probe");
         App = new Application { ShutdownMode = ShutdownMode.OnExplicitShutdown };
@@ -73,7 +75,7 @@ public static class Program
         var saved = File.Exists(stateFile) ? JsonSerializer.Deserialize<List<FolderState>>(File.ReadAllText(stateFile)) : null;
         if (saved == null)
         {
-            saved = new() { new(), new() { Name = "灵感", X = 650, Color = "#345347" } };
+            saved = new() { new(), new() { Name = "灵感", X = 850 } };
             foreach (var state in saved)
             {
                 var path = Path.Combine(Storage, state.Name);
@@ -101,10 +103,18 @@ public static class Program
         menu.Items.Add("原型状态与说明", null, (_, _) => App.Dispatcher.Invoke(ShowStatus));
         menu.Items.Add("重新挂接桌面", null, (_, _) => App.Dispatcher.Invoke(Reattach));
         menu.Items.Add("退出", null, (_, _) => App.Dispatcher.Invoke(Exit));
+        IconChoices.AddMenu(menu);
         Tray.ContextMenuStrip = menu;
+        IconChoices.Load();
         Tray.DoubleClick += (_, _) => App.Dispatcher.Invoke(ShowStatus);
         foreach (var state in saved)
         {
+            if (state.LayoutVersion < 2)
+            {
+                state.Width = Math.Max(300, state.Width); state.Height = 48;
+                state.PanelHeight = Math.Clamp(state.PanelHeight, 220, 440);
+                state.Color = "#666666"; state.Opacity = .68; state.Expanded = false; state.LayoutVersion = 2;
+            }
             if (Directory.Exists(Path.Combine(Storage, state.Name))) Add(state);
         }
         Save();
@@ -129,6 +139,7 @@ public static class Program
         var folder = new FolderWindow(state);
         Folders.Add(folder);
         folder.Show();
+        DesktopLayout.Restore(folder);
     }
 
     internal static void Create()
@@ -137,7 +148,7 @@ public static class Program
         if (name == null || !ValidName(name)) return;
         if (Directory.Exists(Path.Combine(Storage, name))) { Notice("已存在同名 Folder，请选择其他名称。"); return; }
         Directory.CreateDirectory(Path.Combine(Storage, name));
-        Add(new() { Name = name, X = 250 + Folders.Count * 36, Y = 160 + Folders.Count * 30 });
+        Add(new() { Name = name, X = 250, Y = 160, LayoutVersion = 2 });
         Save();
     }
 
@@ -148,14 +159,7 @@ public static class Program
         return true;
     }
 
-    internal static void Expand(FolderWindow folder)
-    {
-        if (Panel?.Folder == folder) { Panel.Close(); return; }
-        Panel?.Close();
-        Panel = new ContentWindow(folder);
-        Panel.Show();
-        Panel.Activate();
-    }
+    internal static void Expand(FolderWindow folder) => folder.Toggle();
 
     internal static void Rename(FolderWindow folder)
     {
@@ -165,7 +169,6 @@ public static class Program
         {
             var destination = Resolve(Path.Combine(Storage, name));
             if (destination == null) return;
-            Panel?.Close();
             Directory.Move(folder.Path, destination);
             folder.State.Name = System.IO.Path.GetFileName(destination);
             folder.Watch(); folder.Refresh(); Save();
@@ -193,7 +196,6 @@ public static class Program
             {
                 Microsoft.VisualBasic.FileIO.FileSystem.DeleteDirectory(folder.Path, Microsoft.VisualBasic.FileIO.UIOption.AllDialogs, Microsoft.VisualBasic.FileIO.RecycleOption.SendToRecycleBin, Microsoft.VisualBasic.FileIO.UICancelOption.ThrowException);
             }
-            if (Panel?.Folder == folder) Panel.Close();
             Folders.Remove(folder); folder.Close(); Save();
         }
         catch (Exception e) { Notice(e.Message); }
@@ -238,7 +240,7 @@ public static class Program
                 if (Directory.Exists(full)) Directory.Move(full, destination); else File.Move(full, destination);
                 moved = true;
             }
-            folder.Refresh(); Panel?.Refresh();
+            folder.Refresh();
         }
         catch (Exception e) { Notice(e.Message); }
         return moved;
@@ -249,10 +251,10 @@ public static class Program
         if (!shuttingDown) File.WriteAllText(System.IO.Path.Combine(Home, "PROTOTYPE-state.json"), JsonSerializer.Serialize(Folders.Select(f => f.State), new JsonSerializerOptions { WriteIndented = true }));
     }
 
-    internal static void Reattach() { foreach (var folder in Folders) folder.Attach(); }
+    internal static void Reattach() { foreach (var folder in Folders.ToArray()) { folder.Attach(); DesktopLayout.Restore(folder); } }
     internal static void Open(string path) => System.Diagnostics.Process.Start(new System.Diagnostics.ProcessStartInfo(path) { UseShellExecute = true });
     internal static void Notice(string text) { if (!Capturing) System.Windows.MessageBox.Show(text, "Kage 桌面原型"); }
-    internal static void ShowStatus() => Notice($"临时原型 · 示例文件\n桌面宿主：{HostStatus}\n数据目录：{DataRoot}\n\n拖动入口标题调整位置；右下角调整尺寸。\n右键入口：重命名、颜色、透明度、删除。\n单击缩略图区打开列表／网格面板。\n\n尚未实现：根目录迁移、开机自启开关。\n这些功能保留在正式需求中。");
+    internal static void ShowStatus() => Notice($"临时原型 · 示例文件\n桌面宿主：{HostStatus}\n数据目录：{DataRoot}\n\n拖动入口标题调整位置；右下角调整尺寸。\n右键入口：重命名、颜色、透明度、删除。\n倒三角展开／折叠；多个 Folder 可以同时展开。\n\n尚未实现：根目录迁移、开机自启开关。\n这些功能保留在正式需求中。");
 
     internal static string? Ask(string title, string caption, string value)
     {
@@ -269,9 +271,14 @@ public static class Program
 
     private static async void Capture()
     {
+        var original = Folders.ToDictionary(folder => folder, folder => (folder.State.Expanded, folder.State.Grid, folder.State.X, folder.State.Y));
         try
         {
             var first = Folders.First();
+            if (first.State.Expanded) Expand(first);
+            Render(first, "入口");
+            foreach (var folder in Folders) if (!folder.State.Expanded) Expand(folder);
+            await Task.Delay(250);
             bool? showDesktopHit = null;
             if (ProbeDesktop && first.Host != IntPtr.Zero)
             {
@@ -304,28 +311,51 @@ public static class Program
                 }
                 await Task.Delay(250);
             }
-            Render(first, "入口");
-            Expand(first);
-            Panel!.UpdateLayout();
-            Render(Panel, "网格");
-            first.State.Grid = false; Panel.Refresh(); Panel.UpdateLayout();
-            Render(Panel, "列表");
-            first.State.Grid = true;
+            first.UpdateLayout();
+            Render(first, "网格");
+            first.State.Grid = false; first.Refresh(); first.UpdateLayout();
+            Render(first, "列表");
+            first.State.Grid = true; first.Refresh();
+            using (var pickerLifetime = new DialogCapture(new StyleDialog(first)))
+            {
+                pickerLifetime.Window.Show(); await Task.Delay(100);
+                Render(pickerLifetime.Window, "外观设置");
+            }
+            var rectangles = Folders.Select(folder => { Native.GetWindowRect(folder.Handle, out var r); return new Rect(r.Left, r.Top, r.Right - r.Left, r.Bottom - r.Top); }).ToArray();
+            var actualNonOverlap = rectangles.SelectMany((a, index) => rectangles.Skip(index + 1).Select(b => !a.IntersectsWith(b))).All(value => value);
+            var rejectedOverlapMove = Folders.Count < 2 || !DesktopLayout.Move(first, Folders[1].State.X, Folders[1].State.Y);
+            var rejectedOverlapResize = Folders.Count < 2 || !DesktopLayout.Resize(first, (Folders[1].State.X - first.State.X) / first.Scale + Folders[1].State.Width + 20, first.State.Height, first.State.PanelHeight);
             var report = new
             {
                 os = Environment.OSVersion.ToString(), root = DataRoot, host = HostStatus,
                 windows = Folders.Select(f => new { name = f.State.Name, handle = f.Handle.ToInt64(), host = f.Host.ToInt64(), parent = Native.GetParent(f.Handle).ToInt64(), visible = Native.IsWindowVisible(f.Handle) }),
                 desktopAttached = Folders.All(f => f.Host != IntPtr.Zero && Native.GetParent(f.Handle) == f.Host),
                 showDesktopHitTest = showDesktopHit,
-                rendering = "普通 WPF 子窗口可显示；透明分层子窗口实测未正常绘制，真正背景透明效果待解决",
+                simultaneousExpanded = Folders.Count(folder => folder.State.Expanded),
+                actualNonOverlap,
+                rejectedOverlapMove,
+                rejectedOverlapResize,
+                rendering = "透明背景与前景文字分离；Windows 10 兼容声明启用分层子窗口",
                 windowClasses = Native.WindowClasses(),
-                verified = new[] { "WPF 界面构建与渲染", "示例文件读取", "列表／网格切换" },
+                verified = new[] { "头部与下方展示区", "多个 Folder 同时展开", "列表／网格切换", "调色盘与 HEX／RGB 输入", "透明度滑块", "Windows Shell 图标" },
                 pending = new[] { "Win+D 实际交互", "桌面及资源管理器拖拽", "Explorer 重启", "多显示器与 DPI" }
             };
             File.WriteAllText(System.IO.Path.Combine(Home, "PROTOTYPE-report.json"), JsonSerializer.Serialize(report, new JsonSerializerOptions { WriteIndented = true }));
         }
         catch (Exception e) { File.WriteAllText(System.IO.Path.Combine(Home, "PROTOTYPE-report.json"), e.ToString()); }
-        finally { Exit(); }
+        finally
+        {
+            foreach (var entry in original)
+            { (entry.Key.State.Expanded, entry.Key.State.Grid, entry.Key.State.X, entry.Key.State.Y) = entry.Value; entry.Key.Refresh(); }
+            Exit();
+        }
+    }
+
+    private sealed class DialogCapture : IDisposable
+    {
+        internal readonly Window Window;
+        internal DialogCapture(Window window) => Window = window;
+        public void Dispose() => Window.Close();
     }
 
     private static void Render(Window window, string name)
@@ -339,186 +369,10 @@ public static class Program
 
     private static void Exit()
     {
-        Save(); shuttingDown = true; recovery?.Stop(); Panel?.Close();
+        Save(); shuttingDown = true; recovery?.Stop();
         foreach (var folder in Folders.ToArray()) folder.Close();
         Native.UnregisterHotKey(new WindowInteropHelper(Controller).Handle, 1);
         Tray.Dispose(); Controller.Close(); App.Shutdown();
-    }
-}
-
-public sealed class FolderWindow : Window
-{
-    internal readonly FolderState State;
-    internal string Path => System.IO.Path.Combine(Program.Storage, State.Name);
-    internal IntPtr Handle => new WindowInteropHelper(this).Handle;
-    internal IntPtr Host;
-    private readonly Border surface;
-    private readonly TextBlock title;
-    private readonly TextBlock preview;
-    private FileSystemWatcher? watcher;
-    private Point? start;
-    private int oldX, oldY;
-
-    internal FolderWindow(FolderState state)
-    {
-        State = state; Width = state.Width; Height = state.Height;
-        MinWidth = 140; MinHeight = 120; Title = "Kage · " + state.Name;
-        WindowStyle = WindowStyle.None; ResizeMode = ResizeMode.NoResize;
-        // Explorer 子窗口下先使用普通 WPF 渲染；分层透明窗口的实际显示需单独验证。
-        AllowsTransparency = false; Background = new SolidColorBrush(Color.FromRgb(25, 33, 46)); ShowInTaskbar = false; AllowDrop = true;
-        surface = new Border { CornerRadius = new CornerRadius(18), Padding = new Thickness(14), BorderBrush = new SolidColorBrush(Color.FromArgb(55, 255, 255, 255)), BorderThickness = new Thickness(1) };
-        var grid = new Grid();
-        grid.RowDefinitions.Add(new RowDefinition { Height = GridLength.Auto });
-        grid.RowDefinitions.Add(new RowDefinition());
-        grid.RowDefinitions.Add(new RowDefinition { Height = GridLength.Auto });
-        title = new TextBlock { Foreground = Brushes.White, FontSize = 15, FontWeight = FontWeights.SemiBold, Cursor = Cursors.SizeAll };
-        title.MouseLeftButtonDown += (_, e) => { start = PointToScreen(e.GetPosition(this)); oldX = State.X; oldY = State.Y; title.CaptureMouse(); e.Handled = true; };
-        title.MouseMove += (_, e) =>
-        {
-            if (start == null || e.LeftButton != MouseButtonState.Pressed) return;
-            var point = PointToScreen(e.GetPosition(this));
-            State.X = oldX + (int)(point.X - start.Value.X); State.Y = oldY + (int)(point.Y - start.Value.Y); Place();
-        };
-        title.MouseLeftButtonUp += (_, _) => { start = null; title.ReleaseMouseCapture(); Program.Save(); };
-        grid.Children.Add(title);
-        preview = new TextBlock { Foreground = Brushes.White, FontSize = 14, Margin = new Thickness(0, 12, 0, 6), TextWrapping = TextWrapping.Wrap, Cursor = Cursors.Hand };
-        preview.MouseLeftButtonUp += (_, _) => Program.Expand(this);
-        Grid.SetRow(preview, 1); grid.Children.Add(preview);
-        var bottom = new Grid(); bottom.ColumnDefinitions.Add(new ColumnDefinition()); bottom.ColumnDefinitions.Add(new ColumnDefinition { Width = GridLength.Auto });
-        bottom.Children.Add(new TextBlock { Text = "单击展开", Foreground = Brushes.LightGray, FontSize = 11 });
-        var thumb = new Thumb { Width = 14, Height = 14, Cursor = Cursors.SizeNWSE, Background = Brushes.Transparent };
-        thumb.DragDelta += (_, e) => { Width = Math.Clamp(Width + e.HorizontalChange, MinWidth, 600); Height = Math.Clamp(Height + e.VerticalChange, MinHeight, 500); };
-        thumb.DragCompleted += (_, _) => Program.Save();
-        Grid.SetColumn(thumb, 1); bottom.Children.Add(thumb); Grid.SetRow(bottom, 2); grid.Children.Add(bottom);
-        surface.Child = grid; Content = surface;
-        var menu = new ContextMenu();
-        Menu(menu, "打开内容面板", () => Program.Expand(this));
-        Menu(menu, "在资源管理器打开", () => Program.Open(Path));
-        Menu(menu, "重命名", () => Program.Rename(this));
-        Menu(menu, "背景颜色", () => { var value = Program.Ask("背景颜色", "输入颜色，如 #26364D", State.Color); if (value != null) { try { _ = ColorConverter.ConvertFromString(value); State.Color = value; Refresh(); Program.Save(); } catch { Program.Notice("颜色格式无效。"); } } });
-        Menu(menu, "背景透明度", () => { var value = Program.Ask("背景透明度", "输入 20 到 100；文字保持清晰", (State.Opacity * 100).ToString("0")); if (double.TryParse(value, out var number)) { State.Opacity = Math.Clamp(number / 100, .2, 1); Refresh(); Program.Save(); } });
-        menu.Items.Add(new Separator());
-        Menu(menu, "删除入口，保留内容", () => Program.Delete(this, true));
-        Menu(menu, "连同内容放入回收站", () => Program.Delete(this, false));
-        ContextMenu = menu;
-        SourceInitialized += (_, _) => Attach();
-        SizeChanged += (_, _) => { State.Width = Width; State.Height = Height; Place(); };
-        DragOver += (_, e) => { e.Effects = e.Data.GetDataPresent(DataFormats.FileDrop) ? DragDropEffects.Move : DragDropEffects.None; e.Handled = true; };
-        Drop += (_, e) => { if (e.Data.GetData(DataFormats.FileDrop) is string[] files) { e.Effects = Program.MoveInto(this, files) ? DragDropEffects.Move : DragDropEffects.None; e.Handled = true; } };
-        Closed += (_, _) => watcher?.Dispose();
-        Watch(); Refresh();
-    }
-
-    internal void Watch()
-    {
-        watcher?.Dispose();
-        if (!Directory.Exists(Path)) return;
-        watcher = new FileSystemWatcher(Path) { EnableRaisingEvents = true };
-        FileSystemEventHandler change = (_, _) => Dispatcher.BeginInvoke(() => { Refresh(); if (Program.Panel?.Folder == this) Program.Panel.Refresh(); });
-        watcher.Created += change; watcher.Deleted += change; watcher.Changed += change;
-        watcher.Renamed += (_, _) => Dispatcher.BeginInvoke(() => { Refresh(); if (Program.Panel?.Folder == this) Program.Panel.Refresh(); });
-    }
-
-    internal void Refresh()
-    {
-        title.Text = State.Name;
-        var color = (Color)ColorConverter.ConvertFromString(State.Color);
-        color.A = (byte)(State.Opacity * 255); surface.Background = new SolidColorBrush(color);
-        var names = Directory.Exists(Path) ? Directory.GetFileSystemEntries(Path).Select(System.IO.Path.GetFileName).ToArray() : Array.Empty<string>();
-        preview.Text = names.Length == 0 ? "空文件夹\n拖入示例文件" : string.Join("\n", names.Take(3)) + $"\n\n{names.Length} 个项目";
-    }
-
-    internal void Attach()
-    {
-        Host = Native.FindDesktopHost();
-        if (Host != IntPtr.Zero)
-        {
-            var style = Native.GetWindowLongPtr(Handle, -16).ToInt64();
-            Native.SetWindowLongPtr(Handle, -16, new IntPtr((style & ~0x80000000L) | 0x40000000L));
-            Native.SetParent(Handle, Host);
-            Program.HostStatus = Native.GetParent(Handle) == Host ? "已挂接 SHELLDLL_DefView（实验）" : "桌面挂接失败";
-        }
-        else Program.HostStatus = "未找到桌面宿主，当前为普通窗口";
-        Place();
-    }
-
-    private void Place()
-    {
-        if (Handle == IntPtr.Zero) return;
-        var scale = Native.GetDpiForWindow(Handle) / 96.0;
-        var bounds = Forms.SystemInformation.VirtualScreen;
-        State.X = Math.Clamp(State.X, bounds.Left, Math.Max(bounds.Left, bounds.Right - (int)(Width * scale)));
-        State.Y = Math.Clamp(State.Y, bounds.Top, Math.Max(bounds.Top, bounds.Bottom - (int)(Height * scale)));
-        var point = new Native.POINT { X = State.X, Y = State.Y };
-        if (Host != IntPtr.Zero) Native.ScreenToClient(Host, ref point);
-        Native.SetWindowPos(Handle, IntPtr.Zero, point.X, point.Y, (int)(Width * scale), (int)(Height * scale), 0x10 | 0x40);
-    }
-
-    internal static void Menu(ContextMenu menu, string title, Action action)
-    { var item = new MenuItem { Header = title }; item.Click += (_, _) => action(); menu.Items.Add(item); }
-}
-
-public sealed class ContentWindow : Window
-{
-    internal readonly FolderWindow Folder;
-    private readonly ListBox list;
-    private readonly Button toggle;
-    private Point dragStart;
-    private bool dragging;
-
-    internal ContentWindow(FolderWindow folder)
-    {
-        Folder = folder; Width = folder.State.PanelWidth; Height = folder.State.PanelHeight;
-        MinWidth = 320; MinHeight = 240; Title = "Kage · " + folder.State.Name;
-        WindowStyle = WindowStyle.ToolWindow; ResizeMode = ResizeMode.CanResizeWithGrip; ShowInTaskbar = false;
-        Background = new SolidColorBrush(Color.FromRgb(25, 33, 46)); Foreground = Brushes.White;
-        WindowStartupLocation = WindowStartupLocation.CenterScreen;
-        var root = new DockPanel { Margin = new Thickness(16) };
-        var header = new DockPanel { Margin = new Thickness(0, 0, 0, 14) };
-        toggle = new Button { Padding = new Thickness(12, 5, 12, 5), HorizontalAlignment = HorizontalAlignment.Right };
-        toggle.Click += (_, _) => { Folder.State.Grid = !Folder.State.Grid; Refresh(); Program.Save(); };
-        DockPanel.SetDock(toggle, Dock.Right); header.Children.Add(toggle);
-        header.Children.Add(new TextBlock { Text = folder.State.Name, FontSize = 22, FontWeight = FontWeights.SemiBold });
-        DockPanel.SetDock(header, Dock.Top); root.Children.Add(header);
-        var footer = new TextBlock { Text = "示例文件 · 双击打开 · 多选拖出", FontSize = 11, Foreground = Brushes.LightGray, Margin = new Thickness(0, 12, 0, 0) };
-        DockPanel.SetDock(footer, Dock.Bottom); root.Children.Add(footer);
-        list = new ListBox { Background = Brushes.Transparent, BorderThickness = new Thickness(0), SelectionMode = SelectionMode.Extended, AllowDrop = true };
-        list.PreviewMouseLeftButtonDown += (_, e) => dragStart = e.GetPosition(list);
-        list.PreviewMouseMove += (_, e) =>
-        {
-            if (dragging || e.LeftButton != MouseButtonState.Pressed) return;
-            var point = e.GetPosition(list);
-            if (Math.Abs(point.X - dragStart.X) < SystemParameters.MinimumHorizontalDragDistance && Math.Abs(point.Y - dragStart.Y) < SystemParameters.MinimumVerticalDragDistance) return;
-            var paths = list.SelectedItems.Cast<ListBoxItem>().Select(item => (string)item.Tag).ToArray();
-            if (paths.Length == 0) return;
-            dragging = true;
-            try { DragDrop.DoDragDrop(list, new DataObject(DataFormats.FileDrop, paths), DragDropEffects.Move); }
-            finally { dragging = false; Refresh(); Folder.Refresh(); }
-        };
-        list.MouseDoubleClick += (_, _) => { if (list.SelectedItem is ListBoxItem item) Program.Open((string)item.Tag); };
-        list.DragOver += (_, e) => { e.Effects = e.Data.GetDataPresent(DataFormats.FileDrop) ? DragDropEffects.Move : DragDropEffects.None; e.Handled = true; };
-        list.Drop += (_, e) => { if (e.Data.GetData(DataFormats.FileDrop) is string[] paths) e.Effects = Program.MoveInto(Folder, paths) ? DragDropEffects.Move : DragDropEffects.None; e.Handled = true; };
-        root.Children.Add(list); Content = root;
-        Deactivated += (_, _) => { if (!dragging && !Program.Capturing) Close(); };
-        SizeChanged += (_, _) => { Folder.State.PanelWidth = Width; Folder.State.PanelHeight = Height; };
-        Closed += (_, _) => { if (Program.Panel == this) Program.Panel = null; Program.Save(); };
-        Refresh();
-    }
-
-    internal void Refresh()
-    {
-        toggle.Content = Folder.State.Grid ? "切换列表" : "切换网格";
-        var factory = new FrameworkElementFactory(Folder.State.Grid ? typeof(WrapPanel) : typeof(StackPanel));
-        list.ItemsPanel = new ItemsPanelTemplate(factory);
-        list.Items.Clear();
-        if (!Directory.Exists(Folder.Path)) return;
-        foreach (var path in Directory.GetFileSystemEntries(Folder.Path).OrderBy(System.IO.Path.GetFileName))
-        {
-            var name = System.IO.Path.GetFileName(path);
-            var symbol = Directory.Exists(path) ? "▣" : "▤";
-            var content = new TextBlock { Text = Folder.State.Grid ? $"{symbol}\n\n{name}" : $"{symbol}   {name}", TextWrapping = TextWrapping.Wrap, Foreground = Brushes.White, Margin = new Thickness(10), FontSize = 14 };
-            list.Items.Add(new ListBoxItem { Tag = path, Content = content, Width = Folder.State.Grid ? 122 : double.NaN, MinHeight = Folder.State.Grid ? 110 : 40, Margin = new Thickness(3), Background = new SolidColorBrush(Color.FromRgb(43, 55, 72)) });
-        }
     }
 }
 

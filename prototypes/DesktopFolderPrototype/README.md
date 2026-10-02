@@ -1,57 +1,68 @@
-# 原生桌面 Folder 临时原型
+# 原生桌面 Folder 原型 · 第二版
 
-这是回答桌面集成问题的实验代码，不是正式版本。采用 C#、.NET 10 和 WPF，未引入第三方依赖。
-
-## 要回答的问题
-
-自绘 Folder 能否在真正的 Windows 桌面上显示、展开面板，并在“显示桌面”后继续接收操作？
-
-这是原生桌面技术实验，使用实际 Windows 窗口；网页无法回答其桌面宿主问题，因此没有采用网页布局变体。
+采用 C#、.NET 10 和 WPF；这是桌面交互实验，尚未完成正式版本的目录迁移和开机自启。
 
 ## 启动
 
-双击 `run.cmd`，或者在项目根目录执行：
+双击 `bin/Debug/net10.0-windows/DesktopFolderPrototype.exe`。也可以双击 `run.cmd`，或在项目根目录运行：
 
 ```powershell
 rtk dotnet run --project prototypes/DesktopFolderPrototype/DesktopFolderPrototype.csproj
 ```
 
-本机需要 .NET 10 SDK。已经编译好的入口是 `bin/Debug/net10.0-windows/DesktopFolderPrototype.exe`，无需再次构建即可双击运行。
+从源码运行需要 .NET 10 SDK；编译后的程序需要本机 .NET 10 Windows Desktop Runtime。
 
-## 操作
+## Folder 操作
 
-- 两个示例 Folder 显示在桌面上；拖动标题调整位置，拖动入口右下角调整尺寸。
-- 单击入口中的文件名区域，展开浮动内容面板；点击外部收起。
-- 面板右上角切换列表／网格；调整窗口边缘可改变面板尺寸。
-- 右键入口可重命名、调整背景颜色和透明度数值，或删除。
-- 使用 `Ctrl+Alt+K`，或右下角系统托盘菜单创建 Folder。
-- 托盘菜单“打开示例数据”打开原型数据目录。
-- 从 `PROTOTYPE-data/模拟桌面/` 拖入示例文件，观察文件实际移动到 `PROTOTYPE-data/内容/<名称>/`。
-- 在面板中使用 Ctrl／Shift 多选示例文件，拖到其他 Folder、桌面或资源管理器中的目录；这会实际移动示例文件。
+- 默认灰色半透明，折叠时仅显示名称、内容文件数、倒三角展开按钮。
+- 点击倒三角，在头部正下方展开内容；再次点击向上三角折叠。多个 Folder 可以同时展开，点击外部不自动收起。
+- 内容区图标来自 Windows Shell，保留文件关联及快捷方式覆盖图标。
+- 内容区右上角一键切换列表／网格。
+- 拖动头部调整位置；右下角斜三角调整尺寸。折叠时调头部宽高，展开时调共享宽度和内容区高度。
+- Folder 不可相互重叠。拖动／缩放拒绝冲突的位置／尺寸；展开时优先保持本 Folder 头部位置，将冲突的其他 Folder 放到附近空位，空间不足则取消展开。
+- 桌面空间不足时，保留记录和内容并暂时隐藏；释放空间后通过托盘“重新挂接桌面”恢复。
+- 右键头部选择“颜色与透明度…”：预设颜色、Windows 调色盘、RGB 三分量和 HEX 输入均可使用；滑块实时改变背景透明度，文字和图标不随之变淡。取消恢复原先外观，应用保存。
 - 双击文件或普通子文件夹使用系统默认程序打开。
-- 退出使用系统托盘菜单；下次启动恢复入口位置、尺寸、颜色和查看方式。
 
-## 数据范围
+## 内容移动与删除
 
-所有自动生成的数据都位于本项目目录的 `PROTOTYPE-data/` 中。原型不会创建或改动 `D:\KageFiles\`。
+- 使用 `Ctrl+Alt+K` 或系统托盘右键菜单创建 Folder。
+- 托盘“打开示例数据”可查看 `PROTOTYPE-data/`。从模拟桌面或其他内容目录拖入示例文件，观察其实际移动到 `内容/<Folder 名称>/`。
+- Ctrl／Shift 多选后，可拖到其他 Folder、桌面或资源管理器目录，实际移动示例文件。
+- 移入仅接受本原型数据目录中的项目，真实个人文件会被拒绝。用户主动拖出示例文件时，文件实际移动到目标位置。
+- 保留内容时，在 `PROTOTYPE-data/模拟桌面/` 生成指向原内容目录的快捷方式；正式需求是在实际桌面生成快捷方式。
+- 一同删除时，将选中的原型内容文件夹及示例内容放入系统回收站。
+- 自动生成的数据、状态和预览留在原型目录，不会创建或改动 `D:\KageFiles\`。
 
-移入操作仅接受原型数据目录中的示例项目；真实个人文件会被拒绝。用户主动将示例文件拖出到桌面或其他目录时，示例文件会真实移动到所选位置。
+## 图标方案
 
-原型选择“保留内容”时，在 `PROTOTYPE-data/模拟桌面/` 创建快捷方式，保留对应内容目录。正式版本按需求在实际桌面创建快捷方式。选择“一同删除”时，对选中的原型内容目录执行系统回收站操作。
+用户已选定 **D「K 文件夹」**，作为默认应用与托盘图标。托盘“图标方案”菜单还可切换 A「收纳夹」、B「分区格」、C「叠层抽屉」。
 
-持久状态保存在 `PROTOTYPE-state.json`；该文件以及构建、数据和自动预览输出均不纳入 Git。
+`Assets/` 保存四套应用版和托盘版 PNG／ICO；每个 ICO 包含 16、20、24、32、48、64、128、256 像素版本。`图标方案.png` 为比较图。EXE 内置 D 图标；运行时菜单切换托盘及窗口图标，不会改写 EXE 内置图标。
 
-## 已核查与限制
+图标由 `IconChoices.cs` 中的几何图形绘制，重新生成：
+
+```powershell
+rtk dotnet run --project prototypes/DesktopFolderPrototype/DesktopFolderPrototype.csproj -- --make-icons
+```
+
+## 状态与退出
+
+- 沿用第一版的内容目录和位置记录，将旧界面状态升级为新的头部结构及默认灰色样式；不会改动示例文件内容。
+- 位置、尺寸、展开状态、查看方式和外观保存在 `PROTOTYPE-state.json`；图标选择保存在 `PROTOTYPE-settings.json`。
+- 通过系统托盘菜单退出；再次启动恢复记录并重新消除布局冲突。
+- 数据、构建、运行状态与自动预览输出不纳入 Git。
+
+## 已核查与仍待验收
 
 - 编译通过，无警告。
-- 当前 Windows 会话中，两个入口成功成为 `SHELLDLL_DefView` 的子窗口。
-- 使用 Shell 的 `ToggleDesktop` 执行“显示桌面”，入口仍可被鼠标命中；随后切回并退出。该诊断不等于完整键盘交互验收。
-- 列表和网格均能渲染，预览图已经检查。
-- **透明分层 WPF 子窗口未正常绘制；普通 WPF 子窗口可以显示。** 当前“背景透明度”只改变颜色混合效果，不能透出桌面壁纸，正式版本需要另行解决。
-- 当前入口预览使用文件名和通用符号占位，尚未加载真实 Shell 图标与内容缩略图。
-- 使用 Explorer 内部窗口是实验策略，不保证系统更新后的兼容性。
-- 未实现根目录修改／迁移、开机自启开关，以及正式版本所需的迁移恢复机制。
-- 真实手势拖拽、快捷键、菜单、尺寸拖动、Explorer 重启和多显示器／DPI 切换仍需在交互会话中逐项验收。
+- 当前交互会话中，透明桌面子窗口能实际绘制，背景可透出壁纸，文字和图标保持清晰。
+- 补上 Windows 10 兼容声明后，透明分层子窗口正常显示。参见[微软分层窗口文档](https://learn.microsoft.com/en-us/windows/win32/winmsg/using-windows)。
+- 已核查两个 Folder 同时展开的实际窗口边界不重叠，以及冲突移动／缩放请求被拒绝。
+- 已生成并检查头部、网格、列表、外观设置和四套图标的预览。
+- 用户手动拖拽、调色盘、滑块、尺寸恢复及 Explorer 重启、多显示器／DPI 切换仍需交互验收。
+- 桌面宿主使用 Explorer 内部窗口，仅作为实验策略，不视为跨 Windows 版本的公开兼容契约。
+- 根目录迁移、迁移失败恢复和开机自启开关尚未实现。
 
 ## 自动诊断
 
@@ -59,8 +70,6 @@ rtk dotnet run --project prototypes/DesktopFolderPrototype/DesktopFolderPrototyp
 rtk dotnet run --project prototypes/DesktopFolderPrototype/DesktopFolderPrototype.csproj -- --capture
 ```
 
-生成入口、列表和网格预览，以及 `PROTOTYPE-report.json`，随后退出。
+生成头部、网格、列表、外观设置预览及 `PROTOTYPE-report.json`，随后退出。增加 `--desktop-probe` 会短暂切换并恢复“显示桌面”，核查入口命中并截取原型入口矩形区域。诊断会恢复原先位置、展开状态和查看方式。
 
-增加 `--desktop-probe` 会短暂切换并恢复“显示桌面”，核查入口命中情况，只有命中入口时才截取其矩形区域。
-
-正式需求见 [需求记录](../../.scratch/desktop-folder/requirements.md)，实验结论见 [原型结论](../../.scratch/desktop-folder/prototype-verdict.md)。
+完整需求见[需求记录](../../.scratch/desktop-folder/requirements.md)，实验结论见[原型结论](../../.scratch/desktop-folder/prototype-verdict.md)。

@@ -7,5 +7,6 @@
     <ImplicitUsings>disable</ImplicitUsings>
     <Nullable>enable</Nullable>
     <ApplicationManifest>app.manifest</ApplicationManifest>
+    <ApplicationIcon>Assets/app-d.ico</ApplicationIcon>
   </PropertyGroup>
 </Project>
