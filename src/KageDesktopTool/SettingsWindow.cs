@@ -52,6 +52,12 @@ internal sealed class SettingsWindow : Window
                 await Apply(runtime.Workspace.RestoreBackupAsync);
         });
         controls.Children.Add(actions);
+        AddButton(controls, "关联待核对的创建目录…", async () =>
+        {
+            var explanation = string.Join("\n", runtime.Workspace.Snapshot.Notices);
+            if (MessageBox.Show($"{explanation}\n\n确认该记录对应的目录就是希望管理的内容文件夹，并关联它？现有内容会保留。", "核对实际目录", MessageBoxButton.OKCancel) == MessageBoxResult.OK)
+                await Apply(runtime.Workspace.ConfirmPendingCreateAsync);
+        });
         controls.Children.Add(status);
         controls.Children.Add(new TextBlock { Text = "桌面 Folder", FontWeight = FontWeights.SemiBold, Margin = new Thickness(0, 8, 0, 8) });
         controls.Children.Add(folders);

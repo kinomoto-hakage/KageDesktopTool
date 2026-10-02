@@ -1,3 +1,5 @@
+using System.Text.Json.Serialization;
+
 namespace Kage.Workspace;
 
 public enum ConflictChoice { Ask, KeepBoth, Skip, Cancel }
@@ -9,9 +11,11 @@ public sealed record OperationResult(Outcome Outcome, string Message, string? Ac
 
 // 坐标及布局尺寸使用物理像素，WPF 适配器负责按屏幕 DPI 转换。
 public sealed record DisplayArea(int X, int Y, int Width, int Height, double Scale = 1);
-public sealed record FolderRecord(Guid Id, string Name, int X = 0, int Y = 0,
-    double HeaderWidth = 300, double HeaderHeight = 48, double BodyHeight = 260,
-    bool Expanded = false, bool Grid = true, string Color = "#666666", double Opacity = .68,
+public sealed record FolderRecord([property: JsonRequired] Guid Id, [property: JsonRequired] string Name,
+    [property: JsonRequired] int X = 0, [property: JsonRequired] int Y = 0,
+    [property: JsonRequired] double HeaderWidth = 300, [property: JsonRequired] double HeaderHeight = 48, [property: JsonRequired] double BodyHeight = 260,
+    [property: JsonRequired] bool Expanded = false, [property: JsonRequired] bool Grid = true,
+    [property: JsonRequired] string Color = "#666666", [property: JsonRequired] double Opacity = .68,
     string? ContentRoot = null);
 public sealed record FolderSnapshot(FolderRecord Folder, string ActualPath, bool Visible, int? FileCount, string? Notice);
 public sealed record WorkspaceSnapshot(string Root, bool StartupEnabled, string IconChoice,
@@ -25,10 +29,12 @@ public interface IDesktopWorkspace
     Task<OperationResult> CreateFolderAsync(string name, ConflictChoice conflict = ConflictChoice.Ask, CancellationToken cancellation = default);
     Task<OperationResult> SetStartupAsync(bool enabled);
     Task<OperationResult> RestoreBackupAsync();
+    Task<OperationResult> ConfirmPendingCreateAsync();
     Task<OperationResult> RefreshAsync(IReadOnlyList<DisplayArea> displays);
 }
 
-public sealed record PendingStartup(bool Enabled, string? PreviousCommand, string? TargetCommand);
+public sealed record PendingStartup([property: JsonRequired] bool Enabled,
+    [property: JsonRequired] string? PreviousCommand, [property: JsonRequired] string? TargetCommand);
 public sealed record WorkspaceState
 {
     [System.Text.Json.Serialization.JsonRequired]

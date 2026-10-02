@@ -8,6 +8,7 @@ public sealed class DesktopWorkspace(IWorkspaceStore store, IStartupRegistration
     private bool blocked = true;
     private bool backupRestore;
     private readonly List<string> notices = [];
+    private string? startupNotice;
     private volatile WorkspaceSnapshot snapshot = new(@"D:\KageFiles\", false, "d", [], true, []);
     public WorkspaceSnapshot Snapshot => snapshot;
 
@@ -29,6 +30,7 @@ public sealed class DesktopWorkspace(IWorkspaceStore store, IStartupRegistration
     {
         displays = areas.ToArray();
         notices.Clear();
+        startupNotice = null;
         try
         {
             var loaded = store.Read();
@@ -56,6 +58,8 @@ public sealed class DesktopWorkspace(IWorkspaceStore store, IStartupRegistration
             var path = ContentPath(pending);
             WindowsPaths.CheckRoot(pending.ContentRoot ?? state.Root, false);
             if (File.Exists(path)) throw new IOException($"待恢复目录的位置出现同名文件：{path}");
+            if (Directory.Exists(path) && !WindowsPaths.HasIdentity(path, pending.Id))
+                throw new IOException($"待恢复目录无法确认属于本次创建：{path}。未自动关联；请核对后明确选择关联该目录，或先处理同名项目。记录及内容均保留。");
             var recovered = state with { PendingCreate = null,
                 Folders = Directory.Exists(path) ? [.. state.Folders, pending] : state.Folders };
             store.Save(recovered);
@@ -77,9 +81,9 @@ public sealed class DesktopWorkspace(IWorkspaceStore store, IStartupRegistration
         {
             var command = startup.ReadCommand();
             if ((state.StartupEnabled ? startup.LaunchCommand : null) != command)
-                notices.Add("保存的自启选择与实际启动配置不一致。请在设置中应用开关以修复；启动过程未更改配置。");
+                startupNotice = "保存的自启选择与实际启动配置不一致。请在设置中应用开关以修复；启动过程未更改配置。";
         }
-        catch (Exception e) { notices.Add($"无法读取实际启动配置：{e.Message}。其他业务操作仍可使用。"); }
+        catch (Exception e) { startupNotice = $"无法读取实际启动配置：{e.Message}。其他业务操作仍可使用。"; }
     }
 
     public Task<OperationResult> SelectRootAsync(string root) => Run(() =>
@@ -128,13 +132,23 @@ public sealed class DesktopWorkspace(IWorkspaceStore store, IStartupRegistration
         var intent = state with { PendingCreate = folder };
         store.Save(intent);
         state = intent;
+        var created = false;
         try
         {
             if (cancellation.IsCancellationRequested) throw new OperationCanceledException("已取消创建。");
             WindowsPaths.CreateExclusive(path);
+            created = true;
+            WindowsPaths.WriteIdentity(path, folder.Id);
         }
         catch (Exception e)
         {
+            if (created)
+            {
+                blocked = true;
+                notices.Add($"目录已创建但归属标识未完成：{path}。{e.Message}。记录及目录保留，需核对后关联。");
+                Publish();
+                return new(Outcome.RecoveryRequired, notices.Last(), path);
+            }
             var cleared = state with { PendingCreate = null };
             try { store.Save(cleared); state = cleared; }
             catch (Exception saveError) { blocked = true; notices.Add($"清理创建记录失败：{saveError.Message}"); }
@@ -174,7 +188,7 @@ public sealed class DesktopWorkspace(IWorkspaceStore store, IStartupRegistration
             var complete = original with { StartupEnabled = enabled };
             store.Save(complete);
             state = complete;
-            notices.RemoveAll(n => n.Contains("启动配置", StringComparison.Ordinal) || n.Contains("自启选择", StringComparison.Ordinal));
+            startupNotice = null;
             Publish();
             return new(Outcome.Success, enabled ? "已开启用户登录自启并保存选择。" : "已关闭用户登录自启并保存选择。");
         }
@@ -206,9 +220,33 @@ public sealed class DesktopWorkspace(IWorkspaceStore store, IStartupRegistration
         state = store.Read().State;
         blocked = false;
         backupRestore = false;
+        notices.Clear();
+        notices.Add("最近有效备份已恢复，损坏文件已另存保留。");
         try { RecoverPending(); PlaceAndPublish(true); }
-        catch { blocked = true; Publish(); throw; }
+        catch (Exception e)
+        {
+            blocked = true;
+            notices.Add($"备份已恢复，但未完成操作仍需核对：{e.Message}");
+            Publish();
+            return new(Outcome.RecoveryRequired, notices.Last());
+        }
         return new(Outcome.Success, "最近有效状态已恢复；损坏文件已另存为证据。");
+    });
+
+    public Task<OperationResult> ConfirmPendingCreateAsync() => Run(() =>
+    {
+        if (backupRestore) return new(Outcome.RecoveryRequired, "请先明确恢复状态备份，再核对待关联目录。");
+        if (state.PendingCreate is not { } pending) return new(Outcome.Failed, "没有待核对的创建记录。");
+        var path = ContentPath(pending);
+        if (!Directory.Exists(path)) return new(Outcome.Failed, $"待关联目录不存在或不可访问：{path}", path);
+        WindowsPaths.WriteIdentity(path, pending.Id);
+        var complete = state with { PendingCreate = null, Folders = [.. state.Folders, pending] };
+        store.Save(complete);
+        state = complete;
+        blocked = false;
+        notices.Clear();
+        PlaceAndPublish(true);
+        return new(Outcome.Success, $"已根据明确选择关联现有目录：{path}", path);
     });
 
     public Task<OperationResult> RefreshAsync(IReadOnlyList<DisplayArea> areas) => Run(() =>
@@ -245,11 +283,12 @@ public sealed class DesktopWorkspace(IWorkspaceStore store, IStartupRegistration
             var path = ContentPath(folder);
             int? count = null;
             string? notice = area == null ? "桌面空间不足，记录与内容保留；释放空间后可在设置刷新。" : null;
-            try { count = Directory.EnumerateFiles(path).Count(); }
+            try { count = Directory.EnumerateFiles(path).Count(file => Path.GetFileName(file) != WindowsPaths.IdentityFile); }
             catch (Exception e) { notice = $"内容目录不可读：{path}。{e.Message}"; }
             rendered.Add(new(folder, path, area != null, count, notice));
         }
         var messages = new List<string>(notices);
+        if (startupNotice != null) messages.Add(startupNotice);
         if (state.Folders.Any(folder => folder.ContentRoot != null)) messages.Add("旧存储根目录不可用时保留的内容仍关联原路径；新 Folder 使用当前所选根目录。既有内容尚未迁移。");
         try { WindowsPaths.CheckRoot(state.Root, false); }
         catch (Exception e) { messages.Add($"存储根目录不可用：{e.Message}。请明确选择可用目录；已有 Folder 关联将保留。"); }

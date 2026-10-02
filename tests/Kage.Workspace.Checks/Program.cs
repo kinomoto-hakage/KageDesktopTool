@@ -9,10 +9,14 @@ var tests = new (string Name, Func<Task> Run)[]
     ("初始布局、空间不足及恢复", LayoutAndCapacity),
     ("自启偏好与平台双向提交及失败", StartupTransactions),
     ("根目录失败及真实文件系统失败", RootAndFileFailures),
-    ("已有根目录离线时保留关联并明确另选", OfflineRootSelection)
+    ("已有根目录离线时保留关联并明确另选", OfflineRootSelection),
+    ("抢先创建目录与清理失败不误关联", CompetingDirectoryRecovery),
+    ("中断自启操作按实际配置恢复", InterruptedStartup)
 };
 var failures = 0;
-foreach (var test in tests.Where(t => args.Length == 0 || t.Name.Contains(args[0], StringComparison.Ordinal)))
+var selected = tests.Where(t => args.Length == 0 || t.Name.Contains(args[0], StringComparison.Ordinal)).ToArray();
+if (selected.Length == 0) { Console.Error.WriteLine("没有匹配的检查名称。"); return 1; }
+foreach (var test in selected)
 {
     try { await test.Run(); Console.WriteLine($"通过：{test.Name}"); }
     catch (Exception e) { failures++; Console.Error.WriteLine($"失败：{test.Name}\n{e}"); }
@@ -76,12 +80,18 @@ static async Task DamagedState()
     Check(!(await workspace.CreateFolderAsync("禁止覆盖")).Succeeded && File.ReadAllText(primary) == "损坏的状态", "未确认前禁止覆盖损坏证据");
     Check((await workspace.RestoreBackupAsync()).Succeeded, "明确恢复最近有效备份");
     Check(workspace.Snapshot.Folders.Single().Folder.Name == "备份", "备份或未完成记录恢复现有目录关联");
+    Check(!workspace.Snapshot.Notices.Any(notice => notice.Contains("需明确恢复", StringComparison.Ordinal)), "恢复完成清除旧的未恢复提示");
     Check(Directory.GetFiles(Path.GetDirectoryName(primary)!, "workspace.json.damaged-*").Length == 1, "保留损坏文件证据");
+    var valid = System.Text.Json.Nodes.JsonNode.Parse(File.ReadAllText(primary))!;
     File.Delete(primary + ".bak");
     File.WriteAllText(primary, "{}");
     // 缺失必要格式字段同样不是合法的空工作区。
     workspace = new DesktopWorkspace(fixture.Store, new TestStartup());
     Check((await workspace.InitializeAsync([new(0, 0, 1000, 800)])).Outcome == Outcome.RecoveryRequired, "结构不完整的状态必须阻止写入");
+    valid["Folders"]![0]!.AsObject().Remove("X");
+    File.WriteAllText(primary, valid.ToJsonString());
+    workspace = new DesktopWorkspace(fixture.Store, new TestStartup());
+    Check((await workspace.InitializeAsync([new(0, 0, 1000, 800)])).Outcome == Outcome.RecoveryRequired, "Folder 缺失位置不能通过默认值掩盖损坏");
 }
 
 static async Task NamesAndConflicts()
@@ -210,6 +220,54 @@ static async Task OfflineRootSelection()
     var restarted = new DesktopWorkspace(fixture.Store, new TestStartup());
     await restarted.InitializeAsync([new(0, 0, 1000, 800)]);
     Check(restarted.Snapshot.Folders.Single(f => f.Folder.Id == original.Folder.Id).ActualPath == original.ActualPath, "原目录回来后沿用原标识及实际路径");
+}
+
+static async Task CompetingDirectoryRecovery()
+{
+    using var fixture = new Fixture();
+    var failing = new FailingStore(fixture.Store);
+    var workspace = new DesktopWorkspace(failing, new TestStartup());
+    await workspace.InitializeAsync([new(0, 0, 1000, 800)]);
+    await workspace.SelectRootAsync(fixture.Content);
+    failing.FailOnSave = failing.Saves + 2;
+    failing.AfterSave = state =>
+    {
+        if (state.PendingCreate is { } folder)
+        {
+            var path = Path.Combine(state.Root, folder.Name);
+            Directory.CreateDirectory(path);
+            File.WriteAllText(Path.Combine(path, "外部内容.txt"), "不属于本次创建");
+        }
+    };
+    Check((await workspace.CreateFolderAsync("竞争目录")).Outcome == Outcome.RecoveryRequired, "竞争创建与清理记录失败被明确报告");
+    var restarted = new DesktopWorkspace(fixture.Store, new TestStartup());
+    Check((await restarted.InitializeAsync([new(0, 0, 1000, 800)])).Outcome == Outcome.RecoveryRequired, "重启不能把仅存在的外部目录当作创建完成");
+    Check(restarted.Snapshot.Folders.Count == 0, "外部目录不会自动成为托管 Folder");
+    Check(File.ReadAllText(Path.Combine(fixture.Content, "竞争目录", "外部内容.txt")) == "不属于本次创建", "保留竞争目录实际内容");
+    Check((await restarted.ConfirmPendingCreateAsync()).Succeeded, "核对并明确确认后可以关联现有目录");
+    Check(restarted.Snapshot.Folders.Single().FileCount == 1, "内部标识不计入用户内容文件数");
+}
+
+static async Task InterruptedStartup()
+{
+    using var fixture = new Fixture();
+    var startup = new TestStartup { Command = new TestStartup().LaunchCommand };
+    fixture.Store.Save(new WorkspaceState { Root = fixture.Content,
+        PendingStartup = new(true, null, startup.LaunchCommand) });
+    var workspace = new DesktopWorkspace(fixture.Store, startup);
+    Check((await workspace.InitializeAsync([new(0, 0, 1000, 800)])).Succeeded && workspace.Snapshot.StartupEnabled, "平台已更新但最终保存中断时沿用实际开启结果");
+    Check(fixture.Store.Read().State.PendingStartup == null, "完成恢复后清除中断记录");
+    startup.Command = null;
+    fixture.Store.Save(new WorkspaceState { Root = fixture.Content,
+        PendingStartup = new(true, null, startup.LaunchCommand) });
+    workspace = new DesktopWorkspace(fixture.Store, startup);
+    Check((await workspace.InitializeAsync([new(0, 0, 1000, 800)])).Succeeded && !workspace.Snapshot.StartupEnabled && startup.Command == null, "尚未执行的平台意图不会被启动过程擅自注册");
+    startup.Command = "外部修改的启动命令";
+    fixture.Store.Save(new WorkspaceState { Root = fixture.Content,
+        PendingStartup = new(true, null, startup.LaunchCommand) });
+    workspace = new DesktopWorkspace(fixture.Store, startup);
+    Check((await workspace.InitializeAsync([new(0, 0, 1000, 800)])).Outcome == Outcome.RecoveryRequired, "未知实际配置保留恢复状态");
+    Check(startup.Command == "外部修改的启动命令" && fixture.Store.Read().State.PendingStartup != null, "恢复不会盲目覆盖外部实际配置");
 }
 
 sealed class TestStartup : IStartupRegistration

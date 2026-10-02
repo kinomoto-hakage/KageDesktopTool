@@ -33,6 +33,9 @@ public sealed class JsonWorkspaceStore(string directory) : IWorkspaceStore
         if (state.Version != 1) throw new InvalidDataException($"不支持的状态格式版本：{state.Version}。");
         WindowsPaths.Root(state.Root);
         if (state.Folders == null || state.IconChoice is not ("a" or "b" or "c" or "d")) throw new InvalidDataException("状态字段无效。");
+        if (state.PendingStartup is { } startup && startup.Enabled != (startup.TargetCommand != null))
+            throw new InvalidDataException("未完成自启记录的目标配置与开关不一致。");
+        if (state.PendingStartup != null && state.PendingCreate != null) throw new InvalidDataException("状态存在冲突的未完成操作。");
         var ids = new HashSet<Guid>();
         var names = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
         foreach (var folder in state.Folders.Concat(state.PendingCreate is null ? [] : new[] { state.PendingCreate }))

@@ -5,6 +5,7 @@ namespace Kage.Workspace;
 
 internal static class WindowsPaths
 {
+    internal const string IdentityFile = ".kage-folder-id";
     internal static void Name(string name)
     {
         if (string.IsNullOrWhiteSpace(name) || name.Length > 255 || name is "." or ".." || name.EndsWith(' ') || name.EndsWith('.')
@@ -42,6 +43,25 @@ internal static class WindowsPaths
     internal static void CreateExclusive(string path)
     {
         if (!CreateDirectory(path, IntPtr.Zero)) throw new Win32Exception(Marshal.GetLastWin32Error(), $"创建内容文件夹失败：{path}");
+    }
+
+    internal static bool HasIdentity(string path, Guid id)
+    {
+        var marker = Path.Combine(path, IdentityFile);
+        return File.Exists(marker) && Guid.TryParseExact(File.ReadAllText(marker), "N", out var actual) && actual == id;
+    }
+
+    internal static void WriteIdentity(string path, Guid id)
+    {
+        if (HasIdentity(path, id)) return;
+        var marker = Path.Combine(path, IdentityFile);
+        using (var stream = new FileStream(marker, FileMode.CreateNew, FileAccess.Write, FileShare.None, 4096, FileOptions.WriteThrough))
+        {
+            var bytes = System.Text.Encoding.UTF8.GetBytes(id.ToString("N"));
+            stream.Write(bytes);
+            stream.Flush(true);
+        }
+        File.SetAttributes(marker, File.GetAttributes(marker) | FileAttributes.Hidden);
     }
     [DllImport("kernel32.dll", EntryPoint = "CreateDirectoryW", CharSet = CharSet.Unicode, SetLastError = true)]
     private static extern bool CreateDirectory(string path, IntPtr security);
