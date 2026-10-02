@@ -12,7 +12,11 @@ var tests = new (string Name, Func<Task> Run)[]
     ("已有根目录离线时保留关联并明确另选", OfflineRootSelection),
     ("抢先创建目录与清理失败不误关联", CompetingDirectoryRecovery),
     ("中断自启操作按实际配置恢复", InterruptedStartup),
-    ("不完整归属标识可核对恢复", InterruptedIdentity)
+    ("不完整归属标识可核对恢复", InterruptedIdentity),
+    ("真实内容、外部变化及失联目录", ContentsAndChanges),
+    ("多 Folder 展开及空间不足回滚", LayoutChecks.Expansion),
+    ("屏幕四边受阻反向一像素及滑动", LayoutChecks.ScreenEdges),
+    ("Folder 四向接触、不穿越及尺寸重启恢复", LayoutChecks.ContactAndPersistence)
 };
 var failures = 0;
 var selected = tests.Where(t => args.Length == 0 || t.Name.Contains(args[0], StringComparison.Ordinal)).ToArray();
@@ -43,6 +47,33 @@ static async Task CreateAndRestart()
 }
 
 static void Check(bool condition, string message) { if (!condition) throw new Exception(message); }
+
+static async Task ContentsAndChanges()
+{
+    using var fixture = new Fixture();
+    IDesktopWorkspace workspace = new DesktopWorkspace(fixture.Store, new TestStartup());
+    DisplayArea[] areas = [new(0, 0, 1000, 800)];
+    await workspace.InitializeAsync(areas);
+    await workspace.SelectRootAsync(fixture.Content);
+    await workspace.CreateFolderAsync("真实内容");
+    var path = workspace.Snapshot.Folders.Single().ActualPath;
+    File.WriteAllText(Path.Combine(path, "短.txt"), "真实文件");
+    File.WriteAllText(Path.Combine(path, "快捷方式.lnk"), "文件计数不解析目标");
+    Directory.CreateDirectory(Path.Combine(path, "普通子文件夹"));
+    await workspace.RefreshAsync(areas);
+    var folder = workspace.Snapshot.Folders.Single();
+    Check(folder.FileCount == 2 && folder.Entries!.Count == 3, "直接文件含快捷方式，子目录仍展示，隐藏内部标识");
+    Check(folder.Entries.Single(e => e.Name == "普通子文件夹").IsDirectory, "实际子目录类型");
+    File.Move(Path.Combine(path, "短.txt"), Path.Combine(path, "重命名.txt"));
+    File.Delete(Path.Combine(path, "快捷方式.lnk"));
+    await workspace.RefreshAsync(areas);
+    folder = workspace.Snapshot.Folders.Single();
+    Check(folder.FileCount == 1 && folder.Entries!.Any(e => e.Name == "重命名.txt") && !folder.Entries.Any(e => e.Name == "短.txt"), "外部删除和重命名更新实际内容");
+    Directory.Move(path, path + "-离线");
+    await workspace.RefreshAsync(areas);
+    folder = workspace.Snapshot.Folders.Single();
+    Check(folder.FileCount == null && folder.Notice != null && folder.Entries!.Count == 0 && !Directory.Exists(path), "失联明确说明，保留记录，不生成空目录");
+}
 
 static async Task InterruptedCreate()
 {

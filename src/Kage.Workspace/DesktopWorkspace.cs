@@ -257,7 +257,76 @@ public sealed class DesktopWorkspace(IWorkspaceStore store, IStartupRegistration
     });
 
     private OperationResult Locked() => new(Outcome.RecoveryRequired, "工作区处于恢复状态，暂停修改。请检查说明并恢复备份或重启核对未完成操作。");
+
+    public Task<OperationResult> ToggleFolderAsync(Guid id) => Run(() =>
+    {
+        if (blocked) return Locked();
+        var target = snapshot.Folders.FirstOrDefault(folder => folder.Folder.Id == id && folder.Visible);
+        if (target == null) return new(Outcome.Failed, "Folder 当前不可展示，请先在设置刷新展示。");
+        var changed = target.Folder with { Expanded = !target.Folder.Expanded };
+        var next = state.Folders.ToDictionary(folder => folder.Id);
+        next[id] = changed;
+        if (changed.Expanded)
+        {
+            var area = HeaderLayout.Available(changed, displays, []);
+            if (area == null) return new(Outcome.Failed, "当前位置空间不足，无法展开；请移动或缩小 Folder。");
+            var occupied = new List<(FolderRecord Folder, DisplayArea Area)> { (changed, area) };
+            foreach (var other in snapshot.Folders.Where(folder => folder.Visible && folder.Folder.Id != id))
+            {
+                var placed = HeaderLayout.Find(other.Folder, displays, occupied);
+                if (placed == null) return new(Outcome.Failed, "桌面空间不足，已取消展开并保留原布局；请缩小或折叠其他 Folder。");
+                next[placed.Id] = placed;
+                occupied.Add((placed, HeaderLayout.Available(placed, displays, occupied)!));
+            }
+        }
+        var complete = state with { Folders = state.Folders.Select(folder => next[folder.Id]).ToArray() };
+        store.Save(complete);
+        state = complete;
+        Publish();
+        return new(Outcome.Success, changed.Expanded ? "已展开。" : "已折叠。");
+    });
     private string ContentPath(FolderRecord folder) => Path.Combine(folder.ContentRoot ?? state.Root, folder.Name);
+
+    public LayoutInteraction? BeginLayout(Guid id)
+    {
+        var current = snapshot;
+        return current.RecoveryRequired || !current.Folders.Any(folder => folder.Folder.Id == id && folder.Visible)
+            ? null : new(id, current, displays);
+    }
+
+    public Task<OperationResult> CommitLayoutAsync(LayoutInteraction interaction)
+    {
+        interaction.EndDrag();
+        var proposed = interaction.Folders.ToArray();
+        return Run(() =>
+        {
+            if (blocked) return Locked();
+            if (!state.Folders.SequenceEqual(interaction.Original)) return new(Outcome.Failed, "布局已发生变化，本次输入未覆盖新布局；请重试。");
+            var occupied = new List<(FolderRecord Folder, DisplayArea Area)>();
+            foreach (var folder in proposed.Where(folder => folder.Visible))
+            {
+                var area = HeaderLayout.Available(folder.Folder, displays, occupied);
+                if (area == null) return new(Outcome.Failed, "当前显示区域无法容纳本次布局，已保留原布局。");
+                occupied.Add((folder.Folder, area));
+            }
+            var next = state with { Folders = proposed.Select(folder => folder.Folder).ToArray() };
+            if (!next.Folders.SequenceEqual(state.Folders)) store.Save(next);
+            state = next;
+            Publish();
+            return new(Outcome.Success, "位置和尺寸已保存。");
+        });
+    }
+
+    public Task<OperationResult> SetViewAsync(Guid id, bool grid) => Run(() =>
+    {
+        if (blocked) return Locked();
+        if (!state.Folders.Any(folder => folder.Id == id)) return new(Outcome.Failed, "Folder 不存在。");
+        var next = state with { Folders = state.Folders.Select(folder => folder.Id == id ? folder with { Grid = grid } : folder).ToArray() };
+        store.Save(next);
+        state = next;
+        Publish();
+        return new(Outcome.Success, grid ? "已切换网格。" : "已切换列表。");
+    });
 
     private void PlaceAndPublish(bool save)
     {
@@ -282,10 +351,23 @@ public sealed class DesktopWorkspace(IWorkspaceStore store, IStartupRegistration
             if (area != null) placed.Add((folder, area));
             var path = ContentPath(folder);
             int? count = null;
+            var entries = new List<ContentEntry>();
             string? notice = area == null ? "桌面空间不足，记录与内容保留；释放空间后可在设置刷新。" : null;
-            try { count = Directory.EnumerateFiles(path).Count(file => !WindowsPaths.IsIdentityFile(file)); }
-            catch (Exception e) { notice = $"内容目录不可读：{path}。{e.Message}"; }
-            rendered.Add(new(folder, path, area != null, count, notice));
+            try
+            {
+                foreach (var info in new DirectoryInfo(path).EnumerateFileSystemInfos())
+                {
+                    if (WindowsPaths.IsIdentityFile(info.FullName)) continue;
+                    entries.Add(new(info.FullName, info.Name, (info.Attributes & FileAttributes.Directory) != 0,
+                        info.LastWriteTimeUtc.Ticks, info is FileInfo file ? file.Length : 0));
+                }
+                count = entries.Count(entry => !entry.IsDirectory);
+            }
+            catch (Exception e) { notice = $"{notice}\n内容目录不可读或枚举未完成：{path}。{e.Message}".Trim(); }
+            rendered.Add(new(folder, path, area != null, count, notice)
+            {
+                Entries = entries.OrderBy(entry => entry.Name, StringComparer.OrdinalIgnoreCase).ToArray()
+            });
         }
         var messages = new List<string>(notices);
         if (startupNotice != null) messages.Add(startupNotice);

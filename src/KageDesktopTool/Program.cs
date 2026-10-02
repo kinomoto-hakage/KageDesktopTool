@@ -12,6 +12,12 @@ public static class Program
     public static int Main(string[] args)
     {
         if (args.Contains("--session-check")) return SessionChecks.Run();
+        if (args.Contains("--content-layout-check")) return ContentLayoutChecks.Run();
+        if (args.Length == 2 && args[0] == "--open-target-check")
+        {
+            File.WriteAllText(args[1], "隔离目标已被 Windows Shell 打开");
+            return 0;
+        }
         if (args.Length == 2 && args[0] == "--instance-check")
         {
             using var check = new SingleInstance(args[1]);

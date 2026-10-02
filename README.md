@@ -1,6 +1,6 @@
 # KageDesktopTool
 
-Windows 桌面整理工具，采用 C#、.NET 10 和 WPF。当前交付 [04 创建与运行生命周期](.scratch/desktop-folder/issues/04-create-lifecycle.md)：真实内容文件夹、透明桌面头部、重启恢复、托盘、`Ctrl+Alt+K`、单实例和用户登录自启。
+Windows 桌面整理工具，采用 C#、.NET 10 和 WPF。已交付创建与运行生命周期，本轮增加 [05 原生内容和布局](.scratch/desktop-folder/issues/05-content-and-layout.md)：真实内容查看、Shell 图标、网格／列表、多 Folder 展开、不重叠拖动和尺寸调整，以及布局重启恢复。
 
 ## 运行
 
@@ -18,7 +18,10 @@ rtk proxy dotnet run --project src/KageDesktopTool/KageDesktopTool.csproj --no-r
 ## 使用
 
 - 托盘右键“新建 Folder”或 `Ctrl+Alt+K` 输入名称，创建同名真实内容文件夹及灰色半透明头部。名称遵守 Windows 规则；同名时选择保留两份自动编号、跳过或取消。
-- 头部显示名称及直接文件数。目前点击右侧按钮打开实际内容文件夹；下方内容展示、展开、拖动和尺寸调整由任务 05 实现。
+- 头部显示名称及直接文件数，快捷方式计为文件，普通子文件夹仍在展示部分显示。点击右侧按钮独立展开／折叠，各 Folder 可以同时展开。
+- 展示部分一键切换系统尺寸的网格／列表，使用实际路径的 Windows Shell 图标和覆盖；双击文件使用默认程序，子文件夹使用资源管理器。后台每 3 秒核对目录和图标，外部新增、删除及重命名自动更新；目录失联时保留记录并显示说明。
+- 拖动头部移动 Folder，贴屏幕或其他 Folder 边缘可沿边滑动，受阻后可以立即反向。右下角调整尺寸：折叠时调整头部宽高，展开时调整共享宽度及内容区高度，左侧保持固定。展开优先保留本头部位置并安排冲突 Folder；放不下或尺寸会重叠时保留原布局。
+- 位置、尺寸、展开和查看方式在操作结束后保存，重启恢复。内容加载和图标读取在后台进行，鼠标移动只预览几何布局。
 - 托盘“设置”选择存储根目录、应用自启选择、刷新展示或查看异常说明。关闭设置后继续运行；托盘“退出”释放窗口、热键及后台刷新，保留内容。
 - 设置中的自启开关需点击“应用自启选择”。只有注册结果和偏好保存都成功才显示成功；失败说明实际结果并尝试恢复原配置。启动目标采用当前包内 EXE 的绝对路径，支持含空格的发布目录。
 - 重复启动打开已有实例的设置；热键被占用时托盘仍可创建，并显示原因。
@@ -42,8 +45,9 @@ rtk proxy dotnet restore tests/Kage.Workspace.Checks/Kage.Workspace.Checks.cspro
 rtk proxy dotnet run --project tests/Kage.Workspace.Checks --no-restore
 rtk proxy dotnet build src/KageDesktopTool/KageDesktopTool.csproj --no-restore
 rtk proxy dotnet src/KageDesktopTool/bin/Debug/net10.0-windows/KageDesktopTool.dll --session-check
+rtk proxy dotnet src/KageDesktopTool/bin/Debug/net10.0-windows/KageDesktopTool.dll --content-layout-check
 ```
 
-最后一项需在当前用户的交互式 Windows 会话中运行；它使用随机隔离目录及随机临时自启项，短暂显示测试头部、模拟输入 `Ctrl+Alt+K` 并恢复占用状态，结束后释放资源并清理。不会读写正式工作区或以个人内容作夹具。日志和预览写到 `.scratch/desktop-folder/verification/`；构建及检查产物不纳入 Git。
+最后两项需在当前用户的交互式 Windows 会话中运行。`--session-check` 使用随机隔离目录及随机临时自启项，短暂显示测试头部、模拟输入 `Ctrl+Alt+K` 并恢复占用状态；`--content-layout-check` 核对实际 WPF 网格／列表、真实窗口边界、捕获释放、双击打开及外部变化，并关闭自己打开的夹具资源管理器窗口。结束后释放资源并清理，不读写正式工作区或以个人内容作夹具。日志和预览写到 `.scratch/desktop-folder/verification/`；构建及检查产物不纳入 Git。详见 [05 验收记录](docs/verification/05-content-and-layout.md)。
 
 结构：`src/Kage.Workspace/` 提供共用业务 interface 和真实状态／目录处理；`src/KageDesktopTool/` 提供 WPF、桌面宿主、托盘、热键、单实例及注册表适配器。`prototypes/` 保留已验收的原型。

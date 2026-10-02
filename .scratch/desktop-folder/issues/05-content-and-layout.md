@@ -1,8 +1,8 @@
 # 05: 原生内容查看、多 Folder 展开及不重叠布局
 
 Type: implementation
-Status: ready-for-agent
-Labels: ready-for-agent
+Status: claimed
+Labels: claimed
 Approved: 2026-10-02
 Plan: ../ticket-plan.md
 Spec: ../spec.md

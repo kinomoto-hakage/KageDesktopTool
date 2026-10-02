@@ -37,6 +37,8 @@ internal sealed class Runtime : IDisposable
     private bool creating;
     private bool exiting;
     private bool disposed;
+    private LayoutInteraction? activeInteraction;
+    internal bool Interacting => activeInteraction != null;
 
     internal Runtime(IDesktopWorkspace workspace)
     {
@@ -63,7 +65,7 @@ internal sealed class Runtime : IDisposable
         refresh = new DispatcherTimer { Interval = TimeSpan.FromSeconds(3) };
         refresh.Tick += async (_, _) =>
         {
-            if (refreshing || exiting) return;
+            if (refreshing || exiting || Interacting) return;
             refreshing = true;
             try
             {
@@ -93,7 +95,7 @@ internal sealed class Runtime : IDisposable
 
     internal void Render()
     {
-        if (disposed || exiting) return;
+        if (disposed || exiting || Interacting) return;
         var snapshot = Workspace.Snapshot;
         foreach (var obsolete in Headers.Keys.Where(id => !snapshot.Folders.Any(folder => folder.Folder.Id == id)).ToArray())
         {
@@ -124,6 +126,29 @@ internal sealed class Runtime : IDisposable
         settings.Show();
         if (settings.WindowState == WindowState.Minimized) settings.WindowState = WindowState.Normal;
         settings.Activate();
+    }
+
+    internal LayoutInteraction? BeginInteraction(Guid id)
+    {
+        if (Interacting || Exiting) return null;
+        activeInteraction = Workspace.BeginLayout(id);
+        return activeInteraction;
+    }
+
+    internal void Preview(LayoutInteraction interaction)
+    {
+        foreach (var folder in interaction.Folders)
+            if (Headers.TryGetValue(folder.Folder.Id, out var header) && header.Record != folder.Folder) header.ApplyGeometry(folder);
+    }
+
+    internal async Task CommitInteractionAsync(LayoutInteraction interaction)
+    {
+        try
+        {
+            var result = await Workspace.CommitLayoutAsync(interaction);
+            if (!result.Succeeded) Balloon(result.Message);
+        }
+        finally { activeInteraction = null; Render(); }
     }
 
     internal async Task CreateAsync()
@@ -174,6 +199,7 @@ internal sealed class Runtime : IDisposable
         if (exiting) return;
         exiting = true;
         refresh.Stop();
+        if (activeInteraction != null) await CommitInteractionAsync(activeInteraction);
         var result = await Workspace.RefreshAsync(WindowsDesktop.Displays());
         if (result.Outcome == Outcome.Failed) MessageBox.Show($"退出前状态提交失败：{result.Message}。原记录及内容均保留。", "退出 Kage");
         Dispose();
@@ -182,7 +208,13 @@ internal sealed class Runtime : IDisposable
 
     internal static void Open(string path)
     {
-        try { Process.Start(new ProcessStartInfo(path) { UseShellExecute = true }); }
+        try
+        {
+            var start = Directory.Exists(path)
+                ? new ProcessStartInfo("explorer.exe") { UseShellExecute = false, ArgumentList = { path } }
+                : new ProcessStartInfo(path) { UseShellExecute = true };
+            Process.Start(start);
+        }
         catch (Exception e) { MessageBox.Show($"无法打开 {path}\n{e.Message}", "Kage 桌面整理"); }
     }
 

@@ -9,7 +9,7 @@ public sealed record OperationResult(Outcome Outcome, string Message, string? Ac
     public bool Succeeded => Outcome == Outcome.Success;
 }
 
-// 坐标及布局尺寸使用物理像素，WPF 适配器负责按屏幕 DPI 转换。
+// 位置使用屏幕物理像素，尺寸使用 DIP；布局按显示器 Scale 换算边界。
 public sealed record DisplayArea(int X, int Y, int Width, int Height, double Scale = 1);
 public sealed record FolderRecord([property: JsonRequired] Guid Id, [property: JsonRequired] string Name,
     [property: JsonRequired] int X = 0, [property: JsonRequired] int Y = 0,
@@ -17,7 +17,11 @@ public sealed record FolderRecord([property: JsonRequired] Guid Id, [property: J
     [property: JsonRequired] bool Expanded = false, [property: JsonRequired] bool Grid = true,
     [property: JsonRequired] string Color = "#666666", [property: JsonRequired] double Opacity = .68,
     string? ContentRoot = null);
-public sealed record FolderSnapshot(FolderRecord Folder, string ActualPath, bool Visible, int? FileCount, string? Notice);
+public sealed record ContentEntry(string ActualPath, string Name, bool IsDirectory, long ModifiedTicks, long Length);
+public sealed record FolderSnapshot(FolderRecord Folder, string ActualPath, bool Visible, int? FileCount, string? Notice)
+{
+    public IReadOnlyList<ContentEntry> Entries { get; init; } = [];
+}
 public sealed record WorkspaceSnapshot(string Root, bool StartupEnabled, string IconChoice,
     IReadOnlyList<FolderSnapshot> Folders, bool RecoveryRequired, IReadOnlyList<string> Notices);
 
@@ -31,6 +35,10 @@ public interface IDesktopWorkspace
     Task<OperationResult> RestoreBackupAsync();
     Task<OperationResult> ConfirmPendingCreateAsync();
     Task<OperationResult> RefreshAsync(IReadOnlyList<DisplayArea> displays);
+    Task<OperationResult> ToggleFolderAsync(Guid id);
+    LayoutInteraction? BeginLayout(Guid id);
+    Task<OperationResult> CommitLayoutAsync(LayoutInteraction interaction);
+    Task<OperationResult> SetViewAsync(Guid id, bool grid);
 }
 
 public sealed record PendingStartup([property: JsonRequired] bool Enabled,
