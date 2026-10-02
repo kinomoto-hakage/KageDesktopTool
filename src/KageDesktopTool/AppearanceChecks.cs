@@ -112,22 +112,6 @@ internal static class AppearanceChecks
                 Check(dialog.Interaction.Color == "#4679AB", "取消原生调色盘保留草稿颜色");
                 dialog.Close();
                 Check(((SolidColorBrush)header.Surface.Background).Color.A == 173 && header.Record == original, "关闭外观窗口恢复打开前外观");
-                // 临时切到桌面拍摄实际合成效果，随后恢复原来的窗口状态。
-                object? shell = null;
-                var desktopShown = false;
-                try
-                {
-                    shell = Activator.CreateInstance(Type.GetTypeFromProgID("Shell.Application")!);
-                    ((dynamic)shell!).ToggleDesktop();
-                    desktopShown = true;
-                    await Task.Delay(500);
-                    Capture(header, "06-真实桌面.png");
-                }
-                finally
-                {
-                    if (desktopShown) ((dynamic)shell!).ToggleDesktop();
-                    if (shell != null) Marshal.FinalReleaseComObject(shell);
-                }
 
                 dialog = runtime.CreateAppearance(header.FolderId)!;
                 dialog.Show();
@@ -186,14 +170,6 @@ internal static class AppearanceChecks
             png.Save(file);
         }
 
-        void Capture(FolderHeader header, string name)
-        {
-            WindowsDesktop.GetWindowRect(header.Handle, out var bounds);
-            using var bitmap = new System.Drawing.Bitmap(bounds.Right - bounds.Left, bounds.Bottom - bounds.Top);
-            using var graphics = System.Drawing.Graphics.FromImage(bitmap);
-            graphics.CopyFromScreen(bounds.Left, bounds.Top, 0, 0, bitmap.Size);
-            bitmap.Save(Path.Combine(evidence, name), System.Drawing.Imaging.ImageFormat.Png);
-        }
     }
 
     private sealed class NoStartup : IStartupRegistration
