@@ -1,0 +1,19 @@
+<Project Sdk="Microsoft.NET.Sdk">
+  <PropertyGroup>
+    <OutputType>WinExe</OutputType>
+    <TargetFramework>net10.0-windows</TargetFramework>
+    <UseWPF>true</UseWPF>
+    <UseWindowsForms>true</UseWindowsForms>
+    <ImplicitUsings>disable</ImplicitUsings>
+    <Nullable>enable</Nullable>
+    <TreatWarningsAsErrors>true</TreatWarningsAsErrors>
+    <ApplicationManifest>app.manifest</ApplicationManifest>
+    <ApplicationIcon>../../prototypes/DesktopFolderPrototype/Assets/app-d.ico</ApplicationIcon>
+  </PropertyGroup>
+  <ItemGroup>
+    <ProjectReference Include="../Kage.Workspace/Kage.Workspace.csproj" />
+    <!-- 已验收图标直接作为构建资源，发布后无需访问原型目录。 -->
+    <Content Include="../../prototypes/DesktopFolderPrototype/Assets/*.ico" Link="Assets/%(Filename)%(Extension)" CopyToOutputDirectory="PreserveNewest" CopyToPublishDirectory="PreserveNewest" />
+    <Resource Include="../../prototypes/DesktopFolderPrototype/Assets/app-d.png" Link="Assets/app-d.png" />
+  </ItemGroup>
+</Project>

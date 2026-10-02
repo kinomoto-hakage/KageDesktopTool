@@ -1,7 +1,7 @@
 # 04: 创建真实 Folder、重启恢复并控制运行和自启
 
 Type: implementation
-Status: ready-for-agent
+Status: claimed
 Labels: ready-for-agent
 Approved: 2026-10-02
 Plan: ../ticket-plan.md

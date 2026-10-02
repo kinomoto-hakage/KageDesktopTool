@@ -6,3 +6,8 @@ prototypes/DesktopFolderPrototype/PROTOTYPE-state.json
 prototypes/DesktopFolderPrototype/PROTOTYPE-settings.json
 prototypes/DesktopFolderPrototype/PROTOTYPE-report.json
 prototypes/DesktopFolderPrototype/PROTOTYPE-preview-*.png
+
+# 正式程序、检查工具的构建与隔离验收输出
+**/bin/
+**/obj/
+.scratch/desktop-folder/verification/
