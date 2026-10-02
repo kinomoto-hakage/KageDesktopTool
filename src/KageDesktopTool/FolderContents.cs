@@ -15,9 +15,9 @@ internal sealed class FolderContents : DockPanel
     private readonly Button view;
     private FolderSnapshot? snapshot;
     private double scale;
-    private int generation;
+    private volatile int generation;
     private bool loading;
-    private bool disposed;
+    private volatile bool disposed;
     internal Task IconsLoaded { get; private set; } = Task.CompletedTask;
 
     internal FolderContents(Guid id)
@@ -112,7 +112,7 @@ internal sealed class FolderContents : DockPanel
                 var small = !snapshot!.Folder.Grid;
                 var items = Items.Items.Cast<ListBoxItem>().ToArray();
                 var paths = items.Select(item => (string)item.Tag).ToArray();
-                var icons = await Task.Run(() => paths.Select(path =>
+                var icons = await Task.Run(() => paths.TakeWhile(_ => !disposed && currentGeneration == generation).Select(path =>
                 {
                     try { return (Source: ShellIcons.ForFile(path, small), Error: (string?)null); }
                     catch (Exception e) { return (Source: (ImageSource?)null, Error: e.Message); }

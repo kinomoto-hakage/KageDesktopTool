@@ -16,7 +16,10 @@ var tests = new (string Name, Func<Task> Run)[]
     ("真实内容、外部变化及失联目录", ContentsAndChanges),
     ("多 Folder 展开及空间不足回滚", LayoutChecks.Expansion),
     ("屏幕四边受阻反向一像素及滑动", LayoutChecks.ScreenEdges),
-    ("Folder 四向接触、不穿越及尺寸重启恢复", LayoutChecks.ContactAndPersistence)
+    ("Folder 四向接触、不穿越及尺寸重启恢复", LayoutChecks.ContactAndPersistence),
+    ("对角轨迹沿实际路径不穿越 Folder", LayoutChecks.DiagonalPath),
+    ("暂未展示 Folder 不挤动展开头部", LayoutChecks.HiddenAndExpansion),
+    ("布局保存失败保留原状态与内容", LayoutChecks.SaveFailure)
 };
 var failures = 0;
 var selected = tests.Where(t => args.Length == 0 || t.Name.Contains(args[0], StringComparison.Ordinal)).ToArray();

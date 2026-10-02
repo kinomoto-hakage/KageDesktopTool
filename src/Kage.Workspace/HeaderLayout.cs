@@ -17,14 +17,18 @@ internal static class HeaderLayout
     internal static FolderRecord[] Place(FolderRecord[] folders, IReadOnlyList<DisplayArea> displays)
     {
         var occupied = new List<(FolderRecord Folder, DisplayArea Area)>();
-        return folders.Select(folder =>
+        var placement = new Dictionary<Guid, FolderRecord>();
+        // 先保留已展示的布局，再恢复暂未展示记录；避免后台恢复抢走可见头部的位置。
+        foreach (var folder in folders.OrderBy(folder => folder.LayoutHidden))
         {
             // 找不到空位仍保留原记录及内容关联。
             var candidate = Find(folder, displays, occupied) ?? folder;
             var area = Available(candidate, displays, occupied);
+            candidate = candidate with { LayoutHidden = area == null };
             if (area != null) occupied.Add((candidate, area));
-            return candidate;
-        }).ToArray();
+            placement[folder.Id] = candidate;
+        }
+        return folders.Select(folder => placement[folder.Id]).ToArray();
     }
 
     private static IEnumerable<(int X, int Y)> Positions(FolderRecord folder, DisplayArea area, IReadOnlyList<(FolderRecord Folder, DisplayArea Area)> occupied)

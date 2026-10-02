@@ -16,7 +16,7 @@ public sealed record FolderRecord([property: JsonRequired] Guid Id, [property: J
     [property: JsonRequired] double HeaderWidth = 300, [property: JsonRequired] double HeaderHeight = 48, [property: JsonRequired] double BodyHeight = 260,
     [property: JsonRequired] bool Expanded = false, [property: JsonRequired] bool Grid = true,
     [property: JsonRequired] string Color = "#666666", [property: JsonRequired] double Opacity = .68,
-    string? ContentRoot = null);
+    string? ContentRoot = null, bool LayoutHidden = false);
 public sealed record ContentEntry(string ActualPath, string Name, bool IsDirectory, long ModifiedTicks, long Length);
 public sealed record FolderSnapshot(FolderRecord Folder, string ActualPath, bool Visible, int? FileCount, string? Notice)
 {

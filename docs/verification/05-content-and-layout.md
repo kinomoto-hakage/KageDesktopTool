@@ -6,9 +6,10 @@
 
 - 真实目录展示直接文件、快捷方式和普通子文件夹；隐藏归属标识不展示也不计数。文件数包含快捷方式，不包含子目录。枚举失败返回已取得的实际项目及说明，不复用旧项目冒充成功，也不重新创建失联目录。
 - 多个 Folder 独立展开；展开保留本头部位置，为冲突 Folder 搜索附近空位。空间不足时不提交任何新布局。折叠不改变其他 Folder 的展开状态。
-- 屏幕四边和折叠／展开 Folder 四向接触轨迹覆盖大步输入不穿越、受阻后反向一像素、沿边滑动和结束后忽略输入。预览不提交持久状态。
+- 屏幕四边和折叠／展开 Folder 四向接触轨迹覆盖大步输入不穿越、受阻后反向一像素、沿边滑动和结束后忽略输入。对角输入使用 swept AABB 检查真实直线，接触后消除法向位移并继续切向扫描。预览不提交持久状态。
 - 折叠调整头部宽高，展开调整共享宽度及内容高度，位置保持固定；会越界或重叠的尺寸被拒绝。结束输入才保存，重启恢复位置、尺寸、展开及查看方式；过期输入不会覆盖更新后的布局。
-- 继承 04 的空间不足保留记录、目录及设置刷新恢复入口。当前拖动约束在所在显示器工作区域，多屏跨屏及 DPI 环境变化的完整处理由 12 承接。
+- 继承 04 的空间不足保留记录、目录及设置刷新恢复入口。持久化可选的暂未展示标记，恢复时优先保留可见布局，再为隐藏记录寻找空位；兼容原状态文件。发布快照只使用已提交几何，不再次重排。当前拖动约束在所在显示器工作区域，多屏跨屏及 DPI 环境变化的完整处理由 12 承接。
+- 输入或展开保存失败时返回实际失败，保留此前布局和用户内容；重启恢复上次有效状态。
 
 ## 真实 Windows 会话结果
 
@@ -29,6 +30,19 @@
 rtk proxy dotnet run --project tests/Kage.Workspace.Checks --no-restore
 rtk proxy dotnet build src/KageDesktopTool/KageDesktopTool.csproj --no-restore
 rtk proxy dotnet src/KageDesktopTool/bin/Debug/net10.0-windows/KageDesktopTool.dll --content-layout-check
+rtk proxy dotnet publish src/KageDesktopTool/KageDesktopTool.csproj -c Release --no-restore --output '.scratch/desktop-folder/verification/发布包 含空格'
+rtk proxy dotnet '.scratch/desktop-folder/verification/发布包 含空格/KageDesktopTool.dll' --content-layout-check
+rtk proxy dotnet '.scratch/desktop-folder/verification/发布包 含空格/KageDesktopTool.dll' --session-check
 ```
 
-业务全套 15 项通过；正式项目构建 0 警告、0 错误。规范及规格复核结果在完成后补充。文件移动、外观编辑、显示桌面／Explorer 重启、多屏变化及最终发布由对应后续任务交付。
+业务全套 18 项通过；正式项目构建 0 警告、0 错误。更新后的含空格 Release 检查包中，05 内容／布局及 04 生命周期真实 Windows 检查均返回退出码 0。文件移动、外观编辑、显示桌面／Explorer 重启、多屏变化及最终发布由对应后续任务交付。
+
+## Standards
+
+独立只读复核后未解决发现 0 项。中文、领域术语、issue 和源码布局符合约定。采纳后台生命周期观察，在每个图标读取开始前检查关闭及刷新代次，不继续读取失效批次；已进入 Shell 的一次读取不能强制中断，返回后不写入已关闭控件。
+
+## Spec
+
+初次复核发现 2 项 P1，均已修复并用主要业务 interface 回归：对角大步输入此前可能绕过直线路径上的障碍；隐藏记录恢复此前可能挤动刚展开的头部，造成保存与展示坐标不一致。新增轨迹和真实目录检查分别先复现失败，再验证修复、正常刷新及重启一致性。独立复核修复后未解决发现 0 项。
+
+最终未解决发现：Standards 0 项；Spec 0 项。

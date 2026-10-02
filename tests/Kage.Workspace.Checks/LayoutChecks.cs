@@ -119,4 +119,70 @@ internal static class LayoutChecks
         await resizing.ToggleFolderAsync(moving.Id);
         Ensure(!(await resizing.CommitLayoutAsync(stale)).Succeeded, "旧输入会话不覆盖并发新布局");
     }
+
+    internal static async Task DiagonalPath()
+    {
+        using var fixture = new Fixture();
+        var moving = new FolderRecord(Guid.NewGuid(), "对角移动", 0, 0);
+        var obstacle = new FolderRecord(Guid.NewGuid(), "路径中间", 400, 100);
+        Directory.CreateDirectory(Path.Combine(fixture.Content, moving.Name));
+        Directory.CreateDirectory(Path.Combine(fixture.Content, obstacle.Name));
+        fixture.Store.Save(new WorkspaceState { Root = fixture.Content, Folders = [moving, obstacle] });
+        IDesktopWorkspace workspace = new DesktopWorkspace(fixture.Store, new TestStartup());
+        await workspace.InitializeAsync([new(0, 0, 1400, 800)]);
+        var edit = workspace.BeginLayout(moving.Id)!;
+        edit.BeginDrag(0, 0);
+        edit.DragTo(800, 200);
+        var stopped = edit.Folders.Single(f => f.Folder.Id == moving.Id).Folder;
+        Ensure(stopped.X == 800 && stopped.Y == 40, "直线对角轨迹先接触障碍上边，阻止法向位移并保留水平滑动");
+        edit.DragTo(800, 199);
+        Ensure(edit.Folders.Single(f => f.Folder.Id == moving.Id).Folder.Y == 39, "对角接触后立即反向一像素");
+    }
+
+    internal static async Task HiddenAndExpansion()
+    {
+        using var fixture = new Fixture();
+        var a = new FolderRecord(Guid.NewGuid(), "可见", 150, 380, 600, 48, 400);
+        var b = new FolderRecord(Guid.NewGuid(), "暂未展示", 340, 150, 300, 48, 400, true);
+        var c = new FolderRecord(Guid.NewGuid(), "展开目标", 350, 120, 300, 48, 400);
+        foreach (var folder in new[] { a, b, c }) Directory.CreateDirectory(Path.Combine(fixture.Content, folder.Name));
+        fixture.Store.Save(new WorkspaceState { Root = fixture.Content, Folders = [a, b, c] });
+        IDesktopWorkspace workspace = new DesktopWorkspace(fixture.Store, new TestStartup());
+        DisplayArea[] areas = [new(0, 0, 1000, 600)];
+        await workspace.InitializeAsync(areas);
+        Ensure(!workspace.Snapshot.Folders.Single(f => f.Folder.Id == b.Id).Visible, "空间不足保留展开记录但暂不展示");
+        Ensure((await workspace.ToggleFolderAsync(c.Id)).Succeeded, "展开可见目标成功");
+        var target = workspace.Snapshot.Folders.Single(f => f.Folder.Id == c.Id);
+        Ensure(target.Visible && target.Folder.X == 350 && target.Folder.Y == 120, "后台恢复隐藏记录不挤动本头部");
+        var visible = workspace.Snapshot.Folders.Where(f => f.Visible).Select(f => f.Folder).ToArray();
+        await workspace.RefreshAsync(areas);
+        Ensure(visible.All(saved => workspace.Snapshot.Folders.Single(f => f.Folder.Id == saved.Id).Folder == saved), "正常刷新恢复其他记录时保留此前可见布局");
+        var expected = workspace.Snapshot.Folders.Select(f => f.Folder).ToArray();
+        workspace = new DesktopWorkspace(fixture.Store, new TestStartup());
+        await workspace.InitializeAsync(areas);
+        Ensure(workspace.Snapshot.Folders.Select(f => f.Folder).SequenceEqual(expected), "重启恢复与此前实际显示布局完全一致");
+    }
+
+    internal static async Task SaveFailure()
+    {
+        using var fixture = new Fixture();
+        var store = new FailingStore(fixture.Store);
+        IDesktopWorkspace workspace = new DesktopWorkspace(store, new TestStartup());
+        DisplayArea[] areas = [new(0, 0, 1000, 800)];
+        await workspace.InitializeAsync(areas);
+        await workspace.SelectRootAsync(fixture.Content);
+        await workspace.CreateFolderAsync("保存失败");
+        var folder = workspace.Snapshot.Folders.Single();
+        File.WriteAllText(Path.Combine(folder.ActualPath, "真实内容.txt"), "不丢失");
+        var edit = workspace.BeginLayout(folder.Folder.Id)!;
+        edit.BeginDrag(0, 0);
+        edit.DragTo(70, 30);
+        store.FailOnSave = store.Saves + 1;
+        Ensure(!(await workspace.CommitLayoutAsync(edit)).Succeeded && workspace.Snapshot.Folders.Single().Folder == folder.Folder, "输入保存失败保留原位置");
+        store.FailOnSave = store.Saves + 1;
+        Ensure(!(await workspace.ToggleFolderAsync(folder.Folder.Id)).Succeeded && !workspace.Snapshot.Folders.Single().Folder.Expanded, "展开保存失败保留原布局");
+        var restarted = new DesktopWorkspace(fixture.Store, new TestStartup());
+        await restarted.InitializeAsync(areas);
+        Ensure(restarted.Snapshot.Folders.Single().Folder == folder.Folder && File.ReadAllText(Path.Combine(folder.ActualPath, "真实内容.txt")) == "不丢失", "失败后重启保留先前持久状态与真实内容");
+    }
 }

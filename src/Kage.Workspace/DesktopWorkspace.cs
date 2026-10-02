@@ -342,12 +342,13 @@ public sealed class DesktopWorkspace(IWorkspaceStore store, IStartupRegistration
 
     private void Publish(FolderRecord[]? placement = null)
     {
-        var folders = placement ?? HeaderLayout.Place(state.Folders, displays);
+        // 发布已提交的几何结果，不再次重排；重新寻找空位只在显式刷新／恢复中执行并保存。
+        var folders = placement ?? state.Folders;
         var placed = new List<(FolderRecord Folder, DisplayArea Area)>();
         var rendered = new List<FolderSnapshot>();
         foreach (var folder in folders)
         {
-            var area = HeaderLayout.Available(folder, displays, placed);
+            var area = folder.LayoutHidden ? null : HeaderLayout.Available(folder, displays, placed);
             if (area != null) placed.Add((folder, area));
             var path = ContentPath(folder);
             int? count = null;

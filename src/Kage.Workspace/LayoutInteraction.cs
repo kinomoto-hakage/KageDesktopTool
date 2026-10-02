@@ -30,29 +30,56 @@ public sealed class LayoutInteraction
         if (area == null) return false;
         var width = HeaderLayout.Width(current, area);
         var height = HeaderLayout.Height(current, area);
-        var x = (int)Math.Clamp((long)current.X + screenX - previous.X, area.X, (long)area.X + area.Width - width);
-        var y = (int)Math.Clamp((long)current.Y + screenY - previous.Y, area.Y, (long)area.Y + area.Height - height);
         var occupied = Occupied();
-        // 先扫过水平路径，再扫过垂直路径；法向受阻仍保留切向移动。
-        foreach (var (other, display) in occupied)
+        var point = Sweep(current, area, width, height, (double)screenX - previous.X, (double)screenY - previous.Y, occupied);
+        return Replace(current with { X = point.X, Y = point.Y }, occupied);
+    }
+
+    private static (int X, int Y) Sweep(FolderRecord current, DisplayArea area, int width, int height,
+        double dx, double dy, IReadOnlyList<(FolderRecord Folder, DisplayArea Area)> occupied)
+    {
+        double x = current.X, y = current.Y;
+        // 扫过相邻输入间的真实直线。每次接触消除法向剩余位移，继续扫过切向路径。
+        for (var step = 0; step < 3 && (dx != 0 || dy != 0); step++)
         {
-            if (current.Y >= other.Y + HeaderLayout.Height(other, display) + HeaderLayout.Gap
-                || current.Y + height + HeaderLayout.Gap <= other.Y) continue;
-            if (x > current.X && current.X + width + HeaderLayout.Gap <= other.X)
-                x = Math.Min(x, other.X - width - HeaderLayout.Gap);
-            if (x < current.X && current.X >= other.X + HeaderLayout.Width(other, display) + HeaderLayout.Gap)
-                x = Math.Max(x, other.X + HeaderLayout.Width(other, display) + HeaderLayout.Gap);
+            double time = 1;
+            bool stopX = false, stopY = false;
+            void Contact(double candidate, bool horizontal, bool vertical)
+            {
+                if (candidate < 0 || candidate > time) return;
+                if (candidate < time - 1e-10) { time = candidate; stopX = horizontal; stopY = vertical; }
+                else { stopX |= horizontal; stopY |= vertical; }
+            }
+            if (dx < 0) Contact((area.X - x) / dx, true, false);
+            if (dx > 0) Contact(((double)area.X + area.Width - width - x) / dx, true, false);
+            if (dy < 0) Contact((area.Y - y) / dy, false, true);
+            if (dy > 0) Contact(((double)area.Y + area.Height - height - y) / dy, false, true);
+            foreach (var (other, display) in occupied)
+            {
+                var horizontal = AxisTimes(x, dx, (double)other.X - width - HeaderLayout.Gap,
+                    (double)other.X + HeaderLayout.Width(other, display) + HeaderLayout.Gap);
+                var vertical = AxisTimes(y, dy, (double)other.Y - height - HeaderLayout.Gap,
+                    (double)other.Y + HeaderLayout.Height(other, display) + HeaderLayout.Gap);
+                if (horizontal == null || vertical == null) continue;
+                var entry = Math.Max(horizontal.Value.Entry, vertical.Value.Entry);
+                var exit = Math.Min(horizontal.Value.Exit, vertical.Value.Exit);
+                if (entry < 0 || entry >= exit || exit <= 0) continue;
+                Contact(entry, horizontal.Value.Entry >= vertical.Value.Entry, vertical.Value.Entry >= horizontal.Value.Entry);
+            }
+            x += dx * time;
+            y += dy * time;
+            dx = stopX ? 0 : dx * (1 - time);
+            dy = stopY ? 0 : dy * (1 - time);
         }
-        foreach (var (other, display) in occupied)
-        {
-            if (x >= other.X + HeaderLayout.Width(other, display) + HeaderLayout.Gap
-                || x + width + HeaderLayout.Gap <= other.X) continue;
-            if (y > current.Y && current.Y + height + HeaderLayout.Gap <= other.Y)
-                y = Math.Min(y, other.Y - height - HeaderLayout.Gap);
-            if (y < current.Y && current.Y >= other.Y + HeaderLayout.Height(other, display) + HeaderLayout.Gap)
-                y = Math.Max(y, other.Y + HeaderLayout.Height(other, display) + HeaderLayout.Gap);
-        }
-        return Replace(current with { X = x, Y = y }, occupied);
+        return ((int)Math.Round(x), (int)Math.Round(y));
+    }
+
+    private static (double Entry, double Exit)? AxisTimes(double position, double delta, double minimum, double maximum)
+    {
+        if (delta == 0) return position <= minimum || position >= maximum ? null : (double.NegativeInfinity, double.PositiveInfinity);
+        var first = (minimum - position) / delta;
+        var second = (maximum - position) / delta;
+        return (Math.Min(first, second), Math.Max(first, second));
     }
 
     public bool ResizeBy(double widthDelta, double heightDelta)
