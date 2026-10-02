@@ -1,11 +1,13 @@
 # 08: 重命名 Folder 及两种删除方式
 
 Type: implementation
-Status: draft-awaiting-approval
+Status: ready-for-agent
+Labels: ready-for-agent
+Approved: 2026-10-02
+Plan: ../ticket-plan.md
 Spec: ../spec.md
-Blocked by: 4
+Blocked by: 04
 User stories: 36, 47, 49, 50, 51, 52, 53, 54
-Merged from: 10, 11
 
 **实现内容（What to build）：** 从头部菜单同步重命名真实目录，或选择保留内容并生成实际桌面快捷方式／完整目录进回收站；稳定标识、内容及状态与结果一致。
 
@@ -39,3 +41,7 @@ Merged from: 10, 11
 
 - 以正式规格的相关用户故事及验收矩阵为依据；本票交付界面入口、实际结果、必要状态和自己的测试。
 - 独立演示：从头部菜单同步重命名真实目录，或选择保留内容并生成实际桌面快捷方式／完整目录进回收站；稳定标识、内容及状态与结果一致。
+
+## Comments
+
+- 用户已认可合并方案、阻塞关系及本票验收标准，已正式发布。

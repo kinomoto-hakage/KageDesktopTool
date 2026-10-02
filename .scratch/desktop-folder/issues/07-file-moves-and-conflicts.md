@@ -1,11 +1,13 @@
 # 07: 真实文件双向批量移动与同名冲突
 
 Type: implementation
-Status: draft-awaiting-approval
+Status: ready-for-agent
+Labels: ready-for-agent
+Approved: 2026-10-02
+Plan: ../ticket-plan.md
 Spec: ../spec.md
-Blocked by: 5
+Blocked by: 05
 User stories: 42, 43, 44, 45, 46, 47, 48, 49
-Merged from: 08, 09
 
 **实现内容（What to build）：** 在桌面、资源管理器及多个 Folder 之间真实移动文件、快捷方式和普通子文件夹，支持多选、同名选择、取消与逐项结果，内容与展示保持一致。
 
@@ -39,3 +41,7 @@ Merged from: 08, 09
 
 - 以正式规格的相关用户故事及验收矩阵为依据；本票交付界面入口、实际结果、必要状态和自己的测试。
 - 独立演示：在桌面、资源管理器及多个 Folder 之间真实移动文件、快捷方式和普通子文件夹，支持多选、同名选择、取消与逐项结果，内容与展示保持一致。
+
+## Comments
+
+- 用户已认可合并方案、阻塞关系及本票验收标准，已正式发布。

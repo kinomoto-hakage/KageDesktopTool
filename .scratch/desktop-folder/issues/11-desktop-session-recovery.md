@@ -1,11 +1,13 @@
 # 11: 显示桌面及 Explorer 重启后恢复操作
 
 Type: implementation
-Status: draft-awaiting-approval
+Status: ready-for-agent
+Labels: ready-for-agent
+Approved: 2026-10-02
+Plan: ../ticket-plan.md
 Spec: ../spec.md
-Blocked by: 5, 7
+Blocked by: 05, 07
 User stories: 62, 65, 66, 68, 69
-Merged from: 15
 
 **实现内容（What to build）：** 在显示桌面和 Explorer 重启后恢复 Folder、托盘、输入和真实拖放；宿主不可用时说明展示状态并允许定位实际内容。
 
@@ -29,3 +31,7 @@ Merged from: 15
 
 - 以正式规格的相关用户故事及验收矩阵为依据；本票交付界面入口、实际结果、必要状态和自己的测试。
 - 独立演示：在显示桌面和 Explorer 重启后恢复 Folder、托盘、输入和真实拖放；宿主不可用时说明展示状态并允许定位实际内容。
+
+## Comments
+
+- 用户已认可合并方案、阻塞关系及本票验收标准，已正式发布。

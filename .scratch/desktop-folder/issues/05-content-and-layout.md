@@ -1,11 +1,13 @@
 # 05: 原生内容查看、多 Folder 展开及不重叠布局
 
 Type: implementation
-Status: draft-awaiting-approval
+Status: ready-for-agent
+Labels: ready-for-agent
+Approved: 2026-10-02
+Plan: ../ticket-plan.md
 Spec: ../spec.md
-Blocked by: 4
+Blocked by: 04
 User stories: 9, 10, 11, 12, 13, 14, 15, 16, 17, 18, 19, 20, 21, 22, 23, 24, 25, 26, 27, 28, 29, 30, 31, 32, 33, 34, 35, 50
-Merged from: 05, 06
 
 **实现内容（What to build）：** 在头部下方查看真实内容，切换原生网格／列表、打开项目并同步外部变化；多个 Folder 同时展开，可贴边拖动、立即反向、调尺寸并保存不重叠布局。
 
@@ -43,3 +45,7 @@ Merged from: 05, 06
 
 - 以正式规格的相关用户故事及验收矩阵为依据；本票交付界面入口、实际结果、必要状态和自己的测试。
 - 独立演示：在头部下方查看真实内容，切换原生网格／列表、打开项目并同步外部变化；多个 Folder 同时展开，可贴边拖动、立即反向、调尺寸并保存不重叠布局。
+
+## Comments
+
+- 用户已认可合并方案、阻塞关系及本票验收标准，已正式发布。

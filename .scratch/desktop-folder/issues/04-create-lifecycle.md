@@ -1,11 +1,13 @@
 # 04: 创建真实 Folder、重启恢复并控制运行和自启
 
 Type: implementation
-Status: draft-awaiting-approval
+Status: ready-for-agent
+Labels: ready-for-agent
+Approved: 2026-10-02
+Plan: ../ticket-plan.md
 Spec: ../spec.md
 Blocked by: None
 User stories: 1, 2, 3, 4, 5, 6, 7, 8, 9, 14, 25, 61, 62, 63, 64, 65, 66, 67, 71
-Merged from: 04, 14
 
 **实现内容（What to build）：** 启动正式程序，通过托盘／快捷键创建真实目录和桌面头部，重启恢复；在设置中开启／关闭自启，关闭设置后继续运行，明确退出释放运行资源。存储根目录默认为 `D:\KageFiles\`，不可用时明确选择其他可用目录。
 
@@ -40,3 +42,7 @@ Merged from: 04, 14
 
 - 以正式规格的相关用户故事及验收矩阵为依据；本票交付界面入口、实际结果、必要状态和自己的测试。
 - 独立演示：启动正式程序，通过托盘／快捷键创建真实目录和桌面头部，重启恢复；在设置中开启／关闭自启，关闭设置后继续运行，明确退出释放运行资源。存储根目录默认为 `D:\KageFiles\`，不可用时明确选择其他可用目录。
+
+## Comments
+
+- 用户已认可合并方案、阻塞关系及本票验收标准，已正式发布。

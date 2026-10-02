@@ -1,11 +1,13 @@
 # 13: 发布可运行 Windows 包并整体验收
 
 Type: implementation
-Status: draft-awaiting-approval
+Status: ready-for-agent
+Labels: ready-for-agent
+Approved: 2026-10-02
+Plan: ../ticket-plan.md
 Spec: ../spec.md
-Blocked by: 6, 10, 11, 12
+Blocked by: 06, 10, 11, 12
 User stories: 72
-Merged from: 17
 Integration coverage: 1–72
 
 **实现内容（What to build）：** 获得可直接运行的正式发布包及说明，核对各功能组合流程、真实文件结果、持久设置和发布位置下的自启与桌面兼容性。
@@ -32,3 +34,7 @@ Integration coverage: 1–72
 - 以正式规格的相关用户故事及验收矩阵为依据；本票交付界面入口、实际结果、必要状态和自己的测试。
 - 独立演示：获得可直接运行的正式发布包及说明，核对各功能组合流程、真实文件结果、持久设置和发布位置下的自启与桌面兼容性。
 - 各功能分支已由 06、10、11、12 的传递依赖覆盖；本票增加组合流程及发布产物验收，不代替前置票自身的测试。
+
+## Comments
+
+- 用户已认可合并方案、阻塞关系及本票验收标准，已正式发布。

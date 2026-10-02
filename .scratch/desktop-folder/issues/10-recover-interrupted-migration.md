@@ -1,11 +1,13 @@
 # 10: 中断后恢复迁移并定位实际内容
 
 Type: implementation
-Status: draft-awaiting-approval
+Status: ready-for-agent
+Labels: ready-for-agent
+Approved: 2026-10-02
+Plan: ../ticket-plan.md
 Spec: ../spec.md
-Blocked by: 9
+Blocked by: 09
 User stories: 25, 58, 59
-Merged from: 13
 
 **实现内容（What to build）：** 迁移中断或恢复不完整后重启，核对真实文件路径，展示未完成清单，允许定位内容和重试恢复，不盲目重复移动或覆盖。
 
@@ -29,3 +31,7 @@ Merged from: 13
 
 - 以正式规格的相关用户故事及验收矩阵为依据；本票交付界面入口、实际结果、必要状态和自己的测试。
 - 独立演示：迁移中断或恢复不完整后重启，核对真实文件路径，展示未完成清单，允许定位内容和重试恢复，不盲目重复移动或覆盖。
+
+## Comments
+
+- 用户已认可合并方案、阻塞关系及本票验收标准，已正式发布。
