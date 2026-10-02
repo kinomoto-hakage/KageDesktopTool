@@ -61,6 +61,7 @@ public static class Program
         Home = directory?.FullName ?? AppContext.BaseDirectory;
         if (args.Contains("--make-icons")) { IconChoices.Generate(); return; }
         if (args.Contains("--drag-regression")) { Environment.ExitCode = DragRegression.Run(args.Contains("--minimal")); return; }
+        if (args.Contains("--view-regression")) { Environment.ExitCode = ViewRegression.Run(); return; }
         Capturing = args.Contains("--capture");
         ProbeDesktop = args.Contains("--desktop-probe");
         App = new Application { ShutdownMode = ShutdownMode.OnExplicitShutdown };

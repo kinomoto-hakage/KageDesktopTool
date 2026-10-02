@@ -43,4 +43,5 @@ rtk proxy dotnet prototypes/DesktopFolderPrototype/bin/DragFix/DesktopFolderProt
 
 ## Comments
 
+- 用户已通过人工检查确认移动卡顿问题解决。
 - 交互体验仍可由用户在当前桌面试用；自动回归已覆盖本次报告的受阻位移与切向移动问题。

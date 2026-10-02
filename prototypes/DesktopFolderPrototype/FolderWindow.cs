@@ -44,6 +44,7 @@ public sealed class FolderWindow : Window
         AllowsTransparency = true; Background = Brushes.Transparent;
         ShowInTaskbar = false; AllowDrop = true; Title = "Kage · " + state.Name; Icon = IconChoices.ApplicationImage;
         TextOptions.SetTextFormattingMode(this, TextFormattingMode.Display);
+        UseLayoutRounding = true; SnapsToDevicePixels = true;
         surface = new Border { CornerRadius = new CornerRadius(10), BorderThickness = new Thickness(1), BorderBrush = new SolidColorBrush(Color.FromArgb(55, 255, 255, 255)) };
         layout = new Grid();
         layout.RowDefinitions.Add(new RowDefinition { Height = new GridLength(State.Height) });
@@ -80,7 +81,7 @@ public sealed class FolderWindow : Window
         var separator = new Border { Height = 1, Background = new SolidColorBrush(Color.FromArgb(40, 255, 255, 255)), Margin = new Thickness(0, 0, 0, 1) };
         DockPanel.SetDock(separator, Dock.Top); body.Children.Add(separator);
         DockPanel.SetDock(toolbar, Dock.Top); body.Children.Add(toolbar);
-        list = new ListBox { Background = Brushes.Transparent, BorderThickness = new Thickness(0), SelectionMode = SelectionMode.Extended, Foreground = Brushes.White };
+        list = new ListBox { Background = Brushes.Transparent, BorderThickness = new Thickness(0), Padding = new Thickness(0), SelectionMode = SelectionMode.Extended, Foreground = Brushes.White, HorizontalContentAlignment = HorizontalAlignment.Stretch };
         ScrollViewer.SetHorizontalScrollBarVisibility(list, ScrollBarVisibility.Disabled);
         ScrollViewer.SetVerticalScrollBarVisibility(list, ScrollBarVisibility.Auto);
         list.PreviewMouseLeftButtonDown += (_, e) => fileDragStart = e.GetPosition(list);
@@ -168,18 +169,33 @@ public sealed class FolderWindow : Window
         expand.Content = State.Expanded ? "▴" : "▾";
         body.Visibility = State.Expanded ? Visibility.Visible : Visibility.Collapsed;
         toggle.Content = State.Grid ? "列表 ☷" : "网格 ▦";
+        var metrics = NativeViewMetrics.ForScale(Scale);
         var factory = new FrameworkElementFactory(State.Grid ? typeof(WrapPanel) : typeof(StackPanel));
+        factory.SetValue(FrameworkElement.HorizontalAlignmentProperty, HorizontalAlignment.Stretch);
         list.ItemsPanel = new ItemsPanelTemplate(factory);
         var selected = list.SelectedItems.Cast<ListBoxItem>().Select(item => (string)item.Tag).ToHashSet();
         list.Items.Clear();
         foreach (var path in paths)
         {
             var name = System.IO.Path.GetFileName(path);
-            var image = new Image { Source = ShellIcons.ForFile(path, !State.Grid), Width = State.Grid ? 32 : 20, Height = State.Grid ? 32 : 20, Margin = State.Grid ? new Thickness(0, 3, 0, 8) : new Thickness(0, 0, 10, 0) };
-            var text = new TextBlock { Text = name, Foreground = Brushes.White, FontSize = 12, TextTrimming = TextTrimming.CharacterEllipsis, TextAlignment = State.Grid ? TextAlignment.Center : TextAlignment.Left, VerticalAlignment = VerticalAlignment.Center, TextWrapping = State.Grid ? TextWrapping.Wrap : TextWrapping.NoWrap, MaxHeight = 34 };
-            var cell = new StackPanel { Orientation = State.Grid ? Orientation.Vertical : Orientation.Horizontal, Margin = new Thickness(7) };
+            var image = new Image { Source = ShellIcons.ForFile(path, !State.Grid), Width = State.Grid ? metrics.GridIcon : metrics.SmallIcon, Height = State.Grid ? metrics.GridIcon : metrics.SmallIcon, HorizontalAlignment = State.Grid ? HorizontalAlignment.Center : HorizontalAlignment.Left, VerticalAlignment = VerticalAlignment.Center };
+            var text = new TextBlock { Text = name, Foreground = Brushes.White, FontFamily = SystemFonts.IconFontFamily, FontSize = SystemFonts.IconFontSize, FontStyle = SystemFonts.IconFontStyle, FontWeight = SystemFonts.IconFontWeight, TextTrimming = TextTrimming.CharacterEllipsis, TextAlignment = State.Grid ? TextAlignment.Center : TextAlignment.Left, VerticalAlignment = State.Grid ? VerticalAlignment.Top : VerticalAlignment.Center, TextWrapping = State.Grid ? TextWrapping.Wrap : TextWrapping.NoWrap };
+            var cell = new Grid();
+            if (State.Grid)
+            {
+                cell.RowDefinitions.Add(new RowDefinition { Height = new GridLength(metrics.GridIcon + 8) });
+                cell.RowDefinitions.Add(new RowDefinition());
+                Grid.SetRow(text, 1); text.Margin = new Thickness(3, 0, 3, 0);
+            }
+            else
+            {
+                cell.ColumnDefinitions.Add(new ColumnDefinition { Width = new GridLength(metrics.SmallIcon + 4) });
+                cell.ColumnDefinitions.Add(new ColumnDefinition());
+                Grid.SetColumn(text, 1);
+            }
             cell.Children.Add(image); cell.Children.Add(text);
-            var item = new ListBoxItem { Tag = path, Content = cell, Width = State.Grid ? 86 : Math.Max(170, State.Width - 48), MinHeight = State.Grid ? 90 : 38, Margin = new Thickness(1), ToolTip = name, Background = Brushes.Transparent, IsSelected = selected.Contains(path) };
+            // 网格项目占满统一格子；列表不设置固定宽度，让右边随视口伸缩。
+            var item = new ListBoxItem { Tag = path, Content = cell, Width = State.Grid ? metrics.GridWidth : double.NaN, Height = State.Grid ? metrics.GridHeight : metrics.ListHeight, BorderThickness = new Thickness(1 / Scale), Margin = new Thickness(0), Padding = new Thickness(2, 0, 2, 0), HorizontalAlignment = State.Grid ? HorizontalAlignment.Left : HorizontalAlignment.Stretch, HorizontalContentAlignment = HorizontalAlignment.Stretch, VerticalContentAlignment = VerticalAlignment.Stretch, ToolTip = name, Background = Brushes.Transparent, IsSelected = selected.Contains(path) };
             list.Items.Add(item);
         }
         ApplyGeometry();

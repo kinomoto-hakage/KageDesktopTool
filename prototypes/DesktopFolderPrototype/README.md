@@ -4,7 +4,7 @@
 
 ## 启动
 
-先从托盘退出正在运行的旧版，再双击 `bin/DragFix/DesktopFolderPrototype.exe`。也可以双击 `run.cmd`，或在项目根目录从源码运行：
+先从托盘退出正在运行的旧版，再双击 `bin/LayoutFix/DesktopFolderPrototype.exe`。也可以双击 `run.cmd`，或在项目根目录从源码运行：
 
 ```powershell
 rtk dotnet run --project prototypes/DesktopFolderPrototype/DesktopFolderPrototype.csproj
@@ -18,6 +18,8 @@ rtk dotnet run --project prototypes/DesktopFolderPrototype/DesktopFolderPrototyp
 - 点击倒三角，在头部正下方展开内容；再次点击向上三角折叠。多个 Folder 可以同时展开，点击外部不自动收起。
 - 内容区图标来自 Windows Shell，保留文件关联及快捷方式覆盖图标。
 - 内容区右上角一键切换列表／网格。
+- 网格按 Windows 系统图标网格尺寸等距排列，图标与文件名在每个完整格子内居中，长文件名换行显示。
+- 列表采用本机原生 ListView 的小图标行高和系统图标标题字体；文件项随右侧宽度变化，左侧图标及文件名位置固定，长文件名省略显示。
 - 拖动头部调整位置；右下角斜三角调整尺寸。折叠时调头部宽高，展开时调共享宽度和内容区高度。
 - Folder 不可相互重叠。拖动接触屏幕或其他 Folder 时贴住边界，可沿边滑动，反向后立即跟随鼠标；缩放拒绝冲突的尺寸。展开时优先保持本 Folder 头部位置，将冲突的其他 Folder 放到附近空位，空间不足则取消展开。
 - 桌面空间不足时，保留记录和内容并暂时隐藏；释放空间后通过托盘“重新挂接桌面”恢复。
@@ -84,3 +86,14 @@ rtk proxy dotnet prototypes/DesktopFolderPrototype/bin/DragFix/DesktopFolderProt
 ```
 
 增加 `--minimal` 只重放“受阻后反向一像素”的最小轨迹。完整检查覆盖屏幕四边贴边、立即反向、沿边滑动，以及折叠／展开 Folder 的四向碰撞和不重叠；不创建交互窗口，不修改内容文件或用户布局状态。
+
+## 视图布局回归检查
+
+```powershell
+rtk dotnet build prototypes/DesktopFolderPrototype/DesktopFolderPrototype.csproj --no-restore --output prototypes/DesktopFolderPrototype/bin/LayoutFix
+rtk proxy dotnet prototypes/DesktopFolderPrototype/bin/LayoutFix/DesktopFolderPrototype.dll --view-regression
+```
+
+检查真实 WPF 排列后的图标中心，以及列表从 300 DIP 加宽到 460 DIP、再反复缩窄／加宽时的左侧位置；生成网格、列表和列表加宽预览。仅使用新建的随机名称夹具，完成后校验路径并清理，不改变用户内容和布局状态。
+
+布局尺寸来源：[系统图标网格尺寸](https://learn.microsoft.com/en-us/windows/win32/api/winuser/nf-winuser-getsystemmetrics)、[原生列表项矩形](https://learn.microsoft.com/en-us/dotnet/api/system.windows.forms.listview.getitemrect)。当前机器 150% 缩放时测得网格 113 × 113 像素、列表行高 26 像素；程序按实际 DPI 换算，未写死这些数值。
