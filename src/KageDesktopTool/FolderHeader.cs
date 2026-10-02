@@ -100,6 +100,7 @@ internal sealed class FolderHeader : Window
         var menu = new ContextMenu();
         Menu(menu, "展开／折叠", async () => await ToggleAsync());
         Menu(menu, "打开内容文件夹", () => Runtime.Open(folder.ActualPath));
+        Menu(menu, "外观…", () => Runtime.Current.ShowAppearance(FolderId));
         Menu(menu, "设置", () => Runtime.Current.ShowSettings());
         ContextMenu = menu;
         SourceInitialized += (_, _) => Attach();
@@ -171,9 +172,7 @@ internal sealed class FolderHeader : Window
         title.Text = folder.Folder.Name;
         count.Text = folder.FileCount?.ToString() ?? "?";
         ToolTip = folder.Notice ?? folder.ActualPath;
-        var color = (Color)ColorConverter.ConvertFromString(folder.Folder.Color);
-        color.A = (byte)(folder.Folder.Opacity * 255);
-        Surface.Background = new SolidColorBrush(color);
+        ApplyStyle(folder.Folder.Color, folder.Folder.Opacity);
         var area = Array.Find(WindowsDesktop.Displays(), area => folder.Folder.X >= area.X && folder.Folder.X < area.X + area.Width && folder.Folder.Y >= area.Y && folder.Folder.Y < area.Y + area.Height);
         displayScale = area?.Scale ?? 1;
         ApplyGeometry(folder);
@@ -196,5 +195,12 @@ internal sealed class FolderHeader : Window
         WindowsDesktop.ScreenToClient(Host, ref point);
         Show();
         WindowsDesktop.SetWindowPos(Handle, IntPtr.Zero, point.X, point.Y, (int)Math.Ceiling(Width * displayScale), (int)Math.Ceiling(Height * displayScale), 0x10 | 0x40);
+    }
+
+    internal void ApplyStyle(string value, double opacity)
+    {
+        var color = (Color)ColorConverter.ConvertFromString(value);
+        color.A = (byte)Math.Round(opacity * 255);
+        Surface.Background = new SolidColorBrush(color);
     }
 }

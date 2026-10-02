@@ -328,6 +328,51 @@ public sealed class DesktopWorkspace(IWorkspaceStore store, IStartupRegistration
         return new(Outcome.Success, grid ? "已切换网格。" : "已切换列表。");
     });
 
+    public Task<OperationResult> SetIconAsync(string choice) => Run(() =>
+    {
+        if (blocked) return Locked();
+        if (choice is not ("a" or "b" or "c" or "d")) return new(Outcome.Failed, "请选择 A／B／C／D 图标方案。");
+        var next = state with { IconChoice = choice };
+        try { store.Save(next); }
+        catch (Exception e) { return new(Outcome.Failed, $"图标选择保存失败，原方案保留：{e.Message}"); }
+        state = next;
+        Publish();
+        return new(Outcome.Success, "图标选择已保存。");
+    });
+
+    public AppearanceInteraction? BeginAppearance(Guid id)
+    {
+        var current = snapshot;
+        var folder = current.Folders.FirstOrDefault(folder => folder.Folder.Id == id);
+        return current.RecoveryRequired || folder == null ? null : new(this, folder.Folder);
+    }
+
+    public Task<OperationResult> ApplyAppearanceAsync(AppearanceInteraction interaction) => Run(() =>
+    {
+        if (blocked) return Locked();
+        if (interaction.Owner != this || interaction.Closed) return AppearanceInteraction.Ended();
+        if (interaction.Error.Length != 0) return new(Outcome.Failed, interaction.Error);
+        var original = interaction.Original;
+        var current = state.Folders.FirstOrDefault(folder => folder.Id == interaction.FolderId);
+        if (current == null || current.Color != original.Color || current.Opacity != original.Opacity)
+            return new(Outcome.Failed, "Folder 外观已变化，本次草稿未覆盖新设置；请取消后重新打开。");
+        var changed = current with { Color = interaction.Color, Opacity = interaction.Opacity };
+        var next = state with { Folders = state.Folders.Select(folder => folder.Id == changed.Id ? changed : folder).ToArray() };
+        try { store.Save(next); }
+        catch (Exception e) { return new(Outcome.Failed, $"外观保存失败，原设置保留；可重试或取消：{e.Message}"); }
+        state = next;
+        interaction.Finish(true);
+        Publish();
+        return new(Outcome.Success, "Folder 外观已保存。");
+    });
+
+    public OperationResult CancelAppearance(AppearanceInteraction interaction)
+    {
+        if (interaction.Owner != this || interaction.Closed) return AppearanceInteraction.Ended();
+        interaction.Finish(false);
+        return new(Outcome.Cancelled, "已取消外观修改，恢复打开前的预览。");
+    }
+
     private void PlaceAndPublish(bool save)
     {
         var placement = HeaderLayout.Place(state.Folders, displays);

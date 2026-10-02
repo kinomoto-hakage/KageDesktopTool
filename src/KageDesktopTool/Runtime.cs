@@ -18,7 +18,7 @@ namespace Kage.Desktop;
 internal sealed class Runtime : IDisposable
 {
     internal static Runtime Current { get; private set; } = null!;
-    internal static BitmapImage ApplicationIcon => new(new Uri("pack://application:,,,/Assets/app-d.png"));
+    internal static BitmapImage ApplicationIcon => Current?.applicationIcon ?? IconChoices.Image("d");
     internal IDesktopWorkspace Workspace { get; }
     internal Dictionary<Guid, FolderHeader> Headers { get; } = new();
     internal bool DesktopAvailable => Headers.Values.All(h => h.Host != IntPtr.Zero);
@@ -31,7 +31,11 @@ internal sealed class Runtime : IDisposable
     private readonly HwndSource source;
     private readonly HwndSourceHook hook;
     private readonly DispatcherTimer refresh;
-    private readonly Icon trayIcon;
+    private Icon trayIcon;
+    private BitmapImage? applicationIcon;
+    private string? iconChoice;
+    private readonly Dictionary<string, Forms.ToolStripMenuItem> iconMenu = new();
+    private StyleDialog? appearance;
     private SettingsWindow? settings;
     private bool refreshing;
     private bool creating;
@@ -59,6 +63,15 @@ internal sealed class Runtime : IDisposable
         var menu = new Forms.ContextMenuStrip();
         menu.Items.Add("新建 Folder", null, (_, _) => Dispatch(async () => await CreateAsync()));
         menu.Items.Add("设置", null, (_, _) => Dispatch(ShowSettings));
+        var icons = new Forms.ToolStripMenuItem("图标方案");
+        foreach (var option in IconChoices.Options)
+        {
+            var item = new Forms.ToolStripMenuItem(option.Name);
+            item.Click += (_, _) => Dispatch(async () => await SelectIconAsync(option.Key));
+            icons.DropDownItems.Add(item);
+            iconMenu.Add(option.Key, item);
+        }
+        menu.Items.Add(icons);
         menu.Items.Add("退出", null, (_, _) => Dispatch(async () => await ExitAsync()));
         Tray.ContextMenuStrip = menu;
         Tray.DoubleClick += (_, _) => Dispatch(ShowSettings);
@@ -97,6 +110,7 @@ internal sealed class Runtime : IDisposable
     {
         if (disposed || exiting || Interacting) return;
         var snapshot = Workspace.Snapshot;
+        ApplyIcons(snapshot.IconChoice);
         foreach (var obsolete in Headers.Keys.Where(id => !snapshot.Folders.Any(folder => folder.Folder.Id == id)).ToArray())
         {
             Headers[obsolete].Close();
@@ -112,7 +126,73 @@ internal sealed class Runtime : IDisposable
             }
             header.Update(folder);
         }
+        if (appearance != null && !appearance.Interaction.Closed) PreviewAppearance(appearance.Interaction);
         settings?.Refresh();
+    }
+
+    private void ApplyIcons(string key)
+    {
+        if (iconChoice == key) return;
+        var image = IconChoices.Image(key);
+        var next = new Icon(Path.Combine(AppContext.BaseDirectory, "Assets", $"tray-{key}.ico"));
+        Tray.Icon = next;
+        trayIcon.Dispose();
+        trayIcon = next;
+        applicationIcon = image;
+        iconChoice = key;
+        foreach (Window window in Application.Current.Windows) window.Icon = image;
+        foreach (var option in iconMenu) option.Value.Checked = option.Key == key;
+    }
+
+    internal async Task<OperationResult> SelectIconAsync(string key)
+    {
+        if (Exiting) return new(Outcome.Cancelled, "程序正在退出。");
+        try
+        {
+            // 保存前核对包内资源可加载，失败保留当前显示及偏好。
+            _ = IconChoices.Image(key);
+            using var available = new Icon(Path.Combine(AppContext.BaseDirectory, "Assets", $"tray-{key}.ico"));
+            var result = await Workspace.SetIconAsync(key);
+            Render();
+            if (!result.Succeeded) Balloon(result.Message);
+            return result;
+        }
+        catch (Exception e)
+        {
+            var result = new OperationResult(Outcome.Failed, $"图标无法加载，原方案保留：{e.Message}");
+            Balloon(result.Message);
+            return result;
+        }
+    }
+
+    internal void ShowAppearance(Guid id)
+    {
+        var dialog = CreateAppearance(id);
+        if (dialog == null) return;
+        if (dialog.IsVisible) { dialog.Activate(); return; }
+        dialog.ShowDialog();
+    }
+
+    internal StyleDialog? CreateAppearance(Guid id)
+    {
+        if (Exiting || Interacting) return null;
+        if (appearance != null) return appearance;
+        var interaction = Workspace.BeginAppearance(id);
+        if (interaction == null) { Balloon("工作区正在恢复或 Folder 不存在，暂不能修改外观。"); return null; }
+        var name = Workspace.Snapshot.Folders.Single(folder => folder.Folder.Id == id).Folder.Name;
+        appearance = new StyleDialog(this, interaction, name);
+        return appearance;
+    }
+
+    internal void PreviewAppearance(AppearanceInteraction interaction)
+    {
+        if (Headers.TryGetValue(interaction.FolderId, out var header)) header.ApplyStyle(interaction.Color, interaction.Opacity);
+    }
+
+    internal void EndAppearance(StyleDialog dialog)
+    {
+        if (appearance == dialog) appearance = null;
+        Render();
     }
 
     internal void ShowSettings()
@@ -226,6 +306,7 @@ internal sealed class Runtime : IDisposable
         source.RemoveHook(hook);
         if (HotkeyRegistered) WindowsDesktop.UnregisterHotKey(new WindowInteropHelper(Controller).Handle, 1);
         settings?.Close();
+        appearance?.Close();
         foreach (var header in Headers.Values) header.Close();
         Headers.Clear();
         Tray.Visible = false;

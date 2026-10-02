@@ -19,7 +19,10 @@ var tests = new (string Name, Func<Task> Run)[]
     ("Folder 四向接触、不穿越及尺寸重启恢复", LayoutChecks.ContactAndPersistence),
     ("对角轨迹沿实际路径不穿越 Folder", LayoutChecks.DiagonalPath),
     ("暂未展示 Folder 不挤动展开头部", LayoutChecks.HiddenAndExpansion),
-    ("布局保存失败保留原状态与内容", LayoutChecks.SaveFailure)
+    ("布局保存失败保留原状态与内容", LayoutChecks.SaveFailure),
+    ("外观颜色同步校验及取消恢复", AppearanceChecks.InputAndCancel),
+    ("外观独立保存失败及重启恢复", AppearanceChecks.Persistence),
+    ("图标选择校验保存失败及重启恢复", AppearanceChecks.Icons)
 };
 var failures = 0;
 var selected = tests.Where(t => args.Length == 0 || t.Name.Contains(args[0], StringComparison.Ordinal)).ToArray();

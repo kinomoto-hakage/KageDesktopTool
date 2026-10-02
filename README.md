@@ -1,6 +1,6 @@
 # KageDesktopTool
 
-Windows 桌面整理工具，采用 C#、.NET 10 和 WPF。已交付创建与运行生命周期，本轮增加 [05 原生内容和布局](.scratch/desktop-folder/issues/05-content-and-layout.md)：真实内容查看、Shell 图标、网格／列表、多 Folder 展开、不重叠拖动和尺寸调整，以及布局重启恢复。
+Windows 桌面整理工具，采用 C#、.NET 10 和 WPF。已交付创建与运行生命周期、原生内容及不重叠布局，本轮增加 [06 外观和图标](.scratch/desktop-folder/issues/06-appearance-and-icons.md)：独立 Folder 外观实时预览、应用／取消、持久保存，以及四套应用／托盘图标选择。
 
 ## 运行
 
@@ -22,6 +22,8 @@ rtk proxy dotnet run --project src/KageDesktopTool/KageDesktopTool.csproj --no-r
 - 展示部分一键切换系统尺寸的网格／列表，使用实际路径的 Windows Shell 图标和覆盖；双击文件使用默认程序，子文件夹使用资源管理器。后台每 3 秒核对目录和图标，外部新增、删除及重命名自动更新；目录失联时保留记录并显示说明。
 - 拖动头部移动 Folder，贴屏幕或其他 Folder 边缘可沿边滑动，受阻后可以立即反向。右下角调整尺寸：折叠时调整头部宽高，展开时调整共享宽度及内容区高度，左侧保持固定。展开优先保留本头部位置并安排冲突 Folder；放不下或尺寸会重叠时保留原布局。
 - 位置、尺寸、展开和查看方式在操作结束后保存，重启恢复。内容加载和图标读取在后台进行，鼠标移动只预览几何布局。
+- 头部右键“外观…”或设置中对应 Folder 的“外观…”打开外观窗口。预设色块、Windows 调色盘、RGB 三分量和 HEX 输入同步同一颜色；无效输入显示原因并禁止应用。背景透明度滑块实时预览，文字及文件图标保持不透明；取消、Esc 或关闭窗口恢复打开前设置，应用成功后独立保存各 Folder 外观，保存失败可重试或取消。
+- 托盘“图标方案”切换 A 收纳夹、B 分区格、C 叠层抽屉、D K 文件夹。成功保存后更新托盘及已打开窗口，重启使用保存的选择；默认 D，EXE 内置发布图标始终为已选 D。
 - 托盘“设置”选择存储根目录、应用自启选择、刷新展示或查看异常说明。关闭设置后继续运行；托盘“退出”释放窗口、热键及后台刷新，保留内容。
 - 设置中的自启开关需点击“应用自启选择”。只有注册结果和偏好保存都成功才显示成功；失败说明实际结果并尝试恢复原配置。启动目标采用当前包内 EXE 的绝对路径，支持含空格的发布目录。
 - 重复启动打开已有实例的设置；热键被占用时托盘仍可创建，并显示原因。
@@ -46,8 +48,9 @@ rtk proxy dotnet run --project tests/Kage.Workspace.Checks --no-restore
 rtk proxy dotnet build src/KageDesktopTool/KageDesktopTool.csproj --no-restore
 rtk proxy dotnet src/KageDesktopTool/bin/Debug/net10.0-windows/KageDesktopTool.dll --session-check
 rtk proxy dotnet src/KageDesktopTool/bin/Debug/net10.0-windows/KageDesktopTool.dll --content-layout-check
+rtk proxy dotnet src/KageDesktopTool/bin/Debug/net10.0-windows/KageDesktopTool.dll --appearance-check
 ```
 
-最后两项需在当前用户的交互式 Windows 会话中运行。`--session-check` 使用随机隔离目录及随机临时自启项，短暂显示测试头部、模拟输入 `Ctrl+Alt+K` 并恢复占用状态；`--content-layout-check` 核对实际 WPF 网格／列表、真实窗口边界、捕获释放、双击打开及外部变化，并关闭自己打开的夹具资源管理器窗口。结束后释放资源并清理，不读写正式工作区或以个人内容作夹具。日志和预览写到 `.scratch/desktop-folder/verification/`；构建及检查产物不纳入 Git。详见 [05 验收记录](docs/verification/05-content-and-layout.md)。
+最后三项需在当前用户的交互式 Windows 会话中运行。`--session-check` 使用随机隔离目录及随机临时自启项，短暂显示测试头部、模拟输入 `Ctrl+Alt+K` 并恢复占用状态；`--content-layout-check` 核对实际 WPF 网格／列表、真实窗口边界、捕获释放、双击打开及外部变化，并关闭自己打开的夹具资源管理器窗口；`--appearance-check` 检查真实外观输入、透明背景、调色盘焦点、图标切换及重启恢复，短暂显示桌面截图后恢复原窗口状态。结束后释放资源并清理，不读写正式工作区或以个人内容作夹具。日志和预览写到 `.scratch/desktop-folder/verification/`；构建及检查产物不纳入 Git。详见 [05 验收记录](docs/verification/05-content-and-layout.md) 和 [06 验收记录](docs/verification/06-appearance-and-icons.md)。
 
 结构：`src/Kage.Workspace/` 提供共用业务 interface 和真实状态／目录处理；`src/KageDesktopTool/` 提供 WPF、桌面宿主、托盘、热键、单实例及注册表适配器。`prototypes/` 保留已验收的原型。

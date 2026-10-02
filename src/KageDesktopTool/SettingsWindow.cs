@@ -93,6 +93,7 @@ internal sealed class SettingsWindow : Window
             row.Children.Add(new TextBlock { Text = $"{folder.Folder.Name} · {(folder.Visible && runtime.DesktopAvailable ? "已展示" : "暂未展示")}", FontWeight = FontWeights.SemiBold });
             row.Children.Add(new TextBlock { Text = folder.Notice ?? folder.ActualPath, TextWrapping = TextWrapping.Wrap });
             AddButton(row, "打开内容文件夹", () => Runtime.Open(folder.ActualPath));
+            AddButton(row, "外观…", () => runtime.ShowAppearance(folder.Folder.Id));
             folders.Children.Add(row);
         }
     }

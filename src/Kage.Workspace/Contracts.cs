@@ -39,6 +39,10 @@ public interface IDesktopWorkspace
     LayoutInteraction? BeginLayout(Guid id);
     Task<OperationResult> CommitLayoutAsync(LayoutInteraction interaction);
     Task<OperationResult> SetViewAsync(Guid id, bool grid);
+    AppearanceInteraction? BeginAppearance(Guid id);
+    Task<OperationResult> ApplyAppearanceAsync(AppearanceInteraction interaction);
+    OperationResult CancelAppearance(AppearanceInteraction interaction);
+    Task<OperationResult> SetIconAsync(string choice);
 }
 
 public sealed record PendingStartup([property: JsonRequired] bool Enabled,

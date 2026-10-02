@@ -13,6 +13,7 @@ public static class Program
     {
         if (args.Contains("--session-check")) return SessionChecks.Run();
         if (args.Contains("--content-layout-check")) return ContentLayoutChecks.Run();
+        if (args.Contains("--appearance-check")) return AppearanceChecks.Run();
         if (args.Length == 2 && args[0] == "--open-target-check")
         {
             File.WriteAllText(args[1], "隔离目标已被 Windows Shell 打开");

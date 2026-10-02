@@ -1,8 +1,8 @@
 # 06: 实时调整外观并保存图标选择
 
 Type: implementation
-Status: ready-for-agent
-Labels: ready-for-agent
+Status: claimed
+Labels: claimed
 Approved: 2026-10-02
 Plan: ../ticket-plan.md
 Spec: ../spec.md
@@ -35,3 +35,4 @@ User stories: 8, 25, 37, 38, 39, 40, 41, 67
 ## Comments
 
 - 用户已认可合并方案、阻塞关系及本票验收标准，已正式发布。
+- 2026-10-02：用户调用 `implement` 启动本票，沿用已认可的 `IDesktopWorkspace` 设置操作测试边界及真实 Windows 会话验收。
