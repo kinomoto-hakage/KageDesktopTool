@@ -1,8 +1,9 @@
 namespace Kage.Workspace;
 
-public sealed partial class DesktopWorkspace(IWorkspaceStore store, IStartupRegistration startup) : IDesktopWorkspace
+public sealed partial class DesktopWorkspace(IWorkspaceStore store, IStartupRegistration startup, IFolderShell? folderShell = null) : IDesktopWorkspace
 {
     private readonly SemaphoreSlim operations = new(1, 1);
+    private IFolderShell Shell => folderShell ?? WindowsFolderShell.Default;
     private WorkspaceState state = new();
     private DisplayArea[] displays = [];
     private bool blocked = true;
@@ -53,6 +54,7 @@ public sealed partial class DesktopWorkspace(IWorkspaceStore store, IStartupRegi
 
     private void RecoverPending()
     {
+        RecoverFolderChange();
         if (state.PendingCreate is { } pending)
         {
             var path = ContentPath(pending);
@@ -389,6 +391,8 @@ public sealed partial class DesktopWorkspace(IWorkspaceStore store, IStartupRegi
     {
         // 发布已提交的几何结果，不再次重排；重新寻找空位只在显式刷新／恢复中执行并保存。
         var folders = placement ?? state.Folders;
+        if (state.PendingFolderChange is { Kind: FolderChangeKind.Rename } change && RenamedDirectoryExists(change, change.FolderId))
+            folders = folders.Select(folder => folder.Id == change.FolderId ? folder with { Name = Path.GetFileName(change.Destination) } : folder).ToArray();
         var placed = new List<(FolderRecord Folder, DisplayArea Area)>();
         var rendered = new List<FolderSnapshot>();
         foreach (var folder in folders)

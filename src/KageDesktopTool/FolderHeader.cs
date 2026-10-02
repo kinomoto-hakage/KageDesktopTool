@@ -100,7 +100,13 @@ internal sealed class FolderHeader : Window
         Content = Surface;
         var menu = new ContextMenu();
         Menu(menu, "展开／折叠", async () => await ToggleAsync());
-        Menu(menu, "打开内容文件夹", () => Runtime.Open(folder.ActualPath));
+        Menu(menu, "打开内容文件夹", () =>
+        {
+            foreach (var item in Runtime.Current.Workspace.Snapshot.Folders)
+                if (item.Folder.Id == FolderId) { Runtime.Open(item.ActualPath); break; }
+        });
+        Menu(menu, "重命名…", () => Runtime.Current.ShowFolderAction(FolderId, true));
+        Menu(menu, "删除…", () => Runtime.Current.ShowFolderAction(FolderId, false));
         Menu(menu, "外观…", () => Runtime.Current.ShowAppearance(FolderId));
         Menu(menu, "设置", () => Runtime.Current.ShowSettings());
         ContextMenu = menu;
@@ -128,7 +134,7 @@ internal sealed class FolderHeader : Window
 
     internal async Task ToggleAsync()
     {
-        if (Runtime.Current.Interacting) return;
+        if (Runtime.Current.Interacting || Runtime.Current.ChangingFolder) return;
         var result = await Runtime.Current.Workspace.ToggleFolderAsync(FolderId);
         Runtime.Current.Render();
         if (!result.Succeeded) Runtime.Current.Balloon(result.Message);
@@ -171,6 +177,7 @@ internal sealed class FolderHeader : Window
     internal void Update(FolderSnapshot folder)
     {
         title.Text = folder.Folder.Name;
+        Title = "Kage · " + folder.Folder.Name;
         count.Text = folder.FileCount?.ToString() ?? "?";
         ToolTip = folder.Notice ?? folder.ActualPath;
         ApplyStyle(folder.Folder.Color, folder.Folder.Opacity);

@@ -26,7 +26,12 @@ var tests = new (string Name, Func<Task> Run)[]
     ("移动真实文件快捷方式和普通子文件夹", MoveChecks.RealContents),
     ("移动同名编号跳过与批量取消", MoveChecks.ConflictsAndCancel),
     ("移动占用非法路径与状态提交失败", MoveChecks.FailuresAndCommit),
-    ("移动跨本地磁盘字节一致与源消失", MoveChecks.CrossVolume)
+    ("移动跨本地磁盘字节一致与源消失", MoveChecks.CrossVolume),
+    ("Folder 改名真实目录标识外观与重启", FolderChangeChecks.Rename),
+    ("Folder 改名同名无效占用及保存恢复", FolderChangeChecks.RenameFailures),
+    ("Folder 删除保留真实快捷方式关联与重启", FolderChangeChecks.KeepContents),
+    ("Folder 删除快捷方式失败及保存中断恢复", FolderChangeChecks.DeleteFailures),
+    ("Folder 删除真实 Windows 整目录回收与恢复", FolderChangeChecks.Recycle)
 };
 var failures = 0;
 var selected = tests.Where(t => args.Length == 0 || t.Name.Contains(args[0], StringComparison.Ordinal)).ToArray();
@@ -370,11 +375,12 @@ sealed class FailingStore(IWorkspaceStore real) : IWorkspaceStore
 
 sealed class Fixture : IDisposable
 {
-    public string Home { get; } = Path.Combine(Path.GetTempPath(), "Kage-check-" + Guid.NewGuid().ToString("N"));
+    public string Home { get; }
     public string Content => Path.Combine(Home, "内容");
     public IWorkspaceStore Store { get; }
-    public Fixture()
+    public Fixture(string? parent = null)
     {
+        Home = Path.Combine(parent ?? Path.GetTempPath(), "Kage-check-" + Guid.NewGuid().ToString("N"));
         Directory.CreateDirectory(Home);
         Store = new JsonWorkspaceStore(Path.Combine(Home, "状态"));
     }
@@ -382,7 +388,9 @@ sealed class Fixture : IDisposable
     {
         var full = Path.GetFullPath(Home);
         var temporary = Path.GetFullPath(Path.GetTempPath());
-        if (!full.StartsWith(temporary, StringComparison.OrdinalIgnoreCase) || !Path.GetFileName(full).StartsWith("Kage-check-", StringComparison.Ordinal))
+        var verification = Path.GetFullPath(Path.Combine(Environment.CurrentDirectory, ".scratch", "desktop-folder", "verification")) + Path.DirectorySeparatorChar;
+        if ((!full.StartsWith(temporary, StringComparison.OrdinalIgnoreCase) && !full.StartsWith(verification, StringComparison.OrdinalIgnoreCase))
+            || !Path.GetFileName(full).StartsWith("Kage-check-", StringComparison.Ordinal))
             throw new Exception("拒绝清理隔离目录范围之外的路径");
         Directory.Delete(full, true);
     }

@@ -4,6 +4,7 @@ namespace Kage.Workspace;
 
 public enum ConflictChoice { Ask, KeepBoth, Skip, Cancel }
 public enum Outcome { Success, Conflict, Skipped, Cancelled, Failed, RecoveryRequired }
+public enum FolderDeleteChoice { KeepContents, Recycle, Cancel }
 public sealed record OperationResult(Outcome Outcome, string Message, string? ActualPath = null)
 {
     public bool Succeeded => Outcome == Outcome.Success;
@@ -31,6 +32,8 @@ public interface IDesktopWorkspace
     Task<OperationResult> InitializeAsync(IReadOnlyList<DisplayArea> displays);
     Task<OperationResult> SelectRootAsync(string root);
     Task<OperationResult> CreateFolderAsync(string name, ConflictChoice conflict = ConflictChoice.Ask, CancellationToken cancellation = default);
+    Task<OperationResult> RenameFolderAsync(Guid id, string name, ConflictChoice conflict = ConflictChoice.Ask, CancellationToken cancellation = default);
+    Task<OperationResult> DeleteFolderAsync(Guid id, FolderDeleteChoice choice, ConflictChoice conflict = ConflictChoice.Ask, CancellationToken cancellation = default);
     Task<OperationResult> SetStartupAsync(bool enabled);
     Task<OperationResult> RestoreBackupAsync();
     Task<OperationResult> ConfirmPendingCreateAsync();
@@ -50,6 +53,11 @@ public interface IDesktopWorkspace
 
 public sealed record PendingStartup([property: JsonRequired] bool Enabled,
     [property: JsonRequired] string? PreviousCommand, [property: JsonRequired] string? TargetCommand);
+public enum FolderChangeKind { Rename, KeepContents, Recycle }
+public sealed record PendingFolderChange([property: JsonRequired] Guid FolderId,
+    [property: JsonRequired] FolderChangeKind Kind, [property: JsonRequired] string Destination);
+public sealed record RetainedFolder([property: JsonRequired] Guid FolderId,
+    [property: JsonRequired] string ContentPath, [property: JsonRequired] string ShortcutPath);
 public sealed record WorkspaceState
 {
     [System.Text.Json.Serialization.JsonRequired]
@@ -64,6 +72,8 @@ public sealed record WorkspaceState
     public FolderRecord[] Folders { get; init; } = [];
     public FolderRecord? PendingCreate { get; init; }
     public PendingStartup? PendingStartup { get; init; }
+    public PendingFolderChange? PendingFolderChange { get; init; }
+    public RetainedFolder[] RetainedFolders { get; init; } = [];
 }
 
 public sealed record StateRead(WorkspaceState State, bool NeedsBackupRestore = false, string? Notice = null);
@@ -78,4 +88,14 @@ public interface IStartupRegistration
     string LaunchCommand { get; }
     string? ReadCommand();
     void WriteCommand(string? command);
+}
+
+// 仅 Windows Shell 能力与桌面位置可替换；目录操作和状态事务由业务模块负责。
+public interface IFolderShell
+{
+    string DesktopDirectory { get; }
+    void CreateShortcut(string shortcutPath, string targetPath);
+    bool ShortcutTargets(string shortcutPath, string targetPath);
+    OperationResult Recycle(string contentPath, Guid folderId);
+    string? FindRecycledFolder(string contentPath, Guid folderId);
 }

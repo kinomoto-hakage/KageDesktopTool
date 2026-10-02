@@ -1,7 +1,7 @@
 # 08: 重命名 Folder 及两种删除方式
 
 Type: implementation
-Status: ready-for-agent
+Status: claimed
 Labels: ready-for-agent
 Approved: 2026-10-02
 Plan: ../ticket-plan.md

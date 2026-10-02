@@ -46,6 +46,9 @@ internal sealed class Runtime : IDisposable
     internal bool DraggingFiles { get; set; }
     internal bool Moving => moveDialog != null || DraggingFiles;
     private MoveDialog? moveDialog;
+    private FolderActionDialog? folderAction;
+    internal FolderActionDialog? ActiveFolderAction => folderAction;
+    internal bool ChangingFolder => folderAction != null;
     internal MoveDialog? ActiveMove => moveDialog;
 
     internal Runtime(IDesktopWorkspace workspace)
@@ -82,7 +85,7 @@ internal sealed class Runtime : IDisposable
         refresh = new DispatcherTimer { Interval = TimeSpan.FromSeconds(3) };
         refresh.Tick += async (_, _) =>
         {
-            if (refreshing || exiting || Interacting || Moving) return;
+            if (refreshing || exiting || Interacting || Moving || ChangingFolder) return;
             refreshing = true;
             try
             {
@@ -179,7 +182,7 @@ internal sealed class Runtime : IDisposable
 
     internal StyleDialog? CreateAppearance(Guid id)
     {
-        if (Exiting || Interacting) return null;
+        if (Exiting || Interacting || Moving || ChangingFolder) return null;
         if (appearance != null) return appearance;
         var interaction = Workspace.BeginAppearance(id);
         if (interaction == null) { Balloon("工作区正在恢复或 Folder 不存在，暂不能修改外观。"); return null; }
@@ -214,7 +217,7 @@ internal sealed class Runtime : IDisposable
 
     internal LayoutInteraction? BeginInteraction(Guid id)
     {
-        if (Interacting || Exiting || Moving) return null;
+        if (Interacting || Exiting || Moving || ChangingFolder) return null;
         activeInteraction = Workspace.BeginLayout(id);
         return activeInteraction;
     }
@@ -237,7 +240,7 @@ internal sealed class Runtime : IDisposable
 
     internal async Task CreateAsync()
     {
-        if (creating || exiting || disposed) return;
+        if (creating || exiting || disposed || ChangingFolder) return;
         creating = true;
         try
         {
@@ -280,7 +283,7 @@ internal sealed class Runtime : IDisposable
 
     internal async Task<BatchMoveResult?> MoveFilesAsync(string[] paths, MoveTarget target, bool cancelled = false, string? targetError = null)
     {
-        if (Exiting || Moving) return null;
+        if (Exiting || Moving || ChangingFolder) return null;
         moveDialog = new MoveDialog();
         var dialog = moveDialog;
         dialog.Show();
@@ -292,6 +295,7 @@ internal sealed class Runtime : IDisposable
 
     internal async Task ExitAsync()
     {
+        if (ChangingFolder) { Balloon("请先完成或关闭 Folder 操作窗口再退出。"); folderAction?.Activate(); return; }
         if (Moving) { moveDialog?.Cancel(); Balloon("正在结束文件移动，请等待逐项结果后再退出。"); return; }
         if (exiting) return;
         exiting = true;
@@ -315,6 +319,18 @@ internal sealed class Runtime : IDisposable
         catch (Exception e) { MessageBox.Show($"无法打开 {path}\n{e.Message}", "Kage 桌面整理"); }
     }
 
+    internal void ShowFolderAction(Guid id, bool rename)
+    {
+        if (Exiting || Interacting || Moving || creating || appearance != null) return;
+        if (folderAction != null) { folderAction.Activate(); return; }
+        var folder = Workspace.Snapshot.Folders.FirstOrDefault(item => item.Folder.Id == id);
+        if (folder == null) return;
+        folderAction = new FolderActionDialog(this, folder, rename);
+        folderAction.Closed += (_, _) => { folderAction = null; Render(); };
+        folderAction.Show();
+        folderAction.Activate();
+    }
+
     public void Dispose()
     {
         if (disposed) return;
@@ -324,6 +340,7 @@ internal sealed class Runtime : IDisposable
         if (HotkeyRegistered) WindowsDesktop.UnregisterHotKey(new WindowInteropHelper(Controller).Handle, 1);
         settings?.Close();
         appearance?.Close();
+        folderAction?.Close();
         foreach (var header in Headers.Values) header.Close();
         Headers.Clear();
         Tray.Visible = false;

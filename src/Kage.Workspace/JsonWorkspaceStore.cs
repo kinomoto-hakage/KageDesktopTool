@@ -35,7 +35,31 @@ public sealed class JsonWorkspaceStore(string directory) : IWorkspaceStore
         if (state.Folders == null || state.IconChoice is not ("a" or "b" or "c" or "d")) throw new InvalidDataException("状态字段无效。");
         if (state.PendingStartup is { } startup && startup.Enabled != (startup.TargetCommand != null))
             throw new InvalidDataException("未完成自启记录的目标配置与开关不一致。");
-        if (state.PendingStartup != null && state.PendingCreate != null) throw new InvalidDataException("状态存在冲突的未完成操作。");
+        if (new[] { state.PendingStartup != null, state.PendingCreate != null, state.PendingFolderChange != null }.Count(value => value) > 1)
+            throw new InvalidDataException("状态存在冲突的未完成操作。");
+        if (state.RetainedFolders == null) throw new InvalidDataException("保留内容关联无效。");
+        var retainedIds = new HashSet<Guid>();
+        var shortcuts = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
+        foreach (var retained in state.RetainedFolders)
+        {
+            if (retained == null || retained.FolderId == Guid.Empty || !retainedIds.Add(retained.FolderId)
+                || state.Folders.Any(folder => folder.Id == retained.FolderId)) throw new InvalidDataException("保留内容标识重复或仍在活动映射中。");
+            WindowsPaths.Root(retained.ContentPath);
+            if (!shortcuts.Add(WindowsPaths.Root(retained.ShortcutPath)) || !retained.ShortcutPath.EndsWith(".lnk", StringComparison.OrdinalIgnoreCase))
+                throw new InvalidDataException("保留快捷方式路径无效或重复。");
+        }
+        if (state.PendingFolderChange is { } change)
+        {
+            var source = state.Folders.SingleOrDefault(folder => folder.Id == change.FolderId)
+                ?? throw new InvalidDataException("未完成 Folder 操作没有对应活动记录。");
+            var destination = WindowsPaths.Root(change.Destination);
+            var content = Path.Combine(source.ContentRoot ?? state.Root, source.Name);
+            if (!Enum.IsDefined(change.Kind)
+                || (change.Kind == FolderChangeKind.Rename && !string.Equals(Path.GetDirectoryName(destination), WindowsPaths.Root(source.ContentRoot ?? state.Root), StringComparison.OrdinalIgnoreCase))
+                || (change.Kind == FolderChangeKind.KeepContents && !destination.EndsWith(".lnk", StringComparison.OrdinalIgnoreCase))
+                || (change.Kind == FolderChangeKind.Recycle && !string.Equals(destination, content, StringComparison.OrdinalIgnoreCase)))
+                throw new InvalidDataException("未完成 Folder 操作的目标路径无效。");
+        }
         var ids = new HashSet<Guid>();
         var names = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
         foreach (var folder in state.Folders.Concat(state.PendingCreate is null ? [] : new[] { state.PendingCreate }))
