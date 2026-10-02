@@ -239,7 +239,7 @@ public sealed class DesktopWorkspace(IWorkspaceStore store, IStartupRegistration
         if (state.PendingCreate is not { } pending) return new(Outcome.Failed, "没有待核对的创建记录。");
         var path = ContentPath(pending);
         if (!Directory.Exists(path)) return new(Outcome.Failed, $"待关联目录不存在或不可访问：{path}", path);
-        WindowsPaths.WriteIdentity(path, pending.Id);
+        WindowsPaths.WriteIdentity(path, pending.Id, repairInvalid: true);
         var complete = state with { PendingCreate = null, Folders = [.. state.Folders, pending] };
         store.Save(complete);
         state = complete;
@@ -283,7 +283,7 @@ public sealed class DesktopWorkspace(IWorkspaceStore store, IStartupRegistration
             var path = ContentPath(folder);
             int? count = null;
             string? notice = area == null ? "桌面空间不足，记录与内容保留；释放空间后可在设置刷新。" : null;
-            try { count = Directory.EnumerateFiles(path).Count(file => Path.GetFileName(file) != WindowsPaths.IdentityFile); }
+            try { count = Directory.EnumerateFiles(path).Count(file => !WindowsPaths.IsIdentityFile(file)); }
             catch (Exception e) { notice = $"内容目录不可读：{path}。{e.Message}"; }
             rendered.Add(new(folder, path, area != null, count, notice));
         }

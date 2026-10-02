@@ -11,7 +11,8 @@ var tests = new (string Name, Func<Task> Run)[]
     ("根目录失败及真实文件系统失败", RootAndFileFailures),
     ("已有根目录离线时保留关联并明确另选", OfflineRootSelection),
     ("抢先创建目录与清理失败不误关联", CompetingDirectoryRecovery),
-    ("中断自启操作按实际配置恢复", InterruptedStartup)
+    ("中断自启操作按实际配置恢复", InterruptedStartup),
+    ("不完整归属标识可核对恢复", InterruptedIdentity)
 };
 var failures = 0;
 var selected = tests.Where(t => args.Length == 0 || t.Name.Contains(args[0], StringComparison.Ordinal)).ToArray();
@@ -268,6 +269,34 @@ static async Task InterruptedStartup()
     workspace = new DesktopWorkspace(fixture.Store, startup);
     Check((await workspace.InitializeAsync([new(0, 0, 1000, 800)])).Outcome == Outcome.RecoveryRequired, "未知实际配置保留恢复状态");
     Check(startup.Command == "外部修改的启动命令" && fixture.Store.Read().State.PendingStartup != null, "恢复不会盲目覆盖外部实际配置");
+}
+
+static async Task InterruptedIdentity()
+{
+    using var fixture = new Fixture();
+    var folder = new FolderRecord(Guid.NewGuid(), "标识中断");
+    var path = Path.Combine(fixture.Content, folder.Name);
+    Directory.CreateDirectory(path);
+    File.WriteAllText(Path.Combine(path, "用户内容.txt"), "保留真实内容");
+    File.WriteAllText(Path.Combine(path, ".kage-folder-id"), "截断");
+    fixture.Store.Save(new WorkspaceState { Root = fixture.Content, PendingCreate = folder });
+    var workspace = new DesktopWorkspace(fixture.Store, new TestStartup());
+    Check((await workspace.InitializeAsync([new(0, 0, 1000, 800)])).Outcome == Outcome.RecoveryRequired, "不完整标识不自动认领");
+    Check((await workspace.ConfirmPendingCreateAsync()).Succeeded, "明确核对后修复中断标识");
+    Check(workspace.Snapshot.Folders.Single().Folder.Id == folder.Id && workspace.Snapshot.Folders.Single().FileCount == 1, "恢复标识与真实用户文件数");
+    var archived = Directory.GetFiles(path, ".kage-folder-id.invalid-*").Single();
+    Check(File.ReadAllText(archived) == "截断", "保留中断标识证据");
+    Check(File.ReadAllText(Path.Combine(path, "用户内容.txt")) == "保留真实内容", "修复不改用户内容");
+    var other = new FolderRecord(Guid.NewGuid(), "不同归属");
+    var otherPath = Path.Combine(fixture.Content, other.Name);
+    Directory.CreateDirectory(otherPath);
+    var differentId = Guid.NewGuid().ToString("N");
+    File.WriteAllText(Path.Combine(otherPath, ".kage-folder-id"), differentId);
+    fixture.Store.Save(new WorkspaceState { Root = fixture.Content, PendingCreate = other });
+    workspace = new DesktopWorkspace(fixture.Store, new TestStartup());
+    await workspace.InitializeAsync([new(0, 0, 1000, 800)]);
+    Check(!(await workspace.ConfirmPendingCreateAsync()).Succeeded && File.ReadAllText(Path.Combine(otherPath, ".kage-folder-id")) == differentId,
+        "不同有效标识仍然不覆盖或自动认领");
 }
 
 sealed class TestStartup : IStartupRegistration
