@@ -126,10 +126,15 @@ internal static class MoveChecks
             var directory = Path.Combine(fixture.Home, "跨盘子目录");
             Directory.CreateDirectory(Path.Combine(directory, "更深"));
             File.WriteAllText(Path.Combine(directory, "更深", "字节.txt"), "完整复制后删除源");
+            File.WriteAllText(Path.Combine(directory, "更深", "字节.txt") + ":metadata", "命名数据流内容");
+            File.WriteAllText(directory + ":metadata", "目录命名流内容");
+            File.WriteAllText(Path.Combine(directory, "更深") + ":metadata", "子目录命名流内容");
             var result = await workspace.MoveAsync([file, directory], MoveTarget.Directory(target));
             Check(result.Items.All(item => item.Outcome == Outcome.Success), "跨本地磁盘文件与普通子目录逐项成功：" + string.Join(";", result.Items.Select(item => item.Message)));
             Check(!File.Exists(file) && !Directory.Exists(directory), "跨盘源实际消失");
             Check(File.ReadAllBytes(Path.Combine(target, "跨盘.bin")).SequenceEqual(new byte[] { 0, 42, 255 }) && File.ReadAllText(Path.Combine(target, "跨盘子目录", "更深", "字节.txt")) == "完整复制后删除源", "跨盘目标字节一致");
+            Check(File.ReadAllText(Path.Combine(target, "跨盘子目录", "更深", "字节.txt") + ":metadata") == "命名数据流内容", "跨盘普通子目录保持 NTFS 命名流字节");
+            Check(File.ReadAllText(Path.Combine(target, "跨盘子目录") + ":metadata") == "目录命名流内容" && File.ReadAllText(Path.Combine(target, "跨盘子目录", "更深") + ":metadata") == "子目录命名流内容", "普通目录自身的命名流也保持字节");
             var readOnly = Path.Combine(fixture.Home, "跨盘只读.bin");
             File.WriteAllBytes(readOnly, [9, 0, 255]);
             if (OperatingSystem.IsWindows())

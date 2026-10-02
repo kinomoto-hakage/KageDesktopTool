@@ -174,6 +174,7 @@ public sealed partial class DesktopWorkspace
 
     private static void CopyContents(string source, string destination, CancellationToken cancellation)
     {
+        CopyDirectoryStreams(source, destination, cancellation);
         foreach (var entry in new DirectoryInfo(source).EnumerateFileSystemInfos())
         {
             cancellation.ThrowIfCancellationRequested();
@@ -186,9 +187,9 @@ public sealed partial class DesktopWorkspace
             }
             else
             {
-                using var input = new FileStream(entry.FullName, FileMode.Open, FileAccess.Read, FileShare.Read);
-                using var output = new FileStream(target, FileMode.CreateNew, FileAccess.Write, FileShare.None);
-                input.CopyTo(output);
+                // 原生复制保留 NTFS 命名流及文件属性；默认流 CopyTo 会丢失用户内容。
+                if (!CopyFile(entry.FullName, target, true)) throw new Win32Exception(Marshal.GetLastWin32Error());
+                using var output = new FileStream(target, FileMode.Open, FileAccess.Write, FileShare.None);
                 output.Flush(true);
             }
         }
@@ -210,13 +211,63 @@ public sealed partial class DesktopWorkspace
                 {
                     if (input.Length != copy.Length || !System.Security.Cryptography.SHA256.HashData(input).SequenceEqual(System.Security.Cryptography.SHA256.HashData(copy)))
                         throw new IOException($"复制后源内容发生变化，保留源与目标：{original}");
+                    VerifyNamedStreams(original, entry.FullName);
                     var disposition = new FileDisposition { Delete = true };
                     if (!SetFileInformationByHandle(handle, 4, ref disposition, Marshal.SizeOf<FileDisposition>()))
                         throw new Win32Exception(Marshal.GetLastWin32Error());
                 }
             }
         }
+        VerifyNamedStreams(source, destination);
         Directory.Delete(source, false);
+    }
+
+    private static void CopyDirectoryStreams(string source, string destination, CancellationToken cancellation)
+    {
+        foreach (var name in NamedStreams(source).Keys)
+        {
+            cancellation.ThrowIfCancellationRequested();
+            using var input = File.OpenRead(source + name);
+            using var output = new FileStream(destination + name, FileMode.CreateNew, FileAccess.Write, FileShare.None);
+            input.CopyTo(output);
+            output.Flush(true);
+        }
+    }
+
+    private static void VerifyNamedStreams(string source, string destination)
+    {
+        var original = NamedStreams(source);
+        var copied = NamedStreams(destination);
+        if (original.Count != copied.Count || original.Any(stream => !copied.TryGetValue(stream.Key, out var size) || stream.Value != size))
+            throw new IOException($"命名数据流未完整复制，保留源与目标：{source}");
+        foreach (var name in original.Keys)
+        {
+            using var input = new FileStream(source + name, FileMode.Open, FileAccess.Read, FileShare.Read | FileShare.Delete);
+            using var output = File.OpenRead(destination + name);
+            if (!System.Security.Cryptography.SHA256.HashData(input).SequenceEqual(System.Security.Cryptography.SHA256.HashData(output)))
+                throw new IOException($"命名数据流字节不一致，保留源与目标：{source}{name}");
+        }
+    }
+
+    private static Dictionary<string, long> NamedStreams(string path)
+    {
+        var streams = new Dictionary<string, long>(StringComparer.OrdinalIgnoreCase);
+        var handle = FindFirstStream(path, 0, out var data, 0);
+        if (handle == new IntPtr(-1))
+        {
+            var error = Marshal.GetLastWin32Error();
+            if (error is 38 or 87) return streams;
+            throw new Win32Exception(error);
+        }
+        try
+        {
+            do { if (data.Name != "::$DATA") streams.Add(data.Name, data.Size); }
+            while (FindNextStream(handle, out data));
+            var error = Marshal.GetLastWin32Error();
+            if (error != 38) throw new Win32Exception(error);
+            return streams;
+        }
+        finally { FindClose(handle); }
     }
 
     [DllImport("kernel32.dll", EntryPoint = "MoveFileExW", CharSet = CharSet.Unicode, SetLastError = true)]
@@ -226,4 +277,13 @@ public sealed partial class DesktopWorkspace
     private static extern SafeFileHandle CreateFile(string path, uint access, uint share, IntPtr security, uint creation, uint flags, IntPtr template);
     [DllImport("kernel32.dll", SetLastError = true)]
     private static extern bool SetFileInformationByHandle(SafeFileHandle handle, int informationClass, ref FileDisposition information, int size);
+    [DllImport("kernel32.dll", EntryPoint = "CopyFileW", CharSet = CharSet.Unicode, SetLastError = true)]
+    private static extern bool CopyFile(string source, string destination, bool failIfExists);
+    [StructLayout(LayoutKind.Sequential, CharSet = CharSet.Unicode)]
+    private struct StreamData { internal long Size; [MarshalAs(UnmanagedType.ByValTStr, SizeConst = 296)] internal string Name; }
+    [DllImport("kernel32.dll", EntryPoint = "FindFirstStreamW", CharSet = CharSet.Unicode, SetLastError = true)]
+    private static extern IntPtr FindFirstStream(string path, int level, out StreamData data, uint flags);
+    [DllImport("kernel32.dll", EntryPoint = "FindNextStreamW", CharSet = CharSet.Unicode, SetLastError = true)]
+    private static extern bool FindNextStream(IntPtr handle, out StreamData data);
+    [DllImport("kernel32.dll")] private static extern bool FindClose(IntPtr handle);
 }
