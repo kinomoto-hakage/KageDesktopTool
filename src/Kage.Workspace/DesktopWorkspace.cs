@@ -1,6 +1,6 @@
 namespace Kage.Workspace;
 
-public sealed class DesktopWorkspace(IWorkspaceStore store, IStartupRegistration startup) : IDesktopWorkspace
+public sealed partial class DesktopWorkspace(IWorkspaceStore store, IStartupRegistration startup) : IDesktopWorkspace
 {
     private readonly SemaphoreSlim operations = new(1, 1);
     private WorkspaceState state = new();

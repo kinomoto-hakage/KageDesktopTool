@@ -1,8 +1,8 @@
 # 07: 真实文件双向批量移动与同名冲突
 
 Type: implementation
-Status: ready-for-agent
-Labels: ready-for-agent
+Status: claimed
+Labels: claimed
 Approved: 2026-10-02
 Plan: ../ticket-plan.md
 Spec: ../spec.md
@@ -45,3 +45,4 @@ User stories: 42, 43, 44, 45, 46, 47, 48, 49
 ## Comments
 
 - 用户已认可合并方案、阻塞关系及本票验收标准，已正式发布。
+- 2026-10-02：用户调用 `implement` 启动本票。测试沿用本票已认可的共用 `IDesktopWorkspace` 与真实临时目录边界；复核基点为 `6bc24e8549935c83ec47a529641b5d48c716101a`。

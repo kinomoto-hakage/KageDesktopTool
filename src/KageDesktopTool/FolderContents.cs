@@ -27,7 +27,7 @@ internal sealed class FolderContents : DockPanel
         view = new Button { Foreground = Brushes.White, Background = Brushes.Transparent, BorderThickness = new Thickness(0), Padding = new Thickness(8, 3, 8, 3), ToolTip = "切换列表／网格" };
         view.Click += async (_, _) =>
         {
-            if (snapshot == null || Runtime.Current.Interacting) return;
+            if (snapshot == null || Runtime.Current.Interacting || Runtime.Current.Moving) return;
             var result = await Runtime.Current.Workspace.SetViewAsync(id, !snapshot.Folder.Grid);
             Runtime.Current.Render();
             if (!result.Succeeded) Runtime.Current.Balloon(result.Message);
@@ -49,6 +49,7 @@ internal sealed class FolderContents : DockPanel
             if (item?.Tag is string path) Runtime.Open(path);
         };
         Children.Add(Items);
+        FileDrag.Send(Items);
     }
 
     internal void Update(FolderSnapshot folder, double currentScale)

@@ -43,6 +43,10 @@ internal sealed class Runtime : IDisposable
     private bool disposed;
     private LayoutInteraction? activeInteraction;
     internal bool Interacting => activeInteraction != null;
+    internal bool DraggingFiles { get; set; }
+    internal bool Moving => moveDialog != null || DraggingFiles;
+    private MoveDialog? moveDialog;
+    internal MoveDialog? ActiveMove => moveDialog;
 
     internal Runtime(IDesktopWorkspace workspace)
     {
@@ -78,7 +82,7 @@ internal sealed class Runtime : IDisposable
         refresh = new DispatcherTimer { Interval = TimeSpan.FromSeconds(3) };
         refresh.Tick += async (_, _) =>
         {
-            if (refreshing || exiting || Interacting) return;
+            if (refreshing || exiting || Interacting || Moving) return;
             refreshing = true;
             try
             {
@@ -210,7 +214,7 @@ internal sealed class Runtime : IDisposable
 
     internal LayoutInteraction? BeginInteraction(Guid id)
     {
-        if (Interacting || Exiting) return null;
+        if (Interacting || Exiting || Moving) return null;
         activeInteraction = Workspace.BeginLayout(id);
         return activeInteraction;
     }
@@ -274,8 +278,21 @@ internal sealed class Runtime : IDisposable
         return dialog.ShowDialog() == true ? name.Text : null;
     }
 
+    internal async Task<BatchMoveResult?> MoveFilesAsync(string[] paths, MoveTarget target, bool cancelled = false, string? targetError = null)
+    {
+        if (Exiting || Moving) return null;
+        moveDialog = new MoveDialog();
+        var dialog = moveDialog;
+        dialog.Show();
+        if (cancelled) dialog.Cancel();
+        if (targetError != null) Balloon(targetError);
+        try { return await dialog.MoveAsync(paths, target, targetError); }
+        finally { moveDialog = null; Render(); }
+    }
+
     internal async Task ExitAsync()
     {
+        if (Moving) { moveDialog?.Cancel(); Balloon("正在结束文件移动，请等待逐项结果后再退出。"); return; }
         if (exiting) return;
         exiting = true;
         refresh.Stop();

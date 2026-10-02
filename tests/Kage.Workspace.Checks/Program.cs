@@ -22,7 +22,11 @@ var tests = new (string Name, Func<Task> Run)[]
     ("布局保存失败保留原状态与内容", LayoutChecks.SaveFailure),
     ("外观颜色同步校验及取消恢复", AppearanceChecks.InputAndCancel),
     ("外观独立保存失败及重启恢复", AppearanceChecks.Persistence),
-    ("图标选择校验保存失败及重启恢复", AppearanceChecks.Icons)
+    ("图标选择校验保存失败及重启恢复", AppearanceChecks.Icons),
+    ("移动真实文件快捷方式和普通子文件夹", MoveChecks.RealContents),
+    ("移动同名编号跳过与批量取消", MoveChecks.ConflictsAndCancel),
+    ("移动占用非法路径与状态提交失败", MoveChecks.FailuresAndCommit),
+    ("移动跨本地磁盘字节一致与源消失", MoveChecks.CrossVolume)
 };
 var failures = 0;
 var selected = tests.Where(t => args.Length == 0 || t.Name.Contains(args[0], StringComparison.Ordinal)).ToArray();

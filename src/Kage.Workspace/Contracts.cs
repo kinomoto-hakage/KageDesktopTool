@@ -43,6 +43,9 @@ public interface IDesktopWorkspace
     Task<OperationResult> ApplyAppearanceAsync(AppearanceInteraction interaction);
     OperationResult CancelAppearance(AppearanceInteraction interaction);
     Task<OperationResult> SetIconAsync(string choice);
+    Task<BatchMoveResult> MoveAsync(IReadOnlyList<string> sources, MoveTarget target,
+        Func<MoveConflict, Task<ConflictChoice>>? resolveConflict = null,
+        IProgress<MoveItemResult>? progress = null, CancellationToken cancellation = default);
 }
 
 public sealed record PendingStartup([property: JsonRequired] bool Enabled,

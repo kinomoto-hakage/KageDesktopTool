@@ -78,6 +78,7 @@ internal sealed class FolderHeader : Window
         header.LostMouseCapture += async (_, _) => await EndInteractionAsync();
         layout.Children.Add(header);
         Contents = new FolderContents(FolderId);
+        FileDrag.Receive(this);
         Grid.SetRow(Contents, 1);
         layout.Children.Add(Contents);
         var grip = new Thumb { Width = 14, Height = 14, Cursor = Cursors.SizeNWSE, HorizontalAlignment = HorizontalAlignment.Right, VerticalAlignment = VerticalAlignment.Bottom, Margin = new Thickness(0, 0, 3, 3), Opacity = .6 };
