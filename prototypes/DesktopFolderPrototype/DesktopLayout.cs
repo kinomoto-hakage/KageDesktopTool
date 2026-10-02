@@ -19,7 +19,7 @@ internal static class DesktopLayout
 
     private static bool Free(Rect rectangle, IEnumerable<Rect> occupied)
     {
-        if (!Forms.Screen.AllScreens.Any(screen => new Rect(screen.WorkingArea.X, screen.WorkingArea.Y, screen.WorkingArea.Width, screen.WorkingArea.Height).Contains(rectangle))) return false;
+        if (!FitsDisplays(rectangle)) return false;
         var padded = rectangle;
         padded.Inflate(Gap / 2.0, Gap / 2.0);
         return occupied.All(other => { var enlarged = other; enlarged.Inflate(Gap / 2.0, Gap / 2.0); return !padded.IntersectsWith(enlarged); });
@@ -52,6 +52,65 @@ internal static class DesktopLayout
     {
         if (!Free(Bounds(folder, x, y), Program.Folders.Where(other => other != folder && !other.LayoutHidden).Select(other => Bounds(other)))) return false;
         folder.State.X = x; folder.State.Y = y; folder.ApplyGeometry(); return true;
+    }
+
+    private static Rect[] DisplayAreas() => Forms.Screen.AllScreens.Select(screen => new Rect(screen.WorkingArea.X, screen.WorkingArea.Y, screen.WorkingArea.Width, screen.WorkingArea.Height)).ToArray();
+
+    private static bool FitsDisplays(Rect rectangle)
+    {
+        // 使用工作区域的并集，允许跨相邻屏幕移动；显示器之间的空洞仍然是边界。
+        var uncovered = new List<Rect> { rectangle };
+        foreach (var area in DisplayAreas())
+        {
+            var next = new List<Rect>();
+            foreach (var part in uncovered)
+            {
+                var covered = Rect.Intersect(part, area);
+                if (covered.IsEmpty || covered.Width == 0 || covered.Height == 0) { next.Add(part); continue; }
+                if (part.Top < covered.Top) next.Add(new Rect(part.Left, part.Top, part.Width, covered.Top - part.Top));
+                if (covered.Bottom < part.Bottom) next.Add(new Rect(part.Left, covered.Bottom, part.Width, part.Bottom - covered.Bottom));
+                if (part.Left < covered.Left) next.Add(new Rect(part.Left, covered.Top, covered.Left - part.Left, covered.Height));
+                if (covered.Right < part.Right) next.Add(new Rect(covered.Right, covered.Top, part.Right - covered.Right, covered.Height));
+            }
+            uncovered = next;
+            if (uncovered.Count == 0) return true;
+        }
+        return false;
+    }
+
+    internal static bool DragBy(FolderWindow folder, int deltaX, int deltaY)
+    {
+        var current = Bounds(folder);
+        var desired = new Rect(current.X + deltaX, current.Y + deltaY, current.Width, current.Height);
+        if (!FitsDisplays(desired))
+        {
+            var candidates = DisplayAreas().Where(area => area.Width >= current.Width && area.Height >= current.Height)
+                .Select(area => new Point(Math.Clamp(desired.X, area.Left, area.Right - current.Width), Math.Clamp(desired.Y, area.Top, area.Bottom - current.Height)))
+                .OrderBy(point => (point - desired.Location).LengthSquared).ToArray();
+            if (candidates.Length == 0) return false;
+            desired.Location = candidates[0];
+        }
+        var x = desired.X;
+        var y = desired.Y;
+        var occupied = Program.Folders.Where(other => other != folder && !other.LayoutHidden).Select(other => Bounds(other)).ToArray();
+        // 接触边界只限制法向移动，另一方向可以继续滑动；扫过路径也不会穿越其他 Folder。
+        foreach (var other in occupied)
+        {
+            if (current.Top > other.Bottom + Gap || current.Bottom < other.Top - Gap) continue;
+            if (x > current.X && current.Right <= other.Left - Gap) x = Math.Min(x, other.Left - current.Width - Gap - 1);
+            if (x < current.X && current.Left >= other.Right + Gap) x = Math.Max(x, other.Right + Gap + 1);
+        }
+        var horizontal = new Rect(x, current.Y, current.Width, current.Height);
+        foreach (var other in occupied)
+        {
+            if (horizontal.Left > other.Right + Gap || horizontal.Right < other.Left - Gap) continue;
+            if (y > current.Y && current.Bottom <= other.Top - Gap) y = Math.Min(y, other.Top - current.Height - Gap - 1);
+            if (y < current.Y && current.Top >= other.Bottom + Gap) y = Math.Max(y, other.Bottom + Gap + 1);
+        }
+        var targetX = (int)Math.Round(x);
+        var targetY = (int)Math.Round(y);
+        if (targetX == folder.State.X && targetY == folder.State.Y) return false;
+        return Move(folder, targetX, targetY);
     }
 
     internal static bool Resize(FolderWindow folder, double width, double headerHeight, double bodyHeight)

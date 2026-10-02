@@ -4,7 +4,7 @@
 
 ## 启动
 
-双击 `bin/Debug/net10.0-windows/DesktopFolderPrototype.exe`。也可以双击 `run.cmd`，或在项目根目录运行：
+先从托盘退出正在运行的旧版，再双击 `bin/DragFix/DesktopFolderPrototype.exe`。也可以双击 `run.cmd`，或在项目根目录从源码运行：
 
 ```powershell
 rtk dotnet run --project prototypes/DesktopFolderPrototype/DesktopFolderPrototype.csproj
@@ -19,7 +19,7 @@ rtk dotnet run --project prototypes/DesktopFolderPrototype/DesktopFolderPrototyp
 - 内容区图标来自 Windows Shell，保留文件关联及快捷方式覆盖图标。
 - 内容区右上角一键切换列表／网格。
 - 拖动头部调整位置；右下角斜三角调整尺寸。折叠时调头部宽高，展开时调共享宽度和内容区高度。
-- Folder 不可相互重叠。拖动／缩放拒绝冲突的位置／尺寸；展开时优先保持本 Folder 头部位置，将冲突的其他 Folder 放到附近空位，空间不足则取消展开。
+- Folder 不可相互重叠。拖动接触屏幕或其他 Folder 时贴住边界，可沿边滑动，反向后立即跟随鼠标；缩放拒绝冲突的尺寸。展开时优先保持本 Folder 头部位置，将冲突的其他 Folder 放到附近空位，空间不足则取消展开。
 - 桌面空间不足时，保留记录和内容并暂时隐藏；释放空间后通过托盘“重新挂接桌面”恢复。
 - 右键头部选择“颜色与透明度…”：预设颜色、Windows 调色盘、RGB 三分量和 HEX 输入均可使用；滑块实时改变背景透明度，文字和图标不随之变淡。取消恢复原先外观，应用保存。
 - 双击文件或普通子文件夹使用系统默认程序打开。
@@ -73,3 +73,14 @@ rtk dotnet run --project prototypes/DesktopFolderPrototype/DesktopFolderPrototyp
 生成头部、网格、列表、外观设置预览及 `PROTOTYPE-report.json`，随后退出。增加 `--desktop-probe` 会短暂切换并恢复“显示桌面”，核查入口命中并截取原型入口矩形区域。诊断会恢复原先位置、展开状态和查看方式。
 
 完整需求见[需求记录](../../.scratch/desktop-folder/requirements.md)，实验结论见[原型结论](../../.scratch/desktop-folder/prototype-verdict.md)。
+
+## 拖动回归检查
+
+在项目根目录执行：
+
+```powershell
+rtk dotnet build prototypes/DesktopFolderPrototype/DesktopFolderPrototype.csproj --no-restore --output prototypes/DesktopFolderPrototype/bin/DragFix
+rtk proxy dotnet prototypes/DesktopFolderPrototype/bin/DragFix/DesktopFolderPrototype.dll --drag-regression
+```
+
+增加 `--minimal` 只重放“受阻后反向一像素”的最小轨迹。完整检查覆盖屏幕四边贴边、立即反向、沿边滑动，以及折叠／展开 Folder 的四向碰撞和不重叠；不创建交互窗口，不修改内容文件或用户布局状态。

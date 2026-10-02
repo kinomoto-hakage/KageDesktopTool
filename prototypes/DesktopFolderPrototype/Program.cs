@@ -60,6 +60,7 @@ public static class Program
         while (directory != null && !File.Exists(Path.Combine(directory.FullName, "DesktopFolderPrototype.csproj"))) directory = directory.Parent;
         Home = directory?.FullName ?? AppContext.BaseDirectory;
         if (args.Contains("--make-icons")) { IconChoices.Generate(); return; }
+        if (args.Contains("--drag-regression")) { Environment.ExitCode = DragRegression.Run(args.Contains("--minimal")); return; }
         Capturing = args.Contains("--capture");
         ProbeDesktop = args.Contains("--desktop-probe");
         App = new Application { ShutdownMode = ShutdownMode.OnExplicitShutdown };

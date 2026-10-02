@@ -33,7 +33,6 @@ public sealed class FolderWindow : Window
     private FileSystemWatcher? watcher;
     private Point? start;
     private Point fileDragStart;
-    private int oldX, oldY;
     private bool movingFiles;
     private bool applying;
     private bool closed;
@@ -62,15 +61,15 @@ public sealed class FolderWindow : Window
         header.MouseLeftButtonDown += (_, e) =>
         {
             if (e.OriginalSource is Button || FindParent<Button>(e.OriginalSource as DependencyObject) != null) return;
-            start = PointToScreen(e.GetPosition(this)); oldX = State.X; oldY = State.Y; header.CaptureMouse(); e.Handled = true;
+            BeginHeaderDrag(PointToScreen(e.GetPosition(this))); header.CaptureMouse(); e.Handled = true;
         };
         header.MouseMove += (_, e) =>
         {
             if (start == null || e.LeftButton != MouseButtonState.Pressed) return;
-            var point = PointToScreen(e.GetPosition(this));
-            DesktopLayout.Move(this, oldX + (int)(point.X - start.Value.X), oldY + (int)(point.Y - start.Value.Y));
+            DragHeaderTo(PointToScreen(e.GetPosition(this)));
         };
         header.MouseLeftButtonUp += (_, _) => { start = null; header.ReleaseMouseCapture(); Program.Save(); };
+        header.LostMouseCapture += (_, _) => start = null;
         layout.Children.Add(header);
         body = new DockPanel { Margin = new Thickness(10, 0, 10, 10) };
         var toolbar = new DockPanel { Margin = new Thickness(3, 7, 3, 8) };
@@ -133,6 +132,19 @@ public sealed class FolderWindow : Window
     }
 
     private static Button SmallButton(string text) => new() { Content = text, Background = Brushes.Transparent, Foreground = Brushes.White, BorderThickness = new Thickness(0), Padding = new Thickness(8, 3, 8, 3), Cursor = Cursors.Hand, FontSize = 11 };
+
+    // 与实际鼠标事件共享入口，让屏幕像素轨迹可以在无交互窗口的回归检查中重放。
+    internal void BeginHeaderDrag(Point point) { start = new Point(Math.Round(point.X), Math.Round(point.Y)); }
+
+    internal void DragHeaderTo(Point point)
+    {
+        if (start == null) return;
+        point = new Point(Math.Round(point.X), Math.Round(point.Y));
+        var delta = point - start.Value;
+        // 每次输入都更新锚点，即使移动受阻，也不积累必须先偿还的鼠标距离。
+        start = point;
+        DesktopLayout.DragBy(this, (int)delta.X, (int)delta.Y);
+    }
 
     internal void Toggle()
     { if (DesktopLayout.Toggle(this)) { Refresh(); Program.Save(); } }
