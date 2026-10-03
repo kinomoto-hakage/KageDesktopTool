@@ -15,6 +15,8 @@
 
 - 2026-10-03：[11 桌面会话恢复](issues/11-desktop-session-recovery.md) 已完成并验收。实际复现确认 Explorer 销毁跨进程子窗口，按稳定标识重建失效窗口并恢复输入／OLE，保留托盘、控制器和热键。44 项业务检查、Release 及真实 Win+D／Explorer 恢复与 04—10 回归通过；规范／规格复核均 0 项代码发现。用户已确认人工 Win+D 检查通过，Status 更新为 resolved，13 对 11 的依赖已满足，仍等待 12 完成。详见 [验收记录](../../docs/verification/11-desktop-session-recovery.md)。
 
+- 2026-10-03：[12 多显示器及 DPI 恢复](issues/12-display-dpi-recovery.md) 已完成，详见 [验收记录](../../docs/verification/12-display-dpi-recovery.md)。真实工作区并集允许连续跨屏并阻挡空洞，恢复优先保留剩余屏位置，窗口补偿宿主 DPI 并重新测量原生内容。52 项业务检查、Release、当前单屏 150% 的真实绘制／鼠标输入／显示通知及 05／06／07 回归通过；125%／150%／200% 注入度量通过。审查发现的高到低 DPI 接缝阻塞经复现修复，规范／规格最终均 0 项遗留。实际多屏、混合 DPI、拔屏及系统配置切换未验证；13 的依赖现已全部满足，等待用户明确启动。
+
 ## Fog
 
 - 后续任务按 [ticket-plan.md](ticket-plan.md) 的依赖与用户明确启动要求继续，完整发布由 13 交付。

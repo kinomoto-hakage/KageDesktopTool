@@ -97,6 +97,8 @@ flowchart TD
 
 ## 确认记录
 
+- 2026-10-03：用户明确启动 12。多屏工作区并集、连续接缝／空洞处理、目标 DPI 与宿主 WPF 补偿、原生内容重测和显示环境恢复已实现。52 项业务检查、Release、当前单屏 150% 的真实显示／输入／通知及 05／06／07 回归通过；高到低 DPI 接缝经两轴审查发现后复现修复，复审均 0 项遗留。实际多屏、混合 DPI、拔屏及系统配置切换明确记录为未验证。12 更新为 resolved，13 的全部依赖已满足，发布仍等待用户明确启动。详见 12 的 Answer 及 `docs/verification/12-display-dpi-recovery.md`。
+
 - 2026-10-03：用户明确启动 11。桌面适配器收敛、失效 HWND 重建、托盘和真实输入／OLE 恢复已实现；44 项业务检查、Release 和真实自动 Win+D／Explorer 重启及 04—10 回归通过，规范／规格独立复核各 0 项代码发现。用户先暂缓人工验收，随后确认“人工 Win+D 检查通过”，11 更新为 resolved，13 对 11 的依赖已满足，当前仍等待 12 完成。详见 11 的 Answer 及 `docs/verification/11-desktop-session-recovery.md`。
 
 - 2026-10-03：用户明确启动 10；启动只读核对、实际路径／链接目标清单、定位及重试恢复完成。42 项业务检查、十二阶段独立进程中断、Release 及真实 Windows 恢复与既有回归通过，规范／规格复审均 0 项遗留。详见 10 的 Answer 和 `docs/verification/10-recover-interrupted-migration.md`；后续票仍等待用户明确启动，13 仍依赖 11、12。
