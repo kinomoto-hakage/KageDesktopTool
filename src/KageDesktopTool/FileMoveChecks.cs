@@ -84,6 +84,12 @@ internal static class FileMoveChecks
                 Check(!File.Exists(Path.Combine(firstPath, incomingNames[0])) && File.Exists(Path.Combine(secondPath, incomingNames[0])), "Folder 间真实多选仅移动一次");
                 SetForegroundWindow(explorer);
                 var explorerBlank = ExplorerBackground(explorer);
+                // 前台切换异步完成；先确认实际命中 Explorer，再核对目标解析。
+                await WaitUntil(() =>
+                {
+                    var hit = WindowsDesktop.WindowFromPoint(new WindowsDesktop.POINT { X = (int)explorerBlank.X, Y = (int)explorerBlank.Y });
+                    return hit == explorer || WindowsDesktop.IsChild(explorer, hit);
+                });
                 SetCursorPos((int)explorerBlank.X, (int)explorerBlank.Y);
                 var detected = FileDrag.TargetAtCursor();
                 Check(detected?.Path == explorerPath, "鼠标所指 Explorer 内容区识别实际目标目录");

@@ -11,3 +11,4 @@ prototypes/DesktopFolderPrototype/PROTOTYPE-preview-*.png
 **/bin/
 **/obj/
 .scratch/desktop-folder/verification/
+releases/

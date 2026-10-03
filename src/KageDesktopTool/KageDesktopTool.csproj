@@ -11,6 +11,7 @@
     <ApplicationIcon>../../prototypes/DesktopFolderPrototype/Assets/app-d.ico</ApplicationIcon>
   </PropertyGroup>
   <ItemGroup>
+    <Content Include="../../docs/使用说明.md" Link="使用说明.md" CopyToPublishDirectory="PreserveNewest" />
     <ProjectReference Include="../Kage.Workspace/Kage.Workspace.csproj" />
     <!-- 已验收图标直接作为构建资源，发布后无需访问原型目录。 -->
     <Content Include="../../prototypes/DesktopFolderPrototype/Assets/*.ico" Link="Assets/%(Filename)%(Extension)" CopyToOutputDirectory="PreserveNewest" CopyToPublishDirectory="PreserveNewest" />

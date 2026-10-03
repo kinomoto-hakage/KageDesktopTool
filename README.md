@@ -1,10 +1,10 @@
 # KageDesktopTool
 
-Windows 桌面整理工具，采用 C#、.NET 10 和 WPF。已交付创建与运行生命周期、原生内容、不重叠布局、外观图标、真实文件移动及 Folder 改名／删除，本轮增加 [09 更换根目录及当场失败恢复](.scratch/desktop-folder/issues/09-change-root-and-rollback.md)：迁移全部活动及保留内容、更新关联快捷方式、显示可取消进度，以及失败后的原位置恢复和持久日志。
+Windows 桌面整理工具，采用 C#、.NET 10 和 WPF。支持真实文件整理、多 Folder 布局、原生网格／列表、外观图标、改名／两种删除、根目录迁移及中断恢复、Explorer 会话恢复与 DPI 布局。任务 13 交付自带运行时的 Windows x64 发布包和组合验收。
 
 ## 运行
 
-双击正式程序 `KageDesktopTool.exe`。本轮的可运行检查包位于 `.scratch/desktop-folder/verification/发布包 含空格/`，需要 .NET 10 Windows Desktop Runtime。最终完整发布包由任务 13 交付。
+解压 `releases/KageDesktopTool-win-x64-1.0.0.zip`，双击整个包内的 `KageDesktopTool.exe`；本仓库已解压的最终位置为 `releases/KageDesktopTool-win-x64-1.0.0/`。包包含 .NET 10／WPF 运行时，日常使用无需 SDK 或开发命令。完整使用、升级及程序位置替换步骤见 [使用说明](docs/使用说明.md)，实际覆盖见 [13 验收记录](docs/verification/13-publish-and-accept.md)。ZIP 相邻有 SHA256，包内有逐文件 `SHA256SUMS.txt`。
 
 源码运行需要 .NET 10 SDK，可以双击根目录 `run.cmd`，或执行：
 
@@ -69,3 +69,15 @@ rtk proxy dotnet src/KageDesktopTool/bin/Debug/net10.0-windows/KageDesktopTool.d
 `--root-migration-check` 需在当前用户交互式 Windows 会话运行，检查真实设置按钮、迁移进度、工具快捷方式目标及当场取消恢复，使用随机隔离夹具。根迁移逐项保存旧／新路径、执行／恢复阶段及关联快捷方式目标变化。恢复不完整保留可定位的实际内容和日志；中断后重启暂停修改，启动恢复由任务 10 接入。详见 [09 验收记录](docs/verification/09-change-root-and-rollback.md)。
 
 结构：`src/Kage.Workspace/` 提供共用业务 interface 和真实状态／目录处理；`src/KageDesktopTool/` 提供 WPF、桌面宿主、托盘、热键、单实例及注册表适配器。`prototypes/` 保留已验收的原型。
+
+## 维护者发布与整体验收
+
+在仓库根目录运行；构建需要 .NET 10 SDK 并从 NuGet 下载 Microsoft 运行时包。`publish.ps1` 使用 `WindowsX64` 发布配置，拒绝覆盖已有目录，生成完整 ZIP、文件清单和 ZIP 的 SHA256。后续维护发布需指定新的 `releases` 子目录。
+
+```powershell
+rtk proxy powershell -NoProfile -ExecutionPolicy Bypass -File publish.ps1 -OutputDirectory releases/KageDesktopTool-win-x64-1.0.0
+rtk proxy powershell -NoProfile -ExecutionPolicy Bypass -File verify-release.ps1 -PackageDirectory releases/KageDesktopTool-win-x64-1.0.0
+rtk proxy powershell -NoProfile -ExecutionPolicy Bypass -File verify-user-launch.ps1 -PackageDirectory releases/KageDesktopTool-win-x64-1.0.0
+```
+
+后两项需要实际用户的交互式 Windows 会话，操作鼠标和托盘；`verify-release.ps1` 串行检查包内依赖、组合流程及 04—12 的 Windows 回归，包含成对 Win+D 和有保护的 Explorer 重启，运行时应留出输入。失败会停止后续检查，可用 `-FromCheck` 明确续跑。`verify-user-launch.ps1` 需现有实例已退出、实际用户状态可用且没有待恢复意图；它以无检查参数的普通 EXE 读取实际设置，验证重复启动、关闭设置和真实托盘退出，核对状态／原型数据 SHA256、实际内容属性及正式自启项不变。业务检查、隔离夹具、发布包及日志不纳入 Git。

@@ -11,6 +11,8 @@ public static class Program
     [STAThread]
     public static int Main(string[] args)
     {
+        if (args.Contains("--publish-check")) return PublishChecks.Run();
+        if (args.Contains("--release-workflow-check")) return ReleaseWorkflowChecks.Run().GetAwaiter().GetResult();
         if (args.Contains("--session-check")) return SessionChecks.Run();
         if (args.Contains("--desktop-recovery-check")) return DesktopRecoveryChecks.Run();
         if (args.Contains("--manual-desktop-check")) return ManualDesktopChecks.Run();

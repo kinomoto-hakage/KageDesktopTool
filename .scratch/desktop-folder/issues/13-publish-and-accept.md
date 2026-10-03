@@ -1,8 +1,8 @@
 # 13: 发布可运行 Windows 包并整体验收
 
 Type: implementation
-Status: ready-for-agent
-Labels: ready-for-agent
+Status: claimed
+Labels: claimed
 Approved: 2026-10-02
 Plan: ../ticket-plan.md
 Spec: ../spec.md
@@ -36,6 +36,8 @@ Integration coverage: 1–72
 - 各功能分支已由 06、10、11、12 的传递依赖覆盖；本票增加组合流程及发布产物验收，不代替前置票自身的测试。
 
 ## Comments
+
+- 2026-10-03：用户调用 `implement` 启动本票，12 已 resolved，全部前置依赖满足。沿用已确认的 `IDesktopWorkspace`、实际文件及隔离 Windows 会话验收；复核基点为 `90b35014797f32e628296a527aaf58a98417bd79`。
 
 - 用户已认可合并方案、阻塞关系及本票验收标准，已正式发布。
 - 2026-10-03：用户确认 11 的人工 Win+D 检查通过，11 已标记 resolved；06、10、11 的前置依赖均已满足，当前仍由 12 阻塞。本票保持 ready-for-agent，尚未启动。

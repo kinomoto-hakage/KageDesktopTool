@@ -26,6 +26,7 @@ internal static class AppearanceChecks
         File.WriteAllText(log, "06 外观、图标及调色盘 Windows 会话检查\n");
         var app = new Application { ShutdownMode = ShutdownMode.OnExplicitShutdown };
         Runtime? runtime = null;
+        FileDrag.GetCursorPos(out var originalCursor);
         var result = 1;
         app.Startup += async (_, _) =>
         {
@@ -88,6 +89,11 @@ internal static class AppearanceChecks
                 Render(dialog, "06-外观设置.png");
 
                 var owner = new WindowInteropHelper(dialog).Handle;
+                // 模拟用户点击标题后打开调色盘，关闭前次验收留下的托盘溢出弹层。
+                WindowsDesktop.GetWindowRect(owner, out var ownerBounds);
+                var titlePoint = new Point(ownerBounds.Left + 80, ownerBounds.Top + 12);
+                await FileMoveChecks.PhysicalDrag(titlePoint, titlePoint);
+                Check(GetForegroundWindow() == owner, "真实鼠标点击外观窗口后取得前台");
                 var nativeFocused = false;
                 var owned = false;
                 var ticks = 0;
@@ -144,6 +150,7 @@ internal static class AppearanceChecks
             finally
             {
                 runtime?.Dispose();
+                SetCursorPos(originalCursor.X, originalCursor.Y);
                 var full = Path.GetFullPath(fixture);
                 if (full.StartsWith(Path.GetFullPath(Path.GetTempPath()), StringComparison.OrdinalIgnoreCase)
                     && Path.GetFileName(full).StartsWith("Kage-appearance-", StringComparison.Ordinal)) Directory.Delete(full, true);
@@ -180,6 +187,7 @@ internal static class AppearanceChecks
     }
 
     [DllImport("user32.dll")] private static extern IntPtr GetForegroundWindow();
+    [DllImport("user32.dll")] private static extern bool SetCursorPos(int x, int y);
     [DllImport("user32.dll")] private static extern IntPtr GetWindow(IntPtr window, uint command);
     [DllImport("user32.dll")] private static extern bool IsWindowEnabled(IntPtr window);
     [DllImport("user32.dll")] private static extern bool PostMessage(IntPtr window, uint message, IntPtr wp, IntPtr lp);
