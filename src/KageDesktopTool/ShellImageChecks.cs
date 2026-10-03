@@ -36,6 +36,11 @@ internal static class ShellImageChecks
             File.WriteAllText(ansi, "[InternetShortcut]\r\nURL=https://example.invalid/\r\nIconFile=" + iconPath + "\r\nIconIndex=0\r\n", Encoding.GetEncoding((int)GetACP()));
             var ansiImage = (BitmapSource)ShellIcons.ForFile(ansi, false, 72)!;
             Check(Fingerprint(ansiImage).SequenceEqual(Fingerprint(first)), "系统 ANSI 编码的中文 IconFile 正确读取，不回退通用图标");
+            var ambiguousIcon = Path.Combine(fixture, "猫.ico"); File.Copy(iconPath, ambiguousIcon);
+            var ambiguous = Path.Combine(fixture, "合法多编码.url");
+            File.WriteAllText(ambiguous, "[InternetShortcut]\r\nURL=https://example.invalid/\r\nIconFile=" + ambiguousIcon + "\r\n", Encoding.GetEncoding((int)GetACP()));
+            Check(Fingerprint((BitmapSource)ShellIcons.ForFile(ambiguous, false, 72)!).SequenceEqual(Fingerprint(first)),
+                "也可合法解成 UTF-8 的 ANSI 字节优先匹配实际系统编码资源");
             var state = new Kage.Workspace.JsonWorkspaceStore(Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData), "KageDesktopTool")).Read().State;
             var actual = state.Folders.SelectMany(folder => Directory.GetFiles(Path.Combine(folder.ContentRoot ?? state.Root, folder.Name)))
                 .Where(path => Path.GetFileName(path).Contains("ChatGPT", StringComparison.OrdinalIgnoreCase) || Path.GetFileName(path).Contains("Wallpaper", StringComparison.OrdinalIgnoreCase)).ToArray();

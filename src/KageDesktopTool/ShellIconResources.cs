@@ -19,24 +19,25 @@ internal static class ShellIconResources
         if (path.EndsWith(".url", StringComparison.OrdinalIgnoreCase))
         {
             var bytes = File.ReadAllBytes(path);
-            string contents;
-            if (bytes.Length >= 2 && bytes[0] == 0xff && bytes[1] == 0xfe) contents = Encoding.Unicode.GetString(bytes, 2, bytes.Length - 2);
-            else if (bytes.Length >= 2 && bytes[0] == 0xfe && bytes[1] == 0xff) contents = Encoding.BigEndianUnicode.GetString(bytes, 2, bytes.Length - 2);
+            var candidates = new List<string>();
+            if (bytes.Length >= 2 && bytes[0] == 0xff && bytes[1] == 0xfe) candidates.Add(Encoding.Unicode.GetString(bytes, 2, bytes.Length - 2));
+            else if (bytes.Length >= 2 && bytes[0] == 0xfe && bytes[1] == 0xff) candidates.Add(Encoding.BigEndianUnicode.GetString(bytes, 2, bytes.Length - 2));
+            else if (bytes.Length >= 3 && bytes[0] == 0xef && bytes[1] == 0xbb && bytes[2] == 0xbf) candidates.Add(Encoding.UTF8.GetString(bytes, 3, bytes.Length - 3));
             else
             {
-                try { contents = new UTF8Encoding(false, true).GetString(bytes).TrimStart('\ufeff'); }
-                catch (DecoderFallbackException)
-                {
-                    Encoding.RegisterProvider(CodePagesEncodingProvider.Instance);
-                    contents = Encoding.GetEncoding((int)GetACP()).GetString(bytes);
-                }
+                // 无 BOM 的原生 INI 默认系统编码；某些 ANSI 字节也可合法解成 UTF-8。
+                Encoding.RegisterProvider(CodePagesEncodingProvider.Instance);
+                candidates.Add(Encoding.GetEncoding((int)GetACP()).GetString(bytes));
+                try { candidates.Add(new UTF8Encoding(false, true).GetString(bytes)); }
+                catch (DecoderFallbackException) { }
             }
-            var values = contents.Split(['\r', '\n'], StringSplitOptions.RemoveEmptyEntries).Select(line => line.Split('=', 2)).Where(parts => parts.Length == 2)
-                .GroupBy(parts => parts[0].Trim(), StringComparer.OrdinalIgnoreCase).ToDictionary(group => group.Key, group => group.Last()[1].Trim(), StringComparer.OrdinalIgnoreCase);
-            if (values.TryGetValue("IconFile", out var iconPath))
+            foreach (var contents in candidates.Distinct())
             {
+                var values = contents.Split(['\r', '\n'], StringSplitOptions.RemoveEmptyEntries).Select(line => line.Split('=', 2)).Where(parts => parts.Length == 2)
+                    .GroupBy(parts => parts[0].Trim(), StringComparer.OrdinalIgnoreCase).ToDictionary(group => group.Key, group => group.Last()[1].Trim(), StringComparer.OrdinalIgnoreCase);
+                if (!values.TryGetValue("IconFile", out var iconPath)) continue;
                 _ = int.TryParse(values.GetValueOrDefault("IconIndex"), out var index);
-                return ReadResource(Environment.ExpandEnvironmentVariables(iconPath.Trim('"')), index, pixels);
+                if (ReadResource(Environment.ExpandEnvironmentVariables(iconPath.Trim('"')), index, pixels) is { } image) return image;
             }
             return null;
         }
