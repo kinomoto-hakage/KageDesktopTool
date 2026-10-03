@@ -70,7 +70,7 @@ internal sealed class SettingsWindow : Window
         AddButton(controls, "应用自启选择", async () => { await Apply(() => runtime.Workspace.SetStartupAsync(startup.IsChecked == true)); startupEdited = false; Refresh(); });
         var actions = new StackPanel { Orientation = Orientation.Horizontal, Margin = new Thickness(0, 15, 0, 0) };
         AddButton(actions, "新建 Folder", async () => await runtime.CreateAsync());
-        AddButton(actions, "刷新展示", async () => await Apply(() => runtime.Workspace.RefreshAsync(WindowsDesktop.Displays())));
+        AddButton(actions, "刷新展示", async () => await runtime.RefreshDisplayEnvironmentAsync());
         AddButton(actions, "恢复状态备份", async () =>
         {
             if (MessageBox.Show("使用最近有效备份恢复？损坏的状态文件会另存保留。", "恢复工作区", MessageBoxButton.OKCancel) == MessageBoxResult.OK)

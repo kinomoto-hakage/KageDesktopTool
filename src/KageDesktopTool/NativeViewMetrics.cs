@@ -7,9 +7,12 @@ using Forms = System.Windows.Forms;
 
 namespace Kage.Desktop;
 
-internal sealed record NativeViewMetrics(double GridWidth, double GridHeight, double GridIcon, double SmallIcon, double ListHeight)
+internal sealed record NativeViewMetrics(double GridWidth, double GridHeight, double GridIcon, double SmallIcon, double ListHeight,
+    string FontFamily, double FontSize, bool Bold, bool Italic)
 {
     private static readonly Dictionary<uint, NativeViewMetrics> Cache = new();
+    internal static int Revision { get; private set; }
+    internal static void Invalidate() { Cache.Clear(); Revision++; }
 
     internal static NativeViewMetrics ForScale(double scale)
     {
@@ -19,17 +22,23 @@ internal sealed record NativeViewMetrics(double GridWidth, double GridHeight, do
         var small = GetSystemMetricsForDpi(49, dpi) / scale;
         var width = GetSystemMetricsForDpi(38, dpi) / scale;
         var height = GetSystemMetricsForDpi(39, dpi) / scale;
-        var row = MeasureListRow();
-        var metrics = new NativeViewMetrics(Math.Max(width, large + 12), Math.Max(height, large + 36), large, small, Math.Max(row, small + 2 / scale));
+        if (!SystemParametersInfoForDpi(0x1F, (uint)Marshal.SizeOf<LOGFONT>(), out var font, 0, dpi))
+            throw new System.ComponentModel.Win32Exception(Marshal.GetLastWin32Error(), "无法读取当前 DPI 的系统标题字体。");
+        var fontSize = Math.Abs(font.Height) / scale;
+        var row = MeasureListRow(dpi, font);
+        var metrics = new NativeViewMetrics(Math.Max(width, large + 12), Math.Max(height, large + 36), large, small,
+            Math.Max(row / scale, small + 2 / scale), font.FaceName, fontSize, font.Weight >= 700, font.Italic != 0);
         Cache[dpi] = metrics; return metrics;
     }
 
-    private static double MeasureListRow()
+    private static double MeasureListRow(uint dpi, LOGFONT logicalFont)
     {
-        using var view = new Forms.ListView { View = Forms.View.List, Size = new System.Drawing.Size(300, 120) };
-        using var font = new System.Drawing.Font(SystemFonts.IconFontFamily.Source, (float)(SystemFonts.IconFontSize * 72 / 96));
+        // 控件的字体和小图标明确使用目标 DPI 像素，不能测量默认主屏控件后复用所有屏幕。
+        using var view = new Forms.ListView { View = Forms.View.List, Size = new System.Drawing.Size(600, 300) };
+        var style = (logicalFont.Weight >= 700 ? System.Drawing.FontStyle.Bold : System.Drawing.FontStyle.Regular)
+            | (logicalFont.Italic != 0 ? System.Drawing.FontStyle.Italic : System.Drawing.FontStyle.Regular);
+        using var font = new System.Drawing.Font(logicalFont.FaceName, Math.Abs(logicalFont.Height), style, System.Drawing.GraphicsUnit.Pixel);
         view.Font = font;
-        var dpi = GetDpiForWindow(view.Handle);
         using var images = new Forms.ImageList { ImageSize = new System.Drawing.Size(GetSystemMetricsForDpi(49, dpi), GetSystemMetricsForDpi(50, dpi)) };
         using var icon = System.Drawing.SystemIcons.Application.ToBitmap(); images.Images.Add(icon);
         view.SmallImageList = images;
@@ -37,10 +46,21 @@ internal sealed record NativeViewMetrics(double GridWidth, double GridHeight, do
         var first = view.GetItemRect(0);
         var second = view.GetItemRect(1);
         var physical = second.Top > first.Top ? second.Top - first.Top : first.Height;
-        return physical > 0 ? physical * 96.0 / dpi : Math.Max(SystemFonts.IconFontSize + 6, 20);
+        if (physical <= 0) throw new InvalidOperationException("原生 ListView 未返回有效行高。");
+        return physical;
     }
 
+    [StructLayout(LayoutKind.Sequential, CharSet = CharSet.Unicode)]
+    private struct LOGFONT
+    {
+        internal int Height, Width, Escapement, Orientation, Weight;
+        internal byte Italic, Underline, StrikeOut, FontCharSet, OutPrecision, ClipPrecision, Quality, PitchAndFamily;
+        [MarshalAs(UnmanagedType.ByValTStr, SizeConst = 32)] internal string FaceName;
+    }
+
+    [DllImport("user32.dll", CharSet = CharSet.Unicode, SetLastError = true)]
+    private static extern bool SystemParametersInfoForDpi(uint action, uint size, out LOGFONT font, uint flags, uint dpi);
+
     [DllImport("user32.dll")] private static extern int GetSystemMetricsForDpi(int index, uint dpi);
-    [DllImport("user32.dll")] private static extern uint GetDpiForWindow(IntPtr hwnd);
 }
 

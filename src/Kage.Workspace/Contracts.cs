@@ -22,6 +22,7 @@ public sealed record ContentEntry(string ActualPath, string Name, bool IsDirecto
 public sealed record FolderSnapshot(FolderRecord Folder, string ActualPath, bool Visible, int? FileCount, string? Notice)
 {
     public IReadOnlyList<ContentEntry> Entries { get; init; } = [];
+    public double DisplayScale { get; init; } = 1;
 }
 public sealed record WorkspaceSnapshot(string Root, bool StartupEnabled, string IconChoice,
     IReadOnlyList<FolderSnapshot> Folders, bool RecoveryRequired, IReadOnlyList<string> Notices)

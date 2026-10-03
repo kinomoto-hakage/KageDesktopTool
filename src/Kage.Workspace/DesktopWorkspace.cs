@@ -319,6 +319,7 @@ public sealed partial class DesktopWorkspace(IWorkspaceStore store, IStartupRegi
         return Run(() =>
         {
             if (blocked) return Locked();
+            if (!displays.SequenceEqual(interaction.Displays)) return new(Outcome.Failed, "显示环境已变化，本次输入未覆盖新布局；请重试。");
             if (!state.Folders.SequenceEqual(interaction.Original)) return new(Outcome.Failed, "布局已发生变化，本次输入未覆盖新布局；请重试。");
             var occupied = new List<(FolderRecord Folder, DisplayArea Area)>();
             foreach (var folder in proposed.Where(folder => folder.Visible))
@@ -397,7 +398,14 @@ public sealed partial class DesktopWorkspace(IWorkspaceStore store, IStartupRegi
         if (save && !state.Folders.SequenceEqual(placement))
         {
             var next = state with { Folders = placement };
-            store.Save(next);
+            try { store.Save(next); }
+            catch (Exception e)
+            {
+                // 显示区已经改变，即使保存失败也不能继续发布屏幕外的旧几何。
+                // 保留已提交配置供下次刷新重试，当前会话展示安全的临时位置。
+                Publish(placement);
+                throw new IOException($"恢复位置尚未保存，当前按可用显示区临时展示；请在设置中刷新重试：{e.Message}", e);
+            }
             state = next;
         }
         Publish(placement);
@@ -445,7 +453,8 @@ public sealed partial class DesktopWorkspace(IWorkspaceStore store, IStartupRegi
             catch (Exception e) { notice = $"{notice}\n内容目录不可读或枚举未完成：{path}。{e.Message}".Trim(); }
             rendered.Add(new(folder, path, area != null, count, notice)
             {
-                Entries = entries.OrderBy(entry => entry.Name, StringComparer.OrdinalIgnoreCase).ToArray()
+                Entries = entries.OrderBy(entry => entry.Name, StringComparer.OrdinalIgnoreCase).ToArray(),
+                DisplayScale = area?.Scale ?? 1
             });
         }
         var messages = new List<string>(notices);

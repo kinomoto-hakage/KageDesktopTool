@@ -12,6 +12,7 @@ using System.Windows.Media.Imaging;
 using System.Windows.Threading;
 using Kage.Workspace;
 using Forms = System.Windows.Forms;
+using Microsoft.Win32;
 
 namespace Kage.Desktop;
 
@@ -45,6 +46,8 @@ internal sealed class Runtime : IDisposable
     private bool sessionRefreshing;
     private bool taskbarRestarted;
     private bool? reportedAvailability;
+    private bool displayRefreshPending;
+    private DisplayArea[] displayEnvironment = WindowsDesktop.Displays();
     private LayoutInteraction? activeInteraction;
     internal bool Interacting => activeInteraction != null;
     internal bool DraggingFiles { get; set; }
@@ -73,9 +76,13 @@ internal sealed class Runtime : IDisposable
                 taskbarRestarted = true;
                 Dispatch(async () => await RefreshDesktopSessionAsync());
             }
+            if (message is 0x7E or 0x1A or 0x2E0) RequestDisplayRefresh();
             return IntPtr.Zero;
         };
         source.AddHook(hook);
+        // WPF 可在 HWND hook 之前消费 WM_SETTINGCHANGE；系统事件补足字体／间距变化。
+        SystemEvents.DisplaySettingsChanged += SystemDisplayChanged;
+        SystemEvents.UserPreferenceChanged += SystemPreferenceChanged;
         HotkeyRegistered = WindowsDesktop.RegisterHotKey(handle, 1, 0x4003, 0x4B);
         trayIcon = new Icon(Path.Combine(AppContext.BaseDirectory, "Assets", "tray-d.ico"));
         Tray = new Forms.NotifyIcon { Icon = trayIcon, Text = "Kage 桌面整理", Visible = true };
@@ -98,15 +105,7 @@ internal sealed class Runtime : IDisposable
         refresh.Tick += async (_, _) =>
         {
             await RefreshDesktopSessionAsync();
-            if (refreshing || exiting || Interacting || Moving || ChangingFolder) return;
-            refreshing = true;
-            try
-            {
-                var result = await Workspace.RefreshAsync(WindowsDesktop.Displays());
-                Render();
-                if (result.Outcome == Outcome.Failed) Balloon(result.Message);
-            }
-            finally { refreshing = false; }
+            await RefreshDisplayEnvironmentAsync();
         };
         refresh.Start();
         Render();
@@ -117,6 +116,43 @@ internal sealed class Runtime : IDisposable
     internal void Dispatch(Action action)
     {
         if (!disposed) Application.Current.Dispatcher.BeginInvoke(action);
+    }
+
+    private void RequestDisplayRefresh()
+    {
+        displayRefreshPending = true;
+        NativeViewMetrics.Invalidate();
+        Dispatch(async () => await RefreshDisplayEnvironmentAsync());
+    }
+
+    private void SystemDisplayChanged(object? sender, EventArgs args) => Dispatch(RequestDisplayRefresh);
+    private void SystemPreferenceChanged(object sender, UserPreferenceChangedEventArgs args) => Dispatch(RequestDisplayRefresh);
+
+    internal async Task RefreshDisplayEnvironmentAsync()
+    {
+        if (refreshing || Exiting || Moving || ChangingFolder) return;
+        var displays = WindowsDesktop.Displays();
+        var changed = displayRefreshPending || !displayEnvironment.SequenceEqual(displays);
+        if (Interacting)
+        {
+            if (!changed) return;
+            foreach (var header in Headers.Values) header.CancelInteraction();
+            activeInteraction = null;
+        }
+        refreshing = true;
+        var hidden = Workspace.Snapshot.Folders.Count(f => !f.Visible);
+        try
+        {
+            if (changed) NativeViewMetrics.Invalidate();
+            var result = await Workspace.RefreshAsync(displays);
+            displayEnvironment = displays;
+            displayRefreshPending = false;
+            Render();
+            if (!result.Succeeded) Balloon(result.Message);
+            else if (Workspace.Snapshot.Folders.Count(f => !f.Visible) > hidden)
+                Balloon("当前显示区域容纳不下部分 Folder，内容和记录保留；可在设置打开内容文件夹，释放空间后刷新展示。");
+        }
+        finally { refreshing = false; }
     }
 
     internal void Balloon(string message)
@@ -266,7 +302,7 @@ internal sealed class Runtime : IDisposable
 
     internal LayoutInteraction? BeginInteraction(Guid id)
     {
-        if (Interacting || Exiting || Moving || ChangingFolder) return null;
+        if (Interacting || Exiting || Moving || ChangingFolder || refreshing || displayRefreshPending) return null;
         activeInteraction = Workspace.BeginLayout(id);
         return activeInteraction;
     }
@@ -406,6 +442,8 @@ internal sealed class Runtime : IDisposable
         disposed = true;
         refresh.Stop();
         source.RemoveHook(hook);
+        SystemEvents.DisplaySettingsChanged -= SystemDisplayChanged;
+        SystemEvents.UserPreferenceChanged -= SystemPreferenceChanged;
         if (HotkeyRegistered) WindowsDesktop.UnregisterHotKey(new WindowInteropHelper(Controller).Handle, 1);
         settings?.Close();
         appearance?.Close();

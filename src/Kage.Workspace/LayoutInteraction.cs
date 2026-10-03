@@ -4,6 +4,7 @@ namespace Kage.Workspace;
 public sealed class LayoutInteraction
 {
     internal FolderRecord[] Original { get; }
+    internal IReadOnlyList<DisplayArea> Displays => displays;
     private readonly Guid target;
     private readonly DisplayArea[] displays;
     private FolderSnapshot[] folders;
@@ -31,8 +32,40 @@ public sealed class LayoutInteraction
         var width = HeaderLayout.Width(current, area);
         var height = HeaderLayout.Height(current, area);
         var occupied = Occupied();
-        var point = Sweep(current, area, width, height, (double)screenX - previous.X, (double)screenY - previous.Y, occupied);
+        var dx = (double)screenX - previous.X;
+        var dy = (double)screenY - previous.Y;
+        var point = displays.Length == 1 ? Sweep(current, area, width, height, dx, dy, occupied)
+            : SweepDisplays(current, dx, dy, occupied);
         return Replace(current with { X = point.X, Y = point.Y }, occupied);
+    }
+
+    private (int X, int Y) SweepDisplays(FolderRecord current, double dx, double dy, IReadOnlyList<(FolderRecord Folder, DisplayArea Area)> occupied)
+    {
+        // 多屏路径逐物理像素核对真实工作区并重新选择 DPI；不能跳过空洞或障碍。
+        // 超大输入限制在整个桌面跨度，防止无效位移拖慢鼠标处理。
+        var span = Math.Max(displays.Max(d => (long)d.X + d.Width) - displays.Min(d => d.X),
+            displays.Max(d => (long)d.Y + d.Height) - displays.Min(d => d.Y));
+        var distance = Math.Max(Math.Abs(dx), Math.Abs(dy));
+        if (distance > span * 2) { dx *= span * 2 / distance; dy *= span * 2 / distance; }
+        var steps = (int)Math.Ceiling(Math.Max(Math.Abs(dx), Math.Abs(dy)));
+        var x = current.X;
+        var y = current.Y;
+        bool stopX = false, stopY = false;
+        for (var step = 1; step <= steps; step++)
+        {
+            var nextX = x + (stopX ? 0 : (int)Math.Round(dx * step / steps) - (int)Math.Round(dx * (step - 1) / steps));
+            var nextY = y + (stopY ? 0 : (int)Math.Round(dy * step / steps) - (int)Math.Round(dy * (step - 1) / steps));
+            var candidate = current with { X = nextX, Y = nextY };
+            if (HeaderLayout.Available(candidate, displays, occupied) != null) { x = nextX; y = nextY; continue; }
+            // 接触后保持切向位移；锚点始终由 DragTo 更新，下一次反向立即响应。
+            var horizontal = candidate with { Y = y };
+            var vertical = candidate with { X = x };
+            if (nextX != x && HeaderLayout.Available(horizontal, displays, occupied) != null) { x = nextX; stopY = true; }
+            else if (nextY != y && HeaderLayout.Available(vertical, displays, occupied) != null) { y = nextY; stopX = true; }
+            else { stopX = true; stopY = true; }
+            if (stopX && stopY) break;
+        }
+        return (x, y);
     }
 
     private static (int X, int Y) Sweep(FolderRecord current, DisplayArea area, int width, int height,
@@ -101,10 +134,11 @@ public sealed class LayoutInteraction
 
     private bool Replace(FolderRecord changed, IReadOnlyList<(FolderRecord Folder, DisplayArea Area)> occupied)
     {
-        if (HeaderLayout.Available(changed, displays, occupied) == null) return false;
+        var area = HeaderLayout.Available(changed, displays, occupied);
+        if (area == null) return false;
         var index = Array.FindIndex(folders, folder => folder.Folder.Id == target);
         if (folders[index].Folder == changed) return false;
-        folders = folders.Select(folder => folder.Folder.Id == target ? folder with { Folder = changed } : folder).ToArray();
+        folders = folders.Select(folder => folder.Folder.Id == target ? folder with { Folder = changed, DisplayScale = area.Scale } : folder).ToArray();
         return true;
     }
 }

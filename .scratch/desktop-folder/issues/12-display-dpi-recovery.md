@@ -1,8 +1,8 @@
 # 12: 多显示器与 DPI 变化后的显示和布局
 
 Type: implementation
-Status: ready-for-agent
-Labels: ready-for-agent
+Status: claimed
+Labels: claimed
 Approved: 2026-10-02
 Plan: ../ticket-plan.md
 Spec: ../spec.md

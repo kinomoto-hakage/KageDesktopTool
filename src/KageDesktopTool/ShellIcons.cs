@@ -9,22 +9,42 @@ namespace Kage.Desktop;
 
 internal static class ShellIcons
 {
-    internal static ImageSource? ForFile(string path, bool small)
+    internal static ImageSource? ForFile(string path, bool small, int physicalSize = 0)
     {
         // 后台线程显式初始化 COM；每次内容刷新重新读实际路径，避免保留失效覆盖图标。
         var initialized = CoInitializeEx(IntPtr.Zero, 0) >= 0;
-        try { return Read(path, small); }
+        try { return Read(path, small, physicalSize); }
         finally { if (initialized) CoUninitialize(); }
     }
 
-    private static ImageSource? Read(string path, bool small)
+    private static ImageSource? Read(string path, bool small, int physicalSize)
     {
         // 使用实际路径，让 Windows 解析文件关联、快捷方式覆盖和自定义文件夹图标。
-        SHGetFileInfo(path, 0, out var info, (uint)Marshal.SizeOf<SHFILEINFO>(), 0x100 | 0x20 | (small ? 1u : 0u));
+        SHGetFileInfo(path, 0, out var info, (uint)Marshal.SizeOf<SHFILEINFO>(), 0x100 | 0x20 | 0x40 | 0x4000 | (small ? 1u : 0u));
         if (info.Icon == IntPtr.Zero) return null;
         try
         {
             var image = Imaging.CreateBitmapSourceFromHIcon(info.Icon, Int32Rect.Empty, BitmapSizeOptions.FromEmptyOptions());
+            if (image.PixelWidth < physicalSize)
+            {
+                // 从 Shell 系统图像列表取足够大的原生图像，保留实际路径的关联及覆盖。
+                var iid = new Guid("46EB5926-582E-4017-9FDF-E8998DAA0950");
+                foreach (var kind in new[] { 0, 2, 4 })
+                {
+                    if (SHGetImageList(kind, ref iid, out var list) < 0) continue;
+                    try
+                    {
+                        if (!ImageList_GetIconSize(list, out var width, out _) || width < physicalSize) continue;
+                        var overlay = (uint)((info.IconIndex >> 24) & 0xff) << 8;
+                        var icon = ImageList_GetIcon(list, info.IconIndex & 0x00ffffff, 1 | overlay);
+                        if (icon == IntPtr.Zero) continue;
+                        try { image = Imaging.CreateBitmapSourceFromHIcon(icon, Int32Rect.Empty, BitmapSizeOptions.FromEmptyOptions()); }
+                        finally { DestroyIcon(icon); }
+                        break;
+                    }
+                    finally { Marshal.Release(list); }
+                }
+            }
             image.Freeze(); return image;
         }
         finally { DestroyIcon(info.Icon); }
@@ -41,6 +61,9 @@ internal static class ShellIcons
     }
     [DllImport("shell32.dll", CharSet = CharSet.Unicode)] private static extern IntPtr SHGetFileInfo(string path, uint attributes, out SHFILEINFO info, uint size, uint flags);
     [DllImport("user32.dll")] private static extern bool DestroyIcon(IntPtr icon);
+    [DllImport("shell32.dll")] private static extern int SHGetImageList(int kind, ref Guid iid, out IntPtr list);
+    [DllImport("comctl32.dll")] private static extern bool ImageList_GetIconSize(IntPtr list, out int width, out int height);
+    [DllImport("comctl32.dll")] private static extern IntPtr ImageList_GetIcon(IntPtr list, int index, uint flags);
     [DllImport("ole32.dll")] private static extern int CoInitializeEx(IntPtr reserved, uint flags);
     [DllImport("ole32.dll")] private static extern void CoUninitialize();
 }

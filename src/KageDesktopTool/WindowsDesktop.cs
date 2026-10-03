@@ -7,7 +7,6 @@ using System.Text;
 using System.Windows;
 using System.Windows.Automation;
 using Kage.Workspace;
-using Forms = System.Windows.Forms;
 
 namespace Kage.Desktop;
 
@@ -95,13 +94,22 @@ internal static class WindowsDesktop
         return null;
     }
 
-    internal static DisplayArea[] Displays() => Forms.Screen.AllScreens.Select(screen =>
+    internal static DisplayArea[] Displays()
     {
-        var area = screen.WorkingArea;
-        var monitor = MonitorFromPoint(new POINT { X = area.Left + area.Width / 2, Y = area.Top + area.Height / 2 }, 2);
-        var scale = GetDpiForMonitor(monitor, 0, out var x, out _) == 0 ? x / 96.0 : 1;
-        return new DisplayArea(area.Left, area.Top, area.Width, area.Height, scale);
-    }).ToArray();
+        // 直接重新枚举，避免 Screen 的缓存仍指向已拔出的显示器或旧工作区。
+        var areas = new List<DisplayArea>();
+        EnumDisplayMonitors(IntPtr.Zero, IntPtr.Zero, (IntPtr monitor, IntPtr dc, ref RECT bounds, IntPtr data) =>
+        {
+            var info = new MONITORINFO { Size = Marshal.SizeOf<MONITORINFO>() };
+            if (!GetMonitorInfo(monitor, ref info)) return true;
+            var area = info.Work;
+            var scale = GetDpiForMonitor(monitor, 0, out var x, out _) == 0 && x > 0 ? x / 96.0 : 1;
+            if (area.Right > area.Left && area.Bottom > area.Top)
+                areas.Add(new(area.Left, area.Top, area.Right - area.Left, area.Bottom - area.Top, scale));
+            return true;
+        }, IntPtr.Zero);
+        return areas.ToArray();
+    }
 
     internal static IntPtr Host()
     {
@@ -118,6 +126,11 @@ internal static class WindowsDesktop
 
     [StructLayout(LayoutKind.Sequential)] internal struct POINT { internal int X, Y; }
     [StructLayout(LayoutKind.Sequential)] internal struct RECT { internal int Left, Top, Right, Bottom; }
+    [StructLayout(LayoutKind.Sequential)] private struct MONITORINFO { internal int Size; internal RECT Monitor, Work; internal uint Flags; }
+    private delegate bool MonitorProc(IntPtr monitor, IntPtr dc, ref RECT bounds, IntPtr data);
+    [DllImport("user32.dll")] private static extern bool EnumDisplayMonitors(IntPtr dc, IntPtr clip, MonitorProc callback, IntPtr data);
+    [DllImport("user32.dll", CharSet = CharSet.Unicode)] private static extern bool GetMonitorInfo(IntPtr monitor, ref MONITORINFO info);
+    [DllImport("user32.dll")] internal static extern uint GetDpiForWindow(IntPtr hwnd);
     private delegate bool EnumProc(IntPtr hwnd, IntPtr parameter);
     [DllImport("user32.dll")] private static extern bool EnumWindows(EnumProc callback, IntPtr parameter);
     [DllImport("user32.dll", CharSet = CharSet.Unicode)] private static extern uint RegisterWindowMessage(string name);
@@ -134,7 +147,6 @@ internal static class WindowsDesktop
     [DllImport("user32.dll", EntryPoint = "SetWindowLongPtrW")] internal static extern IntPtr SetWindowLongPtr(IntPtr hwnd, int index, IntPtr value);
     [DllImport("user32.dll", SetLastError = true)] internal static extern bool RegisterHotKey(IntPtr hwnd, int id, uint modifiers, uint key);
     [DllImport("user32.dll")] internal static extern bool UnregisterHotKey(IntPtr hwnd, int id);
-    [DllImport("user32.dll")] private static extern IntPtr MonitorFromPoint(POINT point, uint flags);
     [DllImport("shcore.dll")] private static extern int GetDpiForMonitor(IntPtr monitor, int type, out uint x, out uint y);
     [DllImport("user32.dll")] internal static extern IntPtr WindowFromPoint(POINT point);
     [DllImport("user32.dll")] internal static extern bool IsChild(IntPtr parent, IntPtr child);

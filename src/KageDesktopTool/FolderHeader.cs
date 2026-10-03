@@ -28,6 +28,8 @@ internal sealed class FolderHeader : Window
     private LayoutInteraction? interaction;
     private bool closed;
     private double displayScale = 1;
+    private FolderSnapshot? geometry;
+    private bool positioning;
 
     internal FolderHeader(FolderSnapshot folder)
     {
@@ -111,6 +113,10 @@ internal sealed class FolderHeader : Window
         Menu(menu, "设置", () => Runtime.Current.ShowSettings());
         ContextMenu = menu;
         SourceInitialized += (_, _) => Attach();
+        DpiChanged += (_, _) => Dispatcher.BeginInvoke(() =>
+        {
+            if (!closed && !positioning && geometry != null) ApplyGeometry(geometry);
+        });
         Closed += async (_, _) => { closed = true; Contents.Dispose(); await EndInteractionAsync(); };
         Update(folder);
     }
@@ -164,6 +170,14 @@ internal sealed class FolderHeader : Window
         await Runtime.Current.CommitInteractionAsync(completed);
     }
 
+    internal void CancelInteraction()
+    {
+        interaction?.EndDrag();
+        interaction = null;
+        header.ReleaseMouseCapture();
+        if (Mouse.Captured != null && IsAncestorOf(Mouse.Captured as DependencyObject)) Mouse.Capture(null);
+    }
+
     internal void Attach()
     {
         var previous = Host;
@@ -183,18 +197,23 @@ internal sealed class FolderHeader : Window
         count.Text = folder.FileCount?.ToString() ?? "?";
         ToolTip = folder.Notice ?? folder.ActualPath;
         ApplyStyle(folder.Folder.Color, folder.Folder.Opacity);
-        var area = Array.Find(WindowsDesktop.Displays(), area => folder.Folder.X >= area.X && folder.Folder.X < area.X + area.Width && folder.Folder.Y >= area.Y && folder.Folder.Y < area.Y + area.Height);
-        displayScale = area?.Scale ?? 1;
         ApplyGeometry(folder);
-        Contents.Update(folder, VisualTreeHelper.GetDpi(this).DpiScaleX);
+        Contents.Update(folder, displayScale);
     }
 
     internal void ApplyGeometry(FolderSnapshot folder)
     {
         if (closed) return;
+        geometry = folder;
+        var scaleChanged = displayScale != folder.DisplayScale;
+        displayScale = folder.DisplayScale;
         Record = folder.Folder;
-        Width = Record.HeaderWidth;
-        Height = Record.HeaderHeight + (Record.Expanded ? Record.BodyHeight : 0);
+        var sourceScale = VisualTreeHelper.GetDpi(this).DpiScaleX;
+        // Explorer 子窗口可能沿用宿主 DPI。显式补偿 WPF 渲染尺寸和命中变换。
+        var compensation = displayScale / sourceScale;
+        Surface.LayoutTransform = compensation == 1 ? Transform.Identity : new ScaleTransform(compensation, compensation);
+        Width = Math.Ceiling(Record.HeaderWidth * displayScale) / sourceScale;
+        Height = Math.Ceiling((Record.HeaderHeight + (Record.Expanded ? Record.BodyHeight : 0)) * displayScale) / sourceScale;
         layout.RowDefinitions[0].Height = new GridLength(Record.HeaderHeight);
         Contents.Visibility = Record.Expanded ? Visibility.Visible : Visibility.Collapsed;
         expand.Content = Record.Expanded ? "▴" : "▾";
@@ -202,9 +221,16 @@ internal sealed class FolderHeader : Window
         if (!WindowsDesktop.Attached(Handle, Host)) Attach();
         if (!folder.Visible || Host == IntPtr.Zero) { Hide(); return; }
         Show();
-        if (!WindowsDesktop.Position(Handle, Host, Record.X, Record.Y,
-            (int)Math.Ceiling(Width * displayScale), (int)Math.Ceiling(Height * displayScale)))
-        { Host = IntPtr.Zero; Hide(); }
+        positioning = true;
+        try
+        {
+            if (!WindowsDesktop.Position(Handle, Host, Record.X, Record.Y,
+                (int)Math.Ceiling(Record.HeaderWidth * displayScale),
+                (int)Math.Ceiling((Record.HeaderHeight + (Record.Expanded ? Record.BodyHeight : 0)) * displayScale)))
+            { Host = IntPtr.Zero; Hide(); }
+        }
+        finally { positioning = false; }
+        if (scaleChanged) Contents.Update(folder, displayScale);
     }
 
     internal void ApplyStyle(string value, double opacity)

@@ -15,6 +15,7 @@ internal sealed class FolderContents : DockPanel
     private readonly Button view;
     private FolderSnapshot? snapshot;
     private double scale;
+    private int metricsRevision = -1;
     private volatile int generation;
     private bool loading;
     private volatile bool disposed;
@@ -57,13 +58,15 @@ internal sealed class FolderContents : DockPanel
         notice.Text = folder.Notice ?? "";
         notice.Visibility = folder.Notice == null ? Visibility.Collapsed : Visibility.Visible;
         view.Content = folder.Folder.Grid ? "列表 ☷" : "网格 ▦";
-        var rebuild = snapshot == null || folder.Folder.Grid != snapshot.Folder.Grid || currentScale != scale || !folder.Entries.SequenceEqual(snapshot.Entries);
+        var rebuild = snapshot == null || folder.Folder.Grid != snapshot.Folder.Grid || currentScale != scale
+            || metricsRevision != NativeViewMetrics.Revision || !folder.Entries.SequenceEqual(snapshot.Entries);
         snapshot = folder;
         scale = currentScale;
         if (rebuild)
         {
             generation++;
             BuildItems(folder);
+            metricsRevision = NativeViewMetrics.Revision;
         }
         // 定期刷新也核对 Shell 覆盖／关联变化，布局输入不走此入口。
         if (!loading) IconsLoaded = LoadIconsAsync();
@@ -81,7 +84,9 @@ internal sealed class FolderContents : DockPanel
         foreach (var entry in folder.Entries)
         {
             var image = new Image { Width = grid ? metrics.GridIcon : metrics.SmallIcon, Height = grid ? metrics.GridIcon : metrics.SmallIcon, HorizontalAlignment = grid ? HorizontalAlignment.Center : HorizontalAlignment.Left, VerticalAlignment = VerticalAlignment.Center };
-            var text = new TextBlock { Text = entry.Name, Foreground = Brushes.White, FontFamily = SystemFonts.IconFontFamily, FontSize = SystemFonts.IconFontSize, FontStyle = SystemFonts.IconFontStyle, FontWeight = SystemFonts.IconFontWeight, TextTrimming = TextTrimming.CharacterEllipsis, TextAlignment = grid ? TextAlignment.Center : TextAlignment.Left, VerticalAlignment = grid ? VerticalAlignment.Top : VerticalAlignment.Center, TextWrapping = grid ? TextWrapping.Wrap : TextWrapping.NoWrap };
+            var text = new TextBlock { Text = entry.Name, Foreground = Brushes.White, FontFamily = new FontFamily(metrics.FontFamily), FontSize = metrics.FontSize,
+                FontStyle = metrics.Italic ? FontStyles.Italic : FontStyles.Normal, FontWeight = metrics.Bold ? FontWeights.Bold : FontWeights.Normal,
+                TextTrimming = TextTrimming.CharacterEllipsis, TextAlignment = grid ? TextAlignment.Center : TextAlignment.Left, VerticalAlignment = grid ? VerticalAlignment.Top : VerticalAlignment.Center, TextWrapping = grid ? TextWrapping.Wrap : TextWrapping.NoWrap };
             var cell = new Grid();
             if (grid)
             {
@@ -111,11 +116,13 @@ internal sealed class FolderContents : DockPanel
             {
                 var currentGeneration = generation;
                 var small = !snapshot!.Folder.Grid;
+                var metrics = NativeViewMetrics.ForScale(scale);
+                var iconPixels = (int)Math.Round((small ? metrics.SmallIcon : metrics.GridIcon) * scale);
                 var items = Items.Items.Cast<ListBoxItem>().ToArray();
                 var paths = items.Select(item => (string)item.Tag).ToArray();
                 var icons = await Task.Run(() => paths.TakeWhile(_ => !disposed && currentGeneration == generation).Select(path =>
                 {
-                    try { return (Source: ShellIcons.ForFile(path, small), Error: (string?)null); }
+                    try { return (Source: ShellIcons.ForFile(path, small, iconPixels), Error: (string?)null); }
                     catch (Exception e) { return (Source: (ImageSource?)null, Error: e.Message); }
                 }).ToArray());
                 if (disposed) return;
