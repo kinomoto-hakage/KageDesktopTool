@@ -97,6 +97,8 @@ flowchart TD
 
 ## 确认记录
 
+- 2026-10-03：用户明确启动 11。桌面适配器收敛、失效 HWND 重建、托盘和真实输入／OLE 恢复已实现；44 项业务检查、Release 和真实自动 Win+D／Explorer 重启及 04—10 回归通过，规范／规格独立复核各 0 项代码发现。用户选择“暂不做人工验收，保留为待验收”，11 保持 claimed，13 对 11 的依赖仍未解除。详见 11 的 Answer 及 `docs/verification/11-desktop-session-recovery.md`。
+
 - 2026-10-03：用户明确启动 10；启动只读核对、实际路径／链接目标清单、定位及重试恢复完成。42 项业务检查、十二阶段独立进程中断、Release 及真实 Windows 恢复与既有回归通过，规范／规格复审均 0 项遗留。详见 10 的 Answer 和 `docs/verification/10-recover-interrupted-migration.md`；后续票仍等待用户明确启动，13 仍依赖 11、12。
 
 - 2026-10-02：用户明确启动 06；独立 Folder 外观预览、应用／取消和持久图标选择完成。21 项业务检查及 Release 的 06 外观、05 内容布局、04 生命周期真实 Windows 检查通过，规范／规格独立复核均 0 项发现；结果记录于 06 的 Answer 及 `docs/verification/06-appearance-and-icons.md`。后续票继续等待用户明确启动。

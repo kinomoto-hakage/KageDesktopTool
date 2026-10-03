@@ -15,4 +15,6 @@
 
 ## Fog
 
+- 2026-10-03：[11 桌面会话恢复](issues/11-desktop-session-recovery.md) 的实现与自动验收已提交。实际复现确认 Explorer 销毁跨进程子窗口，按稳定标识重建失效窗口并恢复输入／OLE，保留托盘、控制器和热键。44 项业务检查、Release 及真实 Win+D／Explorer 恢复与 04—10 回归通过；规范／规格复核均 0 项代码发现。用户选择暂不人工 Win+D 验收，仍有 1 项待验收，Status 保持 claimed，13 的本项依赖未解除。详见 [验收记录](../../docs/verification/11-desktop-session-recovery.md)。
+
 - 后续任务按 [ticket-plan.md](ticket-plan.md) 的依赖与用户明确启动要求继续，完整发布由 13 交付。
