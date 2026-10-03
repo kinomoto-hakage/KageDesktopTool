@@ -26,6 +26,7 @@ public sealed class WindowsDirectoryTransfer : IRootDirectoryTransfer
     {
         if ((File.GetAttributes(destination) & FileAttributes.ReparsePoint) != 0
             || (File.GetAttributes(source) & FileAttributes.ReparsePoint) != 0) throw new IOException("恢复目录出现重解析路径，保留两边。");
+        CopyIdentityFirst(destination, source);
         foreach (var stream in NamedStreams(destination).Keys)
         {
             cancellation.ThrowIfCancellationRequested();
@@ -89,9 +90,11 @@ public sealed class WindowsDirectoryTransfer : IRootDirectoryTransfer
 
     private static void CopyContents(string source, string destination, CancellationToken cancellation)
     {
+        cancellation.ThrowIfCancellationRequested();
+        // 先持久化归属，再复制命名流或用户内容，中断后仍能识别本次创建的目录。
+        CopyIdentityFirst(source, destination);
         CopyDirectoryStreams(source, destination, cancellation);
-        // 先复制归属标识，失败恢复时能识别本次排他创建的目标。
-        foreach (var entry in new DirectoryInfo(source).EnumerateFileSystemInfos().OrderBy(entry => entry.Name == WindowsPaths.IdentityFile ? 0 : 1))
+        foreach (var entry in new DirectoryInfo(source).EnumerateFileSystemInfos().Where(entry => entry.Name != WindowsPaths.IdentityFile))
         {
             cancellation.ThrowIfCancellationRequested();
             if ((entry.Attributes & FileAttributes.ReparsePoint) != 0) throw new IOException($"跨盘目录含重解析项目，未删除源：{entry.FullName}");
@@ -212,6 +215,19 @@ public sealed class WindowsDirectoryTransfer : IRootDirectoryTransfer
             return streams;
         }
         finally { FindClose(handle); }
+    }
+
+    internal static bool EmptyWithoutStreams(string path)
+        => !Directory.EnumerateFileSystemEntries(path).Any() && NamedStreams(path).Count == 0;
+
+    private static void CopyIdentityFirst(string source, string destination)
+    {
+        var marker = Path.Combine(source, WindowsPaths.IdentityFile);
+        var target = Path.Combine(destination, WindowsPaths.IdentityFile);
+        if (!File.Exists(marker) || File.Exists(target)) return;
+        if ((File.GetAttributes(marker) & FileAttributes.ReparsePoint) != 0)
+            throw new IOException("归属标识是重解析项目，未复制或移除内容。");
+        CopyAndFlush(marker, target);
     }
 
     private static bool SameBytes(Stream original, Stream copied)

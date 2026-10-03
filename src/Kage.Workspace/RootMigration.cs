@@ -76,6 +76,21 @@ public sealed partial class DesktopWorkspace
             try
             {
                 var observed = InspectMigrationItem(item);
+                if (observed.Notice != null && item.Phase is MigrationPhase.Moving or MigrationPhase.Restoring or MigrationPhase.RecoveryRequired
+                    && (item.ShortcutPath == null || observed.ShortcutTarget != null
+                        && (SamePath(observed.ShortcutTarget, item.SourcePath) || SamePath(observed.ShortcutTarget, item.DestinationPath))))
+                {
+                    // 仅处理工具自身中断留下的无内容目录；非空目录、命名流及未知归属标识均保留。
+                    var empty = observed.SourceStatus == MigrationPathStatus.Unverified && observed.DestinationStatus == MigrationPathStatus.Owned ? item.SourcePath
+                        : observed.DestinationStatus == MigrationPathStatus.Unverified && observed.SourceStatus == MigrationPathStatus.Owned ? item.DestinationPath : null;
+                    if (empty != null && WindowsDirectoryTransfer.EmptyWithoutStreams(empty))
+                    {
+                        SaveMigrationItem(item with { Phase = MigrationPhase.Restoring });
+                        CheckAncestors(empty);
+                        Directory.Delete(empty, false);
+                        observed = InspectMigrationItem(item);
+                    }
+                }
                 if (observed.Notice != null) throw new IOException(observed.Notice);
                 SaveMigrationItem(item with { Phase = MigrationPhase.Restoring });
                 ReportMigration(progress, "迁移已停止，正在恢复原位置及快捷方式目标。", item, restoring: true);

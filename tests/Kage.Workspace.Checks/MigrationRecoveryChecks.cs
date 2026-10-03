@@ -63,7 +63,7 @@ static class MigrationRecoveryChecks
 
     public static async Task ProcessInterruptions()
     {
-        foreach (var stage in new[] { "执行前", "目录部分复制", "目录移除后", "链接更新前", "链接更新后", "配置提交前", "配置提交后", "恢复移除后" })
+        foreach (var stage in new[] { "执行前", "目标创建后", "目录部分复制", "目录移除后", "源清理末尾", "链接更新前", "链接更新后", "配置提交前", "配置提交后", "恢复创建后", "恢复移除后", "恢复清理末尾" })
         {
             using var fixture = new Fixture();
             var shell = new WindowsFolderShell(Path.Combine(fixture.Home, "桌面"));
@@ -141,7 +141,7 @@ static class MigrationRecoveryChecks
                 || stage == "配置提交前" && pending?.Items.All(item => item.Phase == MigrationPhase.Completed) == true
                 || stage == "配置提交后" && pending == null && saved.Root == Path.Combine(home, "新根")) Environment.Exit(73);
         };
-        if (stage == "恢复移除后")
+        if (stage.StartsWith("恢复", StringComparison.Ordinal))
         {
             using var cancellation = new CancellationTokenSource();
             await workspace.MigrateRootAsync(Path.Combine(home, "新根"), new Observer(update =>
@@ -222,7 +222,11 @@ static class MigrationRecoveryChecks
             Check((await workspace.RecoverRootMigrationAsync()).Outcome == Outcome.RecoveryRequired
                 && File.ReadAllText(Path.Combine(folder.ActualPath, "内容.txt")) == "源原文"
                 && File.ReadAllText(Path.Combine(destination, "内容.txt")) == "目标不同内容", "重复恢复保留同名不同字节，不覆盖或清理");
-        File.SetAttributes(Path.Combine(destination, ".kage-folder-id"), FileAttributes.Normal);
+        File.Delete(Path.Combine(destination, "内容.txt"));
+        File.Delete(Path.Combine(destination, ".kage-folder-id"));
+        File.WriteAllText(destination + ":未确认流", "目录命名流不可删除");
+        Check((await workspace.RecoverRootMigrationAsync()).Outcome == Outcome.RecoveryRequired
+            && File.ReadAllText(destination + ":未确认流") == "目录命名流不可删除", "无条目但含命名流的未知目录不能按空目录清理");
         File.WriteAllText(Path.Combine(destination, ".kage-folder-id"), Guid.NewGuid().ToString("N"));
         Check((await workspace.RecoverRootMigrationAsync()).Outcome == Outcome.RecoveryRequired
             && workspace.Snapshot.MigrationRecovery.Single().DestinationStatus == MigrationPathStatus.Unverified, "其他归属保留两边证据");
@@ -257,6 +261,11 @@ static class MigrationRecoveryChecks
         private readonly WindowsDirectoryTransfer real = new();
         public void Move(string source, string destination, CancellationToken cancellation)
         {
+            if (stage == "目标创建后")
+            {
+                Directory.CreateDirectory(destination);
+                Environment.Exit(73);
+            }
             if (stage == "目录部分复制")
             {
                 Directory.CreateDirectory(destination);
@@ -266,11 +275,26 @@ static class MigrationRecoveryChecks
             }
             real.Move(source, destination, cancellation);
             if (stage == "目录移除后") Environment.Exit(73);
+            if (stage == "源清理末尾")
+            {
+                Directory.CreateDirectory(source);
+                Environment.Exit(73);
+            }
         }
         public void Restore(string source, string destination, CancellationToken cancellation)
         {
+            if (stage == "恢复创建后")
+            {
+                Directory.CreateDirectory(source);
+                Environment.Exit(73);
+            }
             real.Restore(source, destination, cancellation);
             if (stage == "恢复移除后") Environment.Exit(73);
+            if (stage == "恢复清理末尾")
+            {
+                Directory.CreateDirectory(destination);
+                Environment.Exit(73);
+            }
         }
     }
 
