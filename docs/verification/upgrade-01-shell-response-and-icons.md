@@ -23,6 +23,8 @@ rtk proxy python -c "import subprocess; raise SystemExit(subprocess.run(['src/Ka
 
 图像缓存按实际路径、修改时间、大小、属性、尺寸及箭头选项区分；短期过期和系统偏好变化会失效。缓存只保存已冻结的有效图像，修改快捷方式后立即重新解析。资源修复仍合成 Shell 返回的非箭头状态覆盖，不修改快捷方式文件或全系统图标设置。
 
+审查补充：InternetShortcut 兼容 UTF-8、带 BOM 的 UTF-16 和系统 ANSI 编码，并验证系统 ANSI 编码中文 IconFile 夹具。菜单按目标 Explorer 的 owner／root-owner／线程状态过滤，排除同进程其他窗口或桌面的菜单；首次慢处理器允许 30 秒准备，实际“更多选项”鼠标／调用事件与原生菜单线程状态保留转换过程，传统窗口出现后再跟踪其结束，退出仍可取消。菜单观察查询放在后台，临时输入观察只记录当前菜单的更多选项点击并在结束解除。
+
 ## 默认尺寸与兼容
 
 网格默认大 **48 DIP**，列表默认中 **32 DIP**。新建及缺少新字段的有效旧状态采用新默认值；已经显式保存的尺寸仍按已有值恢复。实际渲染和命中测试相应更新为大网格／中列表，继续验证居中、足够文字空间、相邻项目不重叠及视口伸缩。
@@ -33,6 +35,7 @@ rtk proxy python -c "import subprocess; raise SystemExit(subprocess.run(['src/Ka
 - `--content-input-check` 通过：系统菜单单项／多项、Windows 11 现代菜单、“显示更多选项”、原生属性窗口、Explorer 内改名及删除、选择和计数刷新，以及既有真实双击／框选／重排／跨 Folder 移动。
 - `--content-layout-check` 通过：48 DIP 网格／32 DIP 列表、图标文字位置、布局、源路径打开、失联和重启恢复。
 - `--shell-image-check` 通过：`.url` 显式资源、冻结图像复用、资源改动后失效，实际 ChatGPT／Wallpaper Engine 四档像素和图案。OpenAI 中央透明孔、Wallpaper 蓝色主体与默认白纸明确区分，不只检查非空像素。
+- `.url` 系统 ANSI 中文图标路径的追加回归通过。Explorer 菜单内改名／删除可能异步完成，检查等待实际完成后的周期协调再断言选择与计数。
 - `--shell-diagnostics-check --cancel-only` 通过：准备阶段取消后不再发送右键、不产生菜单。
 
 日志和修复 PNG 位于忽略目录 `.scratch/desktop-folder/verification/`，包括 `shell-response-diagnostics.txt`、`shell-image-check.txt`、`shell-menu-cancel-check.txt`、`actual-shell-icons.json`、`ChatGPT-grid-16/32/48/96.png` 与 `Wallpaper Engine：壁纸引擎-grid-16/32/48/96.png`。环境为 Windows 11 单屏 150% DPI。

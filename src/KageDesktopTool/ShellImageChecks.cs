@@ -3,6 +3,8 @@ using System.IO;
 using System.Linq;
 using System.Windows.Media;
 using System.Windows.Media.Imaging;
+using System.Runtime.InteropServices;
+using System.Text;
 
 namespace Kage.Desktop;
 
@@ -27,6 +29,13 @@ internal static class ShellImageChecks
             SetIcon("app-a.ico"); File.SetLastWriteTimeUtc(url, DateTime.UtcNow.AddSeconds(2));
             var updated = (BitmapSource)ShellIcons.ForFile(url, false, 72)!;
             Check(!Fingerprint(first).SequenceEqual(Fingerprint(updated)), "修改实际 URL 资源后缓存自动失效");
+            var chinese = Path.Combine(fixture, "中文图标"); Directory.CreateDirectory(chinese);
+            var iconPath = Path.Combine(chinese, "真实资源.ico"); File.Copy(Path.Combine(AppContext.BaseDirectory, "Assets", "app-d.ico"), iconPath);
+            Encoding.RegisterProvider(CodePagesEncodingProvider.Instance);
+            var ansi = Path.Combine(fixture, "系统编码.url");
+            File.WriteAllText(ansi, "[InternetShortcut]\r\nURL=https://example.invalid/\r\nIconFile=" + iconPath + "\r\nIconIndex=0\r\n", Encoding.GetEncoding((int)GetACP()));
+            var ansiImage = (BitmapSource)ShellIcons.ForFile(ansi, false, 72)!;
+            Check(Fingerprint(ansiImage).SequenceEqual(Fingerprint(first)), "系统 ANSI 编码的中文 IconFile 正确读取，不回退通用图标");
             var state = new Kage.Workspace.JsonWorkspaceStore(Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData), "KageDesktopTool")).Read().State;
             var actual = state.Folders.SelectMany(folder => Directory.GetFiles(Path.Combine(folder.ContentRoot ?? state.Root, folder.Name)))
                 .Where(path => Path.GetFileName(path).Contains("ChatGPT", StringComparison.OrdinalIgnoreCase) || Path.GetFileName(path).Contains("Wallpaper", StringComparison.OrdinalIgnoreCase)).ToArray();
@@ -68,4 +77,5 @@ internal static class ShellImageChecks
         var bitmap = new FormatConvertedBitmap(image, PixelFormats.Bgra32, null, 0);
         var bytes = new byte[bitmap.PixelWidth * bitmap.PixelHeight * 4]; bitmap.CopyPixels(bytes, bitmap.PixelWidth * 4, 0); return bytes;
     }
+    [DllImport("kernel32.dll")] private static extern uint GetACP();
 }

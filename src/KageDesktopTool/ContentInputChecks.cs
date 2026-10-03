@@ -71,6 +71,8 @@ internal static class ContentInputChecks
                     var parent = FolderHeader.FindParent<ListBoxItem>(element);
                     if (parent != null) { contents.Items.ScrollIntoView(parent); header.UpdateLayout(); }
                     var point = Center(element);
+                    var hit = WindowsDesktop.WindowFromPoint(new WindowsDesktop.POINT { X = (int)point.X, Y = (int)point.Y });
+                    if (hit != header.Handle && !WindowsDesktop.IsChild(header.Handle, hit)) { Desktop(); await Task.Delay(350); }
                     CheckHit(header, point);
                     await MouseAt(point, twice);
                     await Task.Delay(550);
@@ -231,6 +233,7 @@ internal static class ContentInputChecks
                 Key(0x0D); await Task.Delay(700);
                 var renamedPath = Path.Combine(folder.ActualPath, "renamed.txt");
                 Require(File.Exists(renamedPath) && !File.Exists(document), "原生菜单改名更新实际路径");
+                await WaitUntil(() => contents.SelectedPaths().SequenceEqual(new[] { renamedPath }));
                 Require(contents.SelectedPaths().SequenceEqual(new[] { renamedPath }), "改名刷新通过可靠身份保留选择");
                 // 改名后的项目在自动排序末尾，先用小列表并滚动到当前对象。
                 var renamedItem = Item(renamedPath);
@@ -238,6 +241,8 @@ internal static class ContentInputChecks
                 await FolderRight(renamedItem); await Task.Delay(500);
                 await ClickMenu("删除"); await Task.Delay(900);
                 Require(!File.Exists(renamedPath), "原生删除命令执行实际文件结果");
+                await WaitUntil(() => !contents.SelectedPaths().Contains(renamedPath) && workspace.Snapshot.Folders.First().FileCount == 47);
+                File.AppendAllText(log, $"删除结果协调：菜单活动 {contents.InputActive}，系统窗口 {ShellContextMenu.ActiveMenuWindow}，文件计数 {workspace.Snapshot.Folders.First().FileCount}\n");
                 Require(!contents.SelectedPaths().Contains(renamedPath) && workspace.Snapshot.Folders.First().FileCount == 47,
                     "菜单结束刷新项目、文件计数并清理删除选择");
                 ContentPointerInput.Descendant<ScrollViewer>(contents.Items)?.ScrollToTop(); contents.Items.UpdateLayout();

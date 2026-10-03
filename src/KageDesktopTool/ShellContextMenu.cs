@@ -63,7 +63,7 @@ internal static class ShellContextMenu
         mouse_event(8, 0, 0, 0, UIntPtr.Zero);
         try { await Task.Delay(30); }
         finally { mouse_event(16, 0, 0, 0, UIntPtr.Zero); }
-        for (var attempt = 0; attempt < 60; attempt++)
+        for (var attempt = 0; attempt < 600; attempt++)
         {
             ActiveMenuWindow = FindMenu(window);
             if (ActiveMenuWindow != IntPtr.Zero) break;
@@ -73,12 +73,15 @@ internal static class ShellContextMenu
         if (ActiveMenuWindow == IntPtr.Zero) throw new IOException("资源管理器已定位当前选择，系统菜单暂未就绪；可直接右键重试。");
         var menuClass = new StringBuilder(256); GetClassName(ActiveMenuWindow, menuClass, menuClass.Capacity);
         LastMenuClass = menuClass.ToString();
+        using var transition = new MenuTransition();
         try
         {
             while (true)
             {
                 var menu = FindMenu(window);
-                if (menu != IntPtr.Zero) { ActiveMenuWindow = menu; await Task.Delay(60, cancellation); continue; }
+                if (menu != IntPtr.Zero)
+                { ActiveMenuWindow = menu; await transition.ObserveAsync(menu); await Task.Delay(60, cancellation); continue; }
+                if (transition.Pending || MenuThreadActive(window)) { await Task.Delay(60, cancellation); continue; }
                 // “显示更多选项”可能短暂销毁现代窗口，再创建传统窗口。
                 await Task.Delay(180, cancellation);
                 if (FindMenu(window) == IntPtr.Zero) break;
@@ -163,18 +166,105 @@ internal static class ShellContextMenu
 
     private static IntPtr FindMenu(IntPtr explorer)
     {
-        GetWindowThreadProcessId(explorer, out var pid);
+        var thread = GetWindowThreadProcessId(explorer, out var pid);
         var result = IntPtr.Zero;
         EnumWindows((hwnd, _) =>
         {
-            GetWindowThreadProcessId(hwnd, out var ownerPid);
+            var popupThread = GetWindowThreadProcessId(hwnd, out var ownerPid);
             if (ownerPid != pid || !WindowsDesktop.IsWindowVisible(hwnd)) return true;
+            var owner = GetWindow(hwnd, 4);
+            if (owner != IntPtr.Zero && GetAncestor(owner, 2) != explorer && GetAncestor(owner, 3) != explorer) return true;
+            if (owner == IntPtr.Zero && (popupThread != thread || !ThreadBelongsTo(explorer, popupThread))) return true;
             var name = new StringBuilder(256); GetClassName(hwnd, name, name.Capacity);
             if (name.ToString() is "#32768" or "Microsoft.UI.Content.PopupWindowSiteBridge" or "Xaml_WindowedPopupClass") result = hwnd;
             return true;
         }, IntPtr.Zero);
         return result;
     }
+
+    private static bool ThreadBelongsTo(IntPtr window, uint thread)
+    {
+        var info = new GuiThreadInfo { Size = (uint)Marshal.SizeOf<GuiThreadInfo>() };
+        return GetGUIThreadInfo(thread, ref info) && (GetAncestor(info.Active, 2) == window || GetAncestor(info.MenuOwner, 2) == window);
+    }
+    private static bool MenuThreadActive(IntPtr window)
+    {
+        var thread = GetWindowThreadProcessId(window, out _);
+        var info = new GuiThreadInfo { Size = (uint)Marshal.SizeOf<GuiThreadInfo>() };
+        return GetGUIThreadInfo(thread, ref info) && (info.Flags & 0x14) != 0 && GetAncestor(info.MenuOwner, 2) == window;
+    }
+
+    // 捕获实际“更多选项”点击，不能把传统处理器加载期间的无窗口间隔当作关闭。
+    private sealed class MenuTransition : IDisposable
+    {
+        private readonly MouseHook callback;
+        private readonly IntPtr hook;
+        private IntPtr observed;
+        private Rect more;
+        private long requested;
+        private readonly List<(AutomationElement Element, AutomationEventHandler Handler)> invoked = new();
+        internal bool Pending => requested != 0 && Stopwatch.GetElapsedTime(requested).TotalSeconds < 30;
+        internal MenuTransition()
+        {
+            callback = (code, message, data) =>
+            {
+                if (code >= 0 && message.ToInt32() == 0x201 && !more.IsEmpty && WindowsDesktop.IsWindowVisible(observed))
+                {
+                    var pointer = Marshal.PtrToStructure<MouseHookData>(data);
+                    if (more.Contains(new Point(pointer.X, pointer.Y))) requested = Stopwatch.GetTimestamp();
+                }
+                return CallNextHookEx(hook, code, message, data);
+            };
+            more = Rect.Empty;
+            hook = SetWindowsHookEx(14, callback, GetModuleHandle(null), 0);
+        }
+        internal async Task ObserveAsync(IntPtr menu)
+        {
+            var name = new StringBuilder(256); GetClassName(menu, name, name.Capacity);
+            if (name.ToString() == "#32768") { requested = 0; more = Rect.Empty; return; }
+            if (menu == observed) return;
+            observed = menu; more = Rect.Empty;
+            try
+            {
+                var match = await Task.Run(() =>
+                {
+                    var elements = AutomationElement.FromHandle(menu).FindAll(TreeScope.Descendants,
+                        new OrCondition(new PropertyCondition(AutomationElement.ControlTypeProperty, ControlType.MenuItem), new PropertyCondition(AutomationElement.ControlTypeProperty, ControlType.Button)));
+                    foreach (AutomationElement element in elements)
+                        if (element.Current.Name.Contains("显示更多选项", StringComparison.Ordinal) || element.Current.Name.Contains("Show more options", StringComparison.OrdinalIgnoreCase))
+                            return (Element: element, Bounds: element.Current.BoundingRectangle);
+                    return (Element: (AutomationElement?)null, Bounds: Rect.Empty);
+                });
+                more = match.Bounds;
+                if (match.Element != null)
+                {
+                    AutomationEventHandler handler = (_, _) => requested = Stopwatch.GetTimestamp();
+                    await Task.Run(() => Automation.AddAutomationEventHandler(InvokePattern.InvokedEvent, match.Element, TreeScope.Element, handler));
+                    invoked.Add((match.Element, handler));
+                }
+            }
+            catch (Exception e) when (e is COMException or ElementNotAvailableException or InvalidOperationException) { }
+        }
+        public void Dispose()
+        {
+            if (hook != IntPtr.Zero) UnhookWindowsHookEx(hook);
+            foreach (var entry in invoked)
+                try { Automation.RemoveAutomationEventHandler(InvokePattern.InvokedEvent, entry.Element, entry.Handler); }
+                catch (Exception e) when (e is ElementNotAvailableException or COMException or InvalidOperationException) { }
+        }
+    }
+
+    [StructLayout(LayoutKind.Sequential)] private struct MouseHookData { internal int X, Y; internal uint Data, Flags, Time; internal UIntPtr Extra; }
+    [StructLayout(LayoutKind.Sequential)] private struct GuiThreadInfo
+    { internal uint Size, Flags; internal IntPtr Active, Focus, Capture, MenuOwner, MoveSize, Caret; internal WindowsDesktop.RECT CaretBounds; }
+    private delegate IntPtr MouseHook(int code, IntPtr message, IntPtr data);
+    [DllImport("user32.dll")] private static extern IntPtr SetWindowsHookEx(int kind, MouseHook callback, IntPtr module, uint thread);
+    [DllImport("user32.dll")] private static extern bool UnhookWindowsHookEx(IntPtr hook);
+    [DllImport("user32.dll")] private static extern IntPtr CallNextHookEx(IntPtr hook, int code, IntPtr message, IntPtr data);
+    [DllImport("kernel32.dll", CharSet = CharSet.Unicode)] private static extern IntPtr GetModuleHandle(string? name);
+    [DllImport("user32.dll")] private static extern IntPtr GetWindow(IntPtr window, uint command);
+    [DllImport("user32.dll")] private static extern IntPtr GetAncestor(IntPtr window, uint flags);
+    [DllImport("user32.dll")] private static extern bool GetGUIThreadInfo(uint thread, ref GuiThreadInfo info);
 
     [DllImport("shell32.dll", CharSet = CharSet.Unicode)] private static extern int SHParseDisplayName(string name, IntPtr context, out IntPtr pidl, uint mask, out uint attributes);
     [DllImport("shell32.dll")] private static extern IntPtr ILFindLastID(IntPtr pidl);

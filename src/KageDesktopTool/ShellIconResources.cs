@@ -18,7 +18,20 @@ internal static class ShellIconResources
     {
         if (path.EndsWith(".url", StringComparison.OrdinalIgnoreCase))
         {
-            var values = File.ReadAllLines(path).Select(line => line.Split('=', 2)).Where(parts => parts.Length == 2)
+            var bytes = File.ReadAllBytes(path);
+            string contents;
+            if (bytes.Length >= 2 && bytes[0] == 0xff && bytes[1] == 0xfe) contents = Encoding.Unicode.GetString(bytes, 2, bytes.Length - 2);
+            else if (bytes.Length >= 2 && bytes[0] == 0xfe && bytes[1] == 0xff) contents = Encoding.BigEndianUnicode.GetString(bytes, 2, bytes.Length - 2);
+            else
+            {
+                try { contents = new UTF8Encoding(false, true).GetString(bytes).TrimStart('\ufeff'); }
+                catch (DecoderFallbackException)
+                {
+                    Encoding.RegisterProvider(CodePagesEncodingProvider.Instance);
+                    contents = Encoding.GetEncoding((int)GetACP()).GetString(bytes);
+                }
+            }
+            var values = contents.Split(['\r', '\n'], StringSplitOptions.RemoveEmptyEntries).Select(line => line.Split('=', 2)).Where(parts => parts.Length == 2)
                 .GroupBy(parts => parts[0].Trim(), StringComparer.OrdinalIgnoreCase).ToDictionary(group => group.Key, group => group.Last()[1].Trim(), StringComparer.OrdinalIgnoreCase);
             if (values.TryGetValue("IconFile", out var iconPath))
             {
@@ -94,6 +107,7 @@ internal static class ShellIconResources
     private interface IShellItemImageFactory { [PreserveSig] int GetImage(NativeSize size, uint flags, out IntPtr bitmap); }
     [DllImport("shell32.dll")] private static extern int SHCreateItemFromIDList(IntPtr pidl, ref Guid iid, out IShellItemImageFactory factory);
     [DllImport("gdi32.dll")] private static extern bool DeleteObject(IntPtr bitmap);
+    [DllImport("kernel32.dll")] private static extern uint GetACP();
     [DllImport("user32.dll")] private static extern bool DestroyIcon(IntPtr icon);
     [DllImport("user32.dll", CharSet = CharSet.Unicode)] private static extern uint PrivateExtractIcons(string file, int index, int width, int height, out IntPtr icon, out uint id, uint count, uint flags);
 }
