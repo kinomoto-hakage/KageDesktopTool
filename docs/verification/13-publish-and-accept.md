@@ -56,3 +56,17 @@ rtk proxy powershell -NoProfile -ExecutionPolicy Bypass -File verify-user-launch
 日志在忽略目录 `.scratch/desktop-folder/verification/`：`13-release-summary.txt`、`publish-package.txt`、`release-workflow.txt`、`windows-session.txt`、各既有 Windows 会话检查日志，以及最终 ZIP 解压校验和普通用户启动证据。文件系统／恢复注入仅作用于随机夹具；正式工作区不会被用作移动或删除的夹具。
 
 最终 ZIP 证据为 `13-archive.txt` 和 `13-extracted-package.txt`；普通启动证据为 `13-user-launch.txt` 与 `13-实际用户设置.png`。解压检查日志覆盖通用 `publish-package.txt`，而最终版本程序路径及退出码仍完整保存在 `13-release-summary.txt`。
+
+## 独立复核
+
+按 `code-review` 技能，以 `90b35014797f32e628296a527aaf58a98417bd79` 为固定基点，对实现提交 `c2e34a7` 的 15 个文件分别进行规范和规格审查。两位独立子代理仅读取源码和主代理完成的验收证据，没有将自己未运行的 GUI 检查当作验证结果。
+
+### Standards
+
+0 项发现。中文说明、注释及提交信息符合语言规则，维护者命令遵循 RTK 入口；文档和检查遵循 `CONTEXT.md` 术语。发布配置及脚本职责明确，组合检查继续通过 `IDesktopWorkspace` 操作，隔离状态、内容及随机自启项，没有旁路业务逻辑。硬标准违规 0，可行动 baseline smell 0，新增正确性问题 0。两处简短 SHA256 计算用途和输出格式不同，目前不需要抽取共享脚本。
+
+### Spec
+
+0 项发现。发布配置、完整包和运行／升级说明符合 issue 13 与 spec 的发布要求；新增检查入口、清单和 ZIP 属于产物验证范围。普通启动、重复实例、关闭设置和退出有实际最终 EXE 证据；最终位置自启由随机 HKCU 检查确认。组合流程和最终 EXE 回归共同覆盖两种删除、迁移恢复、布局外观及桌面恢复。单屏是当前实际可用配置，多屏等未覆盖已明确说明，符合“不把未验证的 Windows 配置标为通过”的要求。缺失／部分需求 0、范围扩张 0、错误实现 0。
+
+Standards 0 项，Spec 0 项；两轴均无遗留问题。
