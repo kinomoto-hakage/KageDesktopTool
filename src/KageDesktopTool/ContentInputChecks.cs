@@ -18,13 +18,13 @@ namespace Kage.Desktop;
 // 不注入 WPF 事件：经过系统鼠标输入、命中与 Preview 路由验收正式窗口。
 internal static class ContentInputChecks
 {
-    internal static int Run()
+    internal static int Run(bool identityOnly = false, bool refreshOnly = false)
     {
         var fixture = Path.Combine(Path.GetTempPath(), "Kage-input-" + Guid.NewGuid().ToString("N"));
         var evidence = Path.Combine(Environment.CurrentDirectory, ".scratch", "desktop-folder", "verification");
         Directory.CreateDirectory(fixture);
         Directory.CreateDirectory(evidence);
-        var log = Path.Combine(evidence, "content-input-session.txt");
+        var log = Path.Combine(evidence, refreshOnly ? "content-refresh-session.txt" : identityOnly ? "content-identity-session.txt" : "content-input-session.txt");
         File.WriteAllText(log, "真实 Windows 内容输入验收\n");
         var app = new Application { ShutdownMode = ShutdownMode.OnExplicitShutdown };
         Runtime? runtime = null;
@@ -71,6 +71,41 @@ internal static class ContentInputChecks
                     CheckHit(header, point);
                     await MouseAt(point, twice);
                     await Task.Delay(550);
+                }
+                if (refreshOnly)
+                {
+                    await workspace.SetContentViewAsync(folder.Folder.Id, false, 16, ContentSortKey.Name, false);
+                    runtime.Render(); await contents.IconsLoaded; header.UpdateLayout();
+                    var originalPath = Path.Combine(folder.ActualPath, "file1.txt");
+                    var heldPoint = Center((Image)((Grid)Item(originalPath).Content).Children[0]);
+                    SetCursorPos((int)heldPoint.X, (int)heldPoint.Y); await Task.Delay(70);
+                    mouse_event(2, 0, 0, 0, UIntPtr.Zero); await Task.Delay(120);
+                    Require(contents.InputActive, "真实鼠标按下后内容输入会话活动");
+                    var countBefore = contents.Items.Items.Count;
+                    var incoming = Path.Combine(folder.ActualPath, "zz-refresh.txt");
+                    File.WriteAllText(incoming, "刷新期间新增");
+                    await workspace.RefreshAsync(displays); runtime.Render();
+                    Require(contents.Items.Items.Count == countBefore && contents.SelectedPaths().SequenceEqual(new[] { originalPath }),
+                        "已开始的刷新完成后不重建活动输入列表");
+                    mouse_event(4, 0, 0, 0, UIntPtr.Zero); await Task.Delay(450);
+                    Require(contents.Items.Items.Count == countBefore + 1 && contents.SelectedPaths().SequenceEqual(new[] { originalPath }),
+                        "鼠标释放后发布延迟刷新并保留准确选择");
+                    exit = 0; return;
+                }
+                if (identityOnly)
+                {
+                    await workspace.SetContentViewAsync(folder.Folder.Id, false, 16, ContentSortKey.Name, false);
+                    runtime.Render(); await contents.IconsLoaded; header.UpdateLayout();
+                    var originalPath = Path.Combine(folder.ActualPath, "file1.txt");
+                    await Click((Image)((Grid)Item(originalPath).Content).Children[0]);
+                    var aliasPath = Path.Combine(folder.ActualPath, "zz-alias.txt");
+                    Require(CreateHardLink(aliasPath, originalPath, IntPtr.Zero), "真实同目录硬链接夹具");
+                    await workspace.RefreshAsync(displays); runtime.Render();
+                    Require(contents.SelectedPaths().SequenceEqual(new[] { originalPath }), "刷新不连带选择同身份的其他硬链接");
+                    File.Delete(originalPath);
+                    await workspace.RefreshAsync(displays); runtime.Render();
+                    Require(contents.SelectedPaths().Length == 0, "删除选中的别名不将选择迁移到仍存在的别名");
+                    exit = 0; return;
                 }
                 foreach (var grid in new[] { true, false })
                 {
@@ -274,6 +309,7 @@ internal static class ContentInputChecks
             {
                 keybd_event(0x11, 0, 2, UIntPtr.Zero);
                 keybd_event(0x10, 0, 2, UIntPtr.Zero);
+                mouse_event(4, 0, 0, 0, UIntPtr.Zero);
                 runtime?.Dispose();
                 if (desktopShown) Desktop();
                 app.Shutdown();
@@ -381,6 +417,8 @@ internal static class ContentInputChecks
     { public string LaunchCommand => "隔离输入验收不注册自启"; public string? ReadCommand() => null; public void WriteCommand(string? command) => throw new InvalidOperationException(); }
     [DllImport("user32.dll")] private static extern bool SetCursorPos(int x, int y);
     [DllImport("user32.dll")] private static extern bool ReleaseCapture();
+    [DllImport("kernel32.dll", CharSet = CharSet.Unicode, EntryPoint = "CreateHardLinkW")]
+    private static extern bool CreateHardLink(string path, string target, IntPtr security);
     [DllImport("user32.dll")] private static extern void mouse_event(uint flags, uint x, uint y, uint data, UIntPtr extra);
     [DllImport("user32.dll")] private static extern void keybd_event(byte key, byte scan, uint flags, UIntPtr extra);
     [DllImport("user32.dll")] private static extern uint GetDoubleClickTime();

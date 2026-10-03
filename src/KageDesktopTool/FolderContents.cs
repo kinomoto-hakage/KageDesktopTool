@@ -94,14 +94,26 @@ internal sealed class FolderContents : DockPanel
         var iconSize = grid ? folder.Folder.GridIconSize : folder.Folder.ListIconSize;
         var gridWidth = Math.Max(metrics.GridWidth, iconSize + 24);
         var gridHeight = Math.Max(metrics.GridHeight, iconSize + metrics.FontSize * 2 + 18);
-        var rowHeight = Math.Max(metrics.ListHeight, iconSize + 8);
+        var rowHeight = iconSize == (int)ContentIconSize.Small ? metrics.ListHeight : Math.Max(metrics.ListHeight, iconSize + 8);
         var factory = new FrameworkElementFactory(grid ? typeof(WrapPanel) : typeof(StackPanel));
         factory.SetValue(FrameworkElement.HorizontalAlignmentProperty, HorizontalAlignment.Stretch);
         Items.ItemsPanel = new ItemsPanelTemplate(factory);
         var selected = Items.SelectedItems.Cast<ListBoxItem>().Select(item => (string)item.Tag).ToHashSet(StringComparer.OrdinalIgnoreCase);
-        var selectedIdentities = (previousEntries ?? []).Where(entry => selected.Contains(entry.ActualPath) && entry.Identity != null)
-            .Select(entry => entry.Identity!).ToHashSet(StringComparer.Ordinal);
         var previousByPath = (previousEntries ?? []).ToDictionary(entry => entry.ActualPath, StringComparer.OrdinalIgnoreCase);
+        var currentByPath = folder.Entries.ToDictionary(entry => entry.ActualPath, StringComparer.OrdinalIgnoreCase);
+        bool SameIdentity(ContentEntry left, ContentEntry right) => left.Identity == null || right.Identity == null || left.Identity == right.Identity;
+        var preserved = selected.Where(path => currentByPath.TryGetValue(path, out var current)
+            && previousByPath.TryGetValue(path, out var previous) && SameIdentity(previous, current)).ToHashSet(StringComparer.OrdinalIgnoreCase);
+        var missing = (previousEntries ?? []).Where(entry => entry.Identity != null
+            && (!currentByPath.TryGetValue(entry.ActualPath, out var current) || !SameIdentity(entry, current))).GroupBy(entry => entry.Identity);
+        foreach (var group in missing)
+        {
+            var removed = group.ToArray();
+            if (removed.Length != 1 || !selected.Contains(removed[0].ActualPath)) continue;
+            var candidates = folder.Entries.Where(entry => entry.Identity == group.Key
+                && (!previousByPath.TryGetValue(entry.ActualPath, out var previous) || !SameIdentity(entry, previous))).ToArray();
+            if (candidates.Length == 1) preserved.Add(candidates[0].ActualPath);
+        }
         Items.Items.Clear();
         foreach (var entry in folder.Entries)
         {
@@ -125,9 +137,7 @@ internal sealed class FolderContents : DockPanel
             }
             cell.Children.Add(image);
             cell.Children.Add(text);
-            var samePathSelected = selected.Contains(entry.ActualPath) && (!previousByPath.TryGetValue(entry.ActualPath, out var previous)
-                || previous.Identity == null || entry.Identity == null || previous.Identity == entry.Identity);
-            Items.Items.Add(new ListBoxItem { Tag = entry.ActualPath, Content = cell, Width = grid ? gridWidth : double.NaN, Height = grid ? gridHeight : rowHeight, BorderThickness = new Thickness(1 / scale), Margin = new Thickness(0), Padding = new Thickness(2, 0, 2, 0), HorizontalAlignment = grid ? HorizontalAlignment.Left : HorizontalAlignment.Stretch, HorizontalContentAlignment = HorizontalAlignment.Stretch, VerticalContentAlignment = VerticalAlignment.Stretch, ToolTip = entry.ActualPath, IsSelected = samePathSelected || entry.Identity != null && selectedIdentities.Contains(entry.Identity) });
+            Items.Items.Add(new ListBoxItem { Tag = entry.ActualPath, Content = cell, Width = grid ? gridWidth : double.NaN, Height = grid ? gridHeight : rowHeight, BorderThickness = new Thickness(1 / scale), Margin = new Thickness(0), Padding = new Thickness(2, 0, 2, 0), HorizontalAlignment = grid ? HorizontalAlignment.Left : HorizontalAlignment.Stretch, HorizontalContentAlignment = HorizontalAlignment.Stretch, VerticalContentAlignment = VerticalAlignment.Stretch, ToolTip = entry.ActualPath, IsSelected = preserved.Contains(entry.ActualPath) });
         }
     }
 
@@ -182,8 +192,8 @@ internal sealed class FolderContents : DockPanel
         Option(menu, "列表", !folder.Grid, false, folder.ListIconSize, folder.SortKey, folder.SortDescending);
         var sizes = new MenuItem { Header = "图标尺寸" };
         var currentSize = folder.Grid ? folder.GridIconSize : folder.ListIconSize;
-        foreach (var (label, size) in new[] { ("小 · 16", 16), ("中 · 32", 32), ("大 · 48", 48), ("超大 · 96", 96) })
-            Option(sizes, label, currentSize == size, folder.Grid, size, folder.SortKey, folder.SortDescending);
+        foreach (var (label, size) in new[] { ("小", ContentIconSize.Small), ("中", ContentIconSize.Medium), ("大", ContentIconSize.Large), ("超大", ContentIconSize.ExtraLarge) })
+            Option(sizes, $"{label} · {(int)size}", currentSize == (int)size, folder.Grid, (int)size, folder.SortKey, folder.SortDescending);
         menu.Items.Add(sizes);
         var sorting = new MenuItem { Header = "排序" };
         foreach (var (label, key) in new[] { ("名称", ContentSortKey.Name), ("修改日期", ContentSortKey.Modified), ("大小", ContentSortKey.Size), ("自定义", ContentSortKey.Custom) })

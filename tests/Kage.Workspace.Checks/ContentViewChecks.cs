@@ -1,4 +1,5 @@
 using Kage.Workspace;
+using System.Runtime.InteropServices;
 
 internal static class ContentViewChecks
 {
@@ -158,4 +159,38 @@ internal static class ContentViewChecks
             && !legacy.SortDescending && legacy.CustomOrder == null && legacy.Id == folder.Folder.Id && legacy.Grid,
             "旧状态恢复默认值并保留原查看方式及稳定 Folder 标识");
     }
+
+    internal static async Task HardLinks()
+    {
+        using var fixture = new Fixture();
+        IDesktopWorkspace workspace = new DesktopWorkspace(fixture.Store, new TestStartup());
+        DisplayArea[] areas = [new(0, 0, 1200, 900)];
+        await workspace.InitializeAsync(areas);
+        await workspace.SelectRootAsync(fixture.Content);
+        await workspace.CreateFolderAsync("硬链接");
+        var folder = workspace.Snapshot.Folders.Single();
+        var source = Path.Combine(folder.ActualPath, "a.txt");
+        var alias = Path.Combine(folder.ActualPath, "b.txt");
+        var middle = Path.Combine(folder.ActualPath, "c.txt");
+        File.WriteAllText(source, "共享内容"); File.WriteAllText(middle, "独立内容");
+        Check(CreateHardLink(alias, source, IntPtr.Zero), "真实硬链接创建成功");
+        await workspace.RefreshAsync(areas);
+        await workspace.ReorderContentsAsync(folder.Folder.Id, new[] { middle }, alias);
+        File.Delete(source);
+        await workspace.RefreshAsync(areas);
+        Check(workspace.Snapshot.Folders.Single().Entries.Select(entry => entry.Name).SequenceEqual(new[] { "c.txt", "b.txt" }),
+            "删除硬链接别名不将另一个别名移到旧位置");
+        Check((await workspace.RenameContentAsync(folder.Folder.Id, alias, "d.txt")).Succeeded, "硬链接当前别名可按准确名称重命名");
+        Check(CreateHardLink(source, Path.Combine(folder.ActualPath, "d.txt"), IntPtr.Zero), "重新加入同身份的另一个别名");
+        await workspace.RefreshAsync(areas);
+        Check((await workspace.RenameContentAsync(folder.Folder.Id, source, "z.txt")).Succeeded && !workspace.Snapshot.RecoveryRequired,
+            "改名一个硬链接只修改对应顺序条目，不造成重复名称与恢复阻塞");
+        var saved = workspace.Snapshot.Folders.Single().Entries.Select(entry => entry.Name).ToArray();
+        workspace = new DesktopWorkspace(fixture.Store, new TestStartup());
+        Check((await workspace.InitializeAsync(areas)).Succeeded && workspace.Snapshot.Folders.Single().Entries.Select(entry => entry.Name).SequenceEqual(saved),
+            "硬链接独立名称的顺序可重启恢复");
+    }
+
+    [DllImport("kernel32.dll", CharSet = CharSet.Unicode, EntryPoint = "CreateHardLinkW")]
+    private static extern bool CreateHardLink(string path, string target, IntPtr security);
 }

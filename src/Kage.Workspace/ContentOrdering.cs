@@ -26,16 +26,25 @@ internal static class ContentOrdering
     internal static ContentEntry[] Reconcile(ContentEntry[] entries, ContentOrderItem[]? order)
     {
         var remaining = entries.ToList();
-        var sorted = new List<ContentEntry>();
+        var matched = new Dictionary<string, ContentEntry>(StringComparer.OrdinalIgnoreCase);
+        // 先保留所有准确名称，硬链接的共享身份不能抢占另一个仍存在的名称。
         foreach (var saved in order ?? [])
         {
             var entry = remaining.FirstOrDefault(item => string.Equals(item.Name, saved.Name, StringComparison.OrdinalIgnoreCase)
-                && (saved.Identity == null || item.Identity == null || saved.Identity == item.Identity))
-                ?? remaining.FirstOrDefault(item => saved.Identity != null && item.Identity == saved.Identity);
+                && (saved.Identity == null || item.Identity == null || saved.Identity == item.Identity));
             if (entry == null) continue;
-            sorted.Add(entry);
+            matched.Add(saved.Name, entry);
             remaining.Remove(entry);
         }
+        foreach (var saved in order ?? [])
+        {
+            if (matched.ContainsKey(saved.Name) || saved.Identity == null) continue;
+            var missing = (order ?? []).Count(item => item.Identity == saved.Identity && !matched.ContainsKey(item.Name));
+            var candidates = remaining.Where(entry => entry.Identity == saved.Identity).ToArray();
+            if (missing != 1 || candidates.Length != 1) continue;
+            matched.Add(saved.Name, candidates[0]); remaining.Remove(candidates[0]);
+        }
+        var sorted = (order ?? []).Where(item => matched.ContainsKey(item.Name)).Select(item => matched[item.Name]).ToList();
         sorted.AddRange(remaining.OrderBy(entry => entry.Name, NaturalNames).ThenBy(entry => entry.ActualPath, StringComparer.OrdinalIgnoreCase));
         return sorted.ToArray();
     }

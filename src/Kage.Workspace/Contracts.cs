@@ -6,6 +6,7 @@ public enum ConflictChoice { Ask, KeepBoth, Skip, Cancel }
 public enum Outcome { Success, Conflict, Skipped, Cancelled, Failed, RecoveryRequired }
 public enum FolderDeleteChoice { KeepContents, Recycle, Cancel }
 public enum ContentSortKey { Name, Modified, Size, Custom }
+public enum ContentIconSize { Small = 16, Medium = 32, Large = 48, ExtraLarge = 96 }
 public sealed record ContentOrderItem(string Name, string? Identity = null);
 public sealed record OperationResult(Outcome Outcome, string Message, string? ActualPath = null)
 {
@@ -20,7 +21,7 @@ public sealed record FolderRecord([property: JsonRequired] Guid Id, [property: J
     [property: JsonRequired] bool Expanded = false, [property: JsonRequired] bool Grid = true,
     [property: JsonRequired] string Color = "#666666", [property: JsonRequired] double Opacity = .68,
     string? ContentRoot = null, bool LayoutHidden = false,
-    int ListIconSize = 16, int GridIconSize = 32, ContentSortKey SortKey = ContentSortKey.Name,
+    int ListIconSize = (int)ContentIconSize.Small, int GridIconSize = (int)ContentIconSize.Medium, ContentSortKey SortKey = ContentSortKey.Name,
     bool SortDescending = false, ContentOrderItem[]? CustomOrder = null);
 public sealed record ContentEntry(string ActualPath, string Name, bool IsDirectory, long? ModifiedTicks, long? Length,
     string? Identity = null)

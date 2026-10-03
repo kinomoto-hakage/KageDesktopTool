@@ -49,8 +49,8 @@ public sealed partial class DesktopWorkspace
             throw new IOException("原位置与目标无法唯一确认本次项目身份；未认领其他文件。");
         var changed = folder;
         if (destination != null && folder.CustomOrder != null)
-            changed = folder with { CustomOrder = folder.CustomOrder.Select(item => item.Identity == pending.Identity
-                || item.Identity == null && string.Equals(item.Name, pending.SourceName, StringComparison.OrdinalIgnoreCase)
+            changed = folder with { CustomOrder = folder.CustomOrder.Select(item => string.Equals(item.Name, pending.SourceName, StringComparison.OrdinalIgnoreCase)
+                && (item.Identity == null || item.Identity == pending.Identity)
                 ? item with { Name = pending.DestinationName, Identity = pending.Identity } : item).ToArray() };
         var complete = state with { PendingContentRename = null,
             Folders = state.Folders.Select(item => item.Id == changed.Id ? changed : item).ToArray() };

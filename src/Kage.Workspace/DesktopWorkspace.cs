@@ -374,7 +374,7 @@ public sealed partial class DesktopWorkspace(IWorkspaceStore store, IStartupRegi
         => Run(() =>
         {
             if (blocked) return Locked();
-            if (iconSize is not (16 or 32 or 48 or 96) || !Enum.IsDefined(sortKey))
+            if (!Enum.IsDefined((ContentIconSize)iconSize) || !Enum.IsDefined(sortKey))
                 return new(Outcome.Failed, "请选择有效的图标尺寸和排序方式。");
             if (!state.Folders.Any(folder => folder.Id == id)) return new(Outcome.Failed, "Folder 不存在。");
             var next = state with { Folders = state.Folders.Select(folder => folder.Id != id ? folder : folder with

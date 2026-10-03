@@ -194,6 +194,7 @@ internal sealed class ContentPointerInput : IDisposable
         scrollTimer.Stop();
         contents.Feedback.Children.Clear();
         if (contents.Viewport.IsMouseCaptured) contents.Viewport.ReleaseMouseCapture();
+        if (!disposed) Runtime.Current.Dispatch(Runtime.Current.Render);
     }
     internal static T? Descendant<T>(DependencyObject root) where T : DependencyObject
     {

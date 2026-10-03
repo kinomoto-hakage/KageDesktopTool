@@ -166,7 +166,7 @@ internal sealed class Runtime : IDisposable
 
     internal void Render()
     {
-        if (disposed || exiting || Interacting) return;
+        if (disposed || exiting || Interacting || ContentInputActive || DraggingFiles) return;
         var snapshot = Workspace.Snapshot;
         ApplyIcons(snapshot.IconChoice);
         foreach (var obsolete in Headers.Keys.Where(id => !snapshot.Folders.Any(folder => folder.Folder.Id == id)).ToArray())

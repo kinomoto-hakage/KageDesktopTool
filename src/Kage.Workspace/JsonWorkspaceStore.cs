@@ -76,7 +76,7 @@ public sealed class JsonWorkspaceStore(string directory) : IWorkspaceStore
             if (folder == null || folder.Id == Guid.Empty || !ids.Add(folder.Id) || !names.Add(folder.Name)) throw new InvalidDataException("Folder 标识或名称重复／无效。");
             WindowsPaths.Name(folder.Name);
             if (folder.ContentRoot != null) WindowsPaths.Root(folder.ContentRoot);
-            if (folder.ListIconSize is not (16 or 32 or 48 or 96) || folder.GridIconSize is not (16 or 32 or 48 or 96)
+            if (!Enum.IsDefined((ContentIconSize)folder.ListIconSize) || !Enum.IsDefined((ContentIconSize)folder.GridIconSize)
                 || !Enum.IsDefined(folder.SortKey) || folder.CustomOrder?.Any(item => item == null) == true)
                 throw new InvalidDataException("内容视图或排序字段无效。");
             if (folder.CustomOrder != null)

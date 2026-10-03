@@ -10,6 +10,7 @@ var tests = new (string Name, Func<Task> Run)[]
     ("内容视图多选手动顺序与外部变化", ContentViewChecks.CustomOrder),
     ("内容视图文件改名意图与中断恢复", ContentViewChecks.RenameRecovery),
     ("内容视图日期同键排序与旧状态默认值", ContentViewChecks.DatesAndLegacy),
+    ("内容视图硬链接别名不混淆顺序", ContentViewChecks.HardLinks),
     ("真实创建与稳定标识重启", CreateAndRestart),
     ("保存中断不丢失目录关联", InterruptedCreate),
     ("损坏状态只读加载并显式恢复", DamagedState),

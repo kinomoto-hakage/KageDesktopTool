@@ -18,8 +18,8 @@ internal static class ContentFiles
     private static string? Identity(string path)
     {
         if (!OperatingSystem.IsWindows()) return null;
-        // 零访问权限及共享删除，不占用文件；目录使用 BACKUP_SEMANTICS。
-        using var handle = CreateFile(path, 0, 7, IntPtr.Zero, 3, 0x02000000, IntPtr.Zero);
+        // 零访问权限及共享删除，不占用文件；目录使用 BACKUP_SEMANTICS，重解析链接读取自身身份。
+        using var handle = CreateFile(path, 0, 7, IntPtr.Zero, 3, 0x02200000, IntPtr.Zero);
         return !handle.IsInvalid && GetFileInformationByHandle(handle, out var info) && (info.IndexHigh != 0 || info.IndexLow != 0)
             ? $"{info.VolumeSerial:X8}:{info.IndexHigh:X8}{info.IndexLow:X8}" : null;
     }
