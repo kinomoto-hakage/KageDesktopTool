@@ -1,8 +1,8 @@
 # 01: Folder 内容展示与文件交互
 
 Type: implementation
-Status: claimed
-Labels: claimed
+Status: resolved
+Labels: resolved
 Approved: 2026-10-03
 Spec: ../spec.md
 Plan: ../ticket-plan.md
@@ -60,8 +60,10 @@ User stories: 1-24, 38, 47, 49, 51-53
 
 用户明确接受由资源管理器展示系统菜单：打开真实内容目录并定位当前单项／多项选择，调用系统实际右键，由 Explorer 根据当前 Windows 设置显示现代或传统菜单。移除 Kage 内同步 `IContextMenu` 构建及可激活的临时 ToolWindow，不写全系统菜单注册表、不伪造现代菜单。
 
-- [ ] 复现并记录旧菜单阻塞与标题栏辅助窗口，测量修复后响应和 UI 停顿。
-- [ ] Explorer 原生菜单单项、多项、更多选项及实际命令通过真实输入验证；准备阶段不阻塞 Kage，退出取消后不再发送右键。
-- [ ] 新建与缺少字段的状态使用网格 48／列表 32，已有显式尺寸保持已保存值。
-- [ ] 包应用解析实际 AppsFolder 标识、注册包清单及 targetsize 资源；InternetShortcut 使用实际 IconFile／IconIndex；图标四档图案及尺寸准确。
-- [ ] 缓存按实际文件变化、系统偏好变化与过期失效，保留 Shell 的其他适用状态覆盖；业务和 Windows 输入回归、审查及发布验收通过。
+- [x] 复现并记录旧菜单阻塞与标题栏辅助窗口，测量修复后响应和 UI 停顿。
+- [x] Explorer 原生菜单单项、多项、更多选项及实际命令通过真实输入验证；准备阶段不阻塞 Kage，退出取消后不再发送右键。
+- [x] 新建与缺少字段的状态使用网格 48／列表 32，已有显式尺寸保持已保存值。
+- [x] 包应用解析实际 AppsFolder 标识、注册包清单及 targetsize 资源；InternetShortcut 使用实际 IconFile／IconIndex；图标四档图案及尺寸准确。
+- [x] 缓存按实际文件变化、系统偏好变化与过期失效，保留 Shell 的其他适用状态覆盖；业务和 Windows 输入回归、审查及发布验收通过。
+
+追加修正已完成。完整自包含包：`releases/任务01 右键与图标修复/`；新验收记录：[右键响应与图标资源](../../../docs/verification/upgrade-01-shell-response-and-icons.md)。58 组业务、完整包真实输入及两轴复审通过。最新实测准备 573 ms、UI 最大停顿 37 ms，系统现代菜单窗口 `Microsoft.UI.Content.PopupWindowSiteBridge`，无红叉辅助窗口。

@@ -42,4 +42,16 @@ rtk proxy python -c "import subprocess; raise SystemExit(subprocess.run(['src/Ka
 
 平台依据：[Windows 11 菜单集成](https://blogs.windows.com/windowsdeveloper/2021/07/19/extending-the-context-menu-and-share-dialog-in-windows-11/)、[SHOpenFolderAndSelectItems](https://learn.microsoft.com/en-us/windows/win32/api/shlobj_core/nf-shlobj_core-shopenfolderandselectitems)、[包查询 API](https://learn.microsoft.com/en-us/windows/win32/appxpkg/functions)、[应用图标 targetsize 资源](https://learn.microsoft.com/en-us/windows/apps/design/iconography/app-icon-construction)。
 
-审查和最终发布验收在完成后补记。
+## 最终发布与审查
+
+完整自包含 `win-x64` 修复包在 `releases/任务01 右键与图标修复/`，编译零警告、零错误。最终发布目录中的 `--publish-check`、`--shell-image-check`、`--content-input-check` 均退出 0；布局及取消回归也通过。最新实测菜单准备 **573 ms**，WPF UI 最大停顿 **37 ms**，无标题栏辅助窗口，系统窗口仍为 `Microsoft.UI.Content.PopupWindowSiteBridge`。实际硬件验证范围是 Windows 11 单屏 150% DPI。
+
+### Standards
+
+初审的系统 ANSI 图标路径问题已修复并补中文路径及“猫.ico”多编码合法字节回归。无 BOM 时优先查找系统编码的实际资源，找不到再尝试严格 UTF-8；声明 BOM 时按其编码。规范轴复审无明确规范违例、正确性问题或可行动 heuristic。
+
+### Spec
+
+初审的慢速菜单转换与同进程无关菜单识别两项 P2 已修复。首次准备和明确的更多选项转换允许后台等待，按窗口所有权及 GUI 线程识别当前菜单；真实系统窗口、更多选项和命令的组合输入回归通过。规格轴复审无剩余可行动问题或范围扩展。
+
+固定审查基线 `72ad7604e1bf23d65da3f2524338601d828c83c9`。实现与修复提交为 `9f1d872`、`bcfc4b9`、`2cbcd59`。两轴剩余发现：Standards 0、Spec 0，均无未解决问题。
