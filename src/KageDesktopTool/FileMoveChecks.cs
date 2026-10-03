@@ -141,6 +141,10 @@ internal static class FileMoveChecks
                 File.WriteAllText(Path.Combine(secondPath, "跳过.lnk"), "目标原快捷方式内容");
                 Directory.CreateDirectory(Path.Combine(secondPath, "取消目录"));
                 await workspace.RefreshAsync(WindowsDesktop.Displays());
+                // 新版按可见顺序操作多选，先设置确定的手动顺序以验收完成后再取消。
+                foreach (var name in conflictNames)
+                    Check((await workspace.ReorderContentsAsync(first.FolderId, [Path.Combine(firstPath, name)], null)).Succeeded, "冲突夹具设置明确手动顺序");
+                Check(workspace.Snapshot.Folders.First().Entries.Select(entry => entry.Name).SequenceEqual(conflictNames), "先完成、保留两份、跳过、取消与后续的可见顺序");
                 runtime.Render();
                 var commands = new System.Collections.Generic.Queue<int>([6, 7, 2]);
                 var timer = new DispatcherTimer { Interval = TimeSpan.FromMilliseconds(80) };
@@ -156,7 +160,7 @@ internal static class FileMoveChecks
                 timer.Start();
                 try
                 {
-                    // 选择次序是批量操作次序，先完成项须先于冲突项。
+                    // 当前可见顺序是批量操作次序，先完成项须先于冲突项。
                     await DragFolderItems(first, conflictNames, HeaderCenter(second));
                     await WaitUntil(() => runtime.ActiveMove == null && app.Windows.OfType<MoveDialog>().Any(window => window.Result?.Items.Count == 5));
                 }

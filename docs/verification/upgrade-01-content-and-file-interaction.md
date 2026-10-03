@@ -23,6 +23,8 @@ rtk proxy python tests/physical_content_probe.py releases/KageDesktopTool-win-x6
 - 原生菜单通过 `IShellFolder.GetUIObjectOf` 取得实际选择的 `IContextMenu`，转发 `IContextMenu2/3` 消息以支持动态／自绘扩展。临时顶层菜单所有者承接键盘输入，解决 Explorer 子 HWND 无法成为前台菜单所有者的问题。Shell 的重命名命令由宿主提供名称输入，再通过业务接口提交。
 - Shell 图像列表只省略与系统 `SIID_LINK` 对应的覆盖，保留实际文件关联、自定义图标及其他返回的覆盖；不修改注册表或全局箭头配置。Windows 每次只返回一个主覆盖，本票不重新合成 Shell 未返回的状态图层。
 - ListBox 使用 DIP 像素滚动，选框起点保存在内容坐标中；自动滚动后仍正确命中视口外项目。鼠标捕获、原生菜单和 OLE 拖动期间暂停周期刷新。
+- 硬链接共享文件身份，不能把身份当作路径唯一标识。顺序先保留所有准确名称，选择先保留准确路径；只有唯一未匹配的旧／新条目才推断改名。内容改名只更新对应原名称，重解析链接读取链接自身身份。
+- 已开始的后台刷新在发布时再次检查活动输入；输入结束后通过 Dispatcher 发布延迟结果，避免重建正在点击或拖动的列表。16 DIP 列表继续使用原生小图标行高，其余尺寸适配图像及文本。
 
 平台实现依据：[Microsoft IContextMenu](https://learn.microsoft.com/en-us/windows/win32/api/shobjidl_core/nn-shobjidl_core-icontextmenu)、[GetOverlayImage](https://learn.microsoft.com/en-us/windows/win32/api/commoncontrols/nf-commoncontrols-iimagelist-getoverlayimage)、[系统覆盖图标枚举](https://learn.microsoft.com/en-us/windows/win32/api/shellapi/ne-shellapi-shstockiconid)。
 
@@ -34,10 +36,26 @@ rtk proxy dotnet build src/KageDesktopTool/KageDesktopTool.csproj -c Release --n
 rtk proxy python -c "import subprocess; raise SystemExit(subprocess.run(['src/KageDesktopTool/bin/Release/net10.0-windows/KageDesktopTool.exe','--content-input-check']).returncode)"
 ```
 
-新增业务组覆盖：自然数字及中文名称、目录优先、日期同键稳定顺序、快捷方式自身大小、偏好独立保存／失败／重启、原位释放、过期路径、多选手动顺序、外部增删改名、内容改名事务中断、有效旧状态缺字段的默认值。
+新增六组业务检查覆盖：自然数字及中文名称、目录优先、日期同键稳定顺序、快捷方式自身大小、偏好独立保存／失败／重启、原位释放、过期路径、多选手动顺序、外部增删改名、内容改名事务中断、有效旧状态缺字段的默认值、真实硬链接的独立名称与顺序。
 
-Windows 输入组通过系统鼠标／键盘输入驱动实际 WPF 窗口，核对快捷方式标记、普通程序、默认文本关联窗口、Explorer 实际目录、原生菜单与已安装 Code／7-Zip 处理器、真实改名／删除及选择刷新、多选内部重排、跨 Folder 移动、滚动和八种尺寸。捕获丢失使用 Windows `ReleaseCapture`，不通过 WPF 事件注入。
+Windows 输入组通过系统鼠标／键盘输入驱动实际 WPF 窗口，核对快捷方式标记、普通程序、默认文本关联窗口、Explorer 实际目录、原生菜单与已安装 Code／7-Zip 处理器、真实属性窗口／改名／删除及选择刷新、多选内部重排、跨 Folder 移动、滚动和八种尺寸。捕获丢失使用 Windows `ReleaseCapture`，不通过 WPF 事件注入。
 
 运行日志、基线 EXE 校验值及 PNG 位于忽略目录 `.scratch/desktop-folder/verification/`：`physical-1.0.0-result.json`、`physical-fixed-result.json`、`content-input-session.txt`、`content-grid-16/32/48/96.png`、`content-list-16/32/48/96.png`。实际测试环境为 Windows 11、单屏、150% DPI；硬件多屏与其他 DPI 不冒充已实测。
 
-完整回归、发布目录验收及代码审查结论在完成后补记。
+## 最终结果（2026-10-03）
+
+- Release 构建与自包含 `win-x64` 发布成功，零警告、零错误。验收包位于含空格的 `releases/任务01 输入验收/`；保留 1.0.0 基线，正式新版命名及整体发布由功能票 05 处理。
+- 完整业务回归 **58／58 通过**。审查后的尺寸枚举集中定义又通过全部六组内容业务检查。
+- 发布 EXE 的 `--content-input-check`、`--content-layout-check`、`--file-move-check` 均退出 0。覆盖所有双击组合、普通关联文件与 Explorer、单项／多项原生菜单、Code／7-Zip 处理器、真实改名／删除及计数、Ctrl／Shift 点击与双向框选、边缘自动滚动、捕获丢失、拖动阈值／原位／Esc／插入标记、内部多选重排、跨 Folder 真移动、八种图标尺寸、圆角滑块／滚轮／轨道。原移动检查继续核对 Explorer／桌面移入移出、冲突三种选择、已完成项目保留、ACL 失败及字节一致；冲突夹具显式保存手动顺序以适应新版可见顺序。
+- `--content-input-check --identity-only` 与 `--refresh-only` 的准确回归均先在错误实现下失败，再在修复后退出 0。对应日志为 `content-identity-session.txt` 与 `content-refresh-session.txt`。
+- 最终自包含发布 EXE 经独立 Python 鼠标脚本启动 `.cmd` 标记成功；相同脚本在原 1.0.0 下未产生标记。JSON 保存 EXE 路径、SHA-256、实际窗口边界及 150% 缩放，未使用 WPF 事件注入。
+
+## Standards
+
+初审发现两项硬链接正确性风险及一项尺寸常量重复的维护建议。已分别修复，并以 `ContentIconSize` 集中四档尺寸。规范轴复审：明确标准违规 0，未解决 heuristic 0，原正确性问题均关闭。
+
+## Spec
+
+初审发现硬链接身份混淆和活动输入期间的刷新竞态两项 P2。正式业务与真实 Windows 输入回归准确复现后修复；规格轴复审无剩余可行动问题及范围扩展。
+
+审查固定基线为 `5445972344617549acc9a2556a991cb03c51d621`。最终两轴剩余发现：Standards 0、Spec 0，均无未解决问题。

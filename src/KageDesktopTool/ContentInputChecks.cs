@@ -205,6 +205,10 @@ internal static class ContentInputChecks
                 File.AppendAllText(log, "实际原生菜单：" + string.Join(" | ", labels) + "\n");
                 Require(labels.Any(label => label.Contains("Code", StringComparison.OrdinalIgnoreCase) || label.Contains("7-Zip", StringComparison.OrdinalIgnoreCase)), "已安装 Code／7-Zip 的适用对象菜单处理器呈现");
                 Require(labels.Any(label => label.Contains("属性", StringComparison.Ordinal)) && labels.Any(label => label.Contains("删除", StringComparison.Ordinal)), "系统文件命令呈现");
+                await ClickMenu("属性"); await Task.Delay(700);
+                Require(WindowWithTitle(Path.GetFileName(document) + " 属性") != IntPtr.Zero, "原生属性命令打开实际对象属性窗口");
+                Key(0x1B); await Task.Delay(400);
+                await MouseAt(Center(Item(document)), false, 8); await Task.Delay(400);
                 await ClickMenu("重命名"); await Task.Delay(350);
                 Require(WindowWithTitle("重命名项目") != IntPtr.Zero, "原生重命名命令进入真实名称输入");
                 await TypeText("renamed.txt");
