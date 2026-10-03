@@ -1,8 +1,8 @@
 # 11: 显示桌面及 Explorer 重启后恢复操作
 
 Type: implementation
-Status: claimed
-Labels: ready-for-agent
+Status: resolved
+Labels: resolved
 Approved: 2026-10-02
 Plan: ../ticket-plan.md
 Spec: ../spec.md
@@ -20,7 +20,7 @@ User stories: 62, 65, 66, 68, 69
 
 ## 验收：显示桌面和 Explorer 重启后恢复可操作的 Folder
 
-- [ ] 人工 `Win+D` 进入／退出后，头部与展示部分实际可见且可以点击、拖动、缩放及操作内容，不仅检查窗口父关系。
+- [x] 人工 `Win+D` 进入／退出后，头部与展示部分实际可见且可以点击、拖动、缩放及操作内容，不仅检查窗口父关系。
 - [x] 普通应用覆盖、焦点变化及设置窗口显示符合桌面整理体验，不让 Folder 无故覆盖正常应用。
 - [x] Explorer 重启后恢复托盘、桌面挂接及真实拖放能力，不产生重复窗口、重复热键或丢失活动／保留内容状态。
 - [x] 宿主不可用时保留内容和配置，说明展示不可用并可打开实际目录；恢复可用后重新挂接。
@@ -37,15 +37,16 @@ User stories: 62, 65, 66, 68, 69
 - 用户已认可合并方案、阻塞关系及本票验收标准，已正式发布。
 - 2026-10-03：用户调用 implement 开始本票；05、07 均为 resolved。沿用已认可的 IDesktopWorkspace 与真实 Windows 会话验收边界；复核基点为 9c68ff91。
 - 2026-10-03：用户明确批准模拟输入及 Explorer 重启，确认没有未完成文件操作后执行自动实际会话验收；随后选择暂不做人工 Win+D 验收，保留为待验收。
+- 2026-10-03：用户确认“人工 Win+D 检查通过”，最后一项人工验收完成，本票状态及标签更新为 resolved。
 
 ## Answer
 
-实现已提交，人工验收待完成，`Status: claimed` 保留，不标记为 resolved。
+实现已提交，用户已确认人工 Win+D 检查通过，全部验收完成，`Status: resolved`。
 
 - `IDesktopWorkspace.ReportDesktopAvailabilityAsync` 与 `WorkspaceSnapshot.DesktopAvailable` 提供不持久化的会话展示状态；不会中断或重复文件移动，不混同内容恢复状态。
 - 真实复现发现 Explorer 会销毁挂接的子窗口，使旧 HWND 归零。Runtime 依据原稳定标识和已提交状态重建失效 WPF 窗口，重新登记 OLE 接收；复用控制器、原热键、NotifyIcon 和菜单。宿主不可用时隐藏展示，托盘／设置说明状态并提供实际目录入口。
 - Explorer 宿主识别、窗口样式／挂接／定位和文件拖放目标识别集中到 `WindowsDesktop`。
 - 全套 44 项业务检查通过；Release 构建 0 警告、0 错误。真实自动 Win+D、鼠标点击／拖动／缩放、普通应用覆盖、设置焦点、Explorer 重启、系统托盘双击和恢复后双向 OLE 均通过。04—10 既有 Windows 回归通过；06 一次前台焦点变化失败，单独复测通过。
-- 以用户确认的 `9c68ff91` 为基点，两个独立 sub-agent 分别完成 Standards 与 Spec 复核：均为 0 项代码发现，Spec 保留 1 项待人工验收限制。
+- 以用户确认的 `9c68ff91` 为基点，两个独立 sub-agent 分别完成 Standards 与 Spec 复核：均为 0 项代码发现；复核时保留的 1 项人工验收限制已由用户本次确认解除。
 - 交付与复现记录：[11 桌面会话验收](../../../docs/verification/11-desktop-session-recovery.md)。主日志为忽略目录下 `verification/desktop-recovery-session.txt`，实际屏幕截图已查看。
-- 人工隔离入口 `--manual-desktop-check` 已启动供用户核对；用户选择暂不验收，夹具随后从自己的托盘菜单正常退出并清理。后续需亲自完成第一条验收后再关闭本票。
+- 人工隔离入口 `--manual-desktop-check` 曾启动供用户核对，暂缓验收后夹具已从自己的托盘菜单正常退出并清理；用户随后确认人工 Win+D 检查通过，本票关闭，13 对 11 的依赖已满足。

@@ -13,8 +13,8 @@
 
 - 2026-10-03：[10 中断迁移恢复](issues/10-recover-interrupted-migration.md) 已完成。启动只读核对真实目录及链接目标；设置提供活动／保留内容未恢复清单、Explorer 定位及共用业务重试入口，全部旧内容及配置确认后解除暂停。42 项业务检查、十二阶段独立进程退出和重启、Release 构建、新增真实恢复会话及 04—09 Windows 回归通过。目录创建中断边界先复现后修复，未知内容及目录命名流保留，规范／规格复审各 0 项遗留。详见 [验收记录](../../docs/verification/10-recover-interrupted-migration.md)。
 
-## Fog
+- 2026-10-03：[11 桌面会话恢复](issues/11-desktop-session-recovery.md) 已完成并验收。实际复现确认 Explorer 销毁跨进程子窗口，按稳定标识重建失效窗口并恢复输入／OLE，保留托盘、控制器和热键。44 项业务检查、Release 及真实 Win+D／Explorer 恢复与 04—10 回归通过；规范／规格复核均 0 项代码发现。用户已确认人工 Win+D 检查通过，Status 更新为 resolved，13 对 11 的依赖已满足，仍等待 12 完成。详见 [验收记录](../../docs/verification/11-desktop-session-recovery.md)。
 
-- 2026-10-03：[11 桌面会话恢复](issues/11-desktop-session-recovery.md) 的实现与自动验收已提交。实际复现确认 Explorer 销毁跨进程子窗口，按稳定标识重建失效窗口并恢复输入／OLE，保留托盘、控制器和热键。44 项业务检查、Release 及真实 Win+D／Explorer 恢复与 04—10 回归通过；规范／规格复核均 0 项代码发现。用户选择暂不人工 Win+D 验收，仍有 1 项待验收，Status 保持 claimed，13 的本项依赖未解除。详见 [验收记录](../../docs/verification/11-desktop-session-recovery.md)。
+## Fog
 
 - 后续任务按 [ticket-plan.md](ticket-plan.md) 的依赖与用户明确启动要求继续，完整发布由 13 交付。
