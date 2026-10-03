@@ -1,6 +1,6 @@
 # 08 重命名及两种删除方式验收
 
-日期：2026-10-02。对应 [任务 08](../../.scratch/desktop-folder/issues/08-rename-and-delete.md)。
+验收日期：2026-10-02 至 2026-10-03。对应 [任务 08](../../.scratch/desktop-folder/issues/08-rename-and-delete.md)。
 
 ## 实现与结果口径
 
@@ -11,6 +11,8 @@
 一同删除在专用 STA 使用 Windows `IFileOperation` 的 `FOFX_RECYCLEONDELETE`。回收前回调不提供可回收标志时终止，回收后还核对非空回收项、源消失及回收站中的稳定归属。没有永久删除分支。该次序依据 [SetOperationFlags](https://learn.microsoft.com/en-us/windows/win32/api/shobjidl_core/nf-shobjidl_core-ifileoperation-setoperationflags)、[PreDeleteItem](https://learn.microsoft.com/en-us/windows/win32/api/shobjidl_core/nf-shobjidl_core-ifileoperationprogresssink-predeleteitem) 和 [PostDeleteItem](https://learn.microsoft.com/en-us/windows/win32/api/shobjidl_core/nf-shobjidl_core-ifileoperationprogresssink-postdeleteitem)。COM 对象在同一 STA 创建与释放，目录操作和状态提交保持在共用业务模块内。
 
 三种文件效果执行前均原子保存操作意图。意图保存失败不执行文件操作；文件失败保留入口；最终提交失败返回 `RecoveryRequired`、实际路径和原／目标说明。成功改名后的恢复快照展示实际新名称；重启核对归属后完成提交。保留内容核对实际工具快捷方式，回收核对回收站稳定标识；仅源路径失联不能证明回收成功，保留待核对状态。新字段为格式 1 的可选扩展，既有状态仍可加载，非法恢复目标和重复保留关联不能保存。
+
+补充故障检查先复现“快捷方式已生成但 Shell 随后抛异常”时关联意图被清除的问题，再修复为按真实目标核对并保留意图及原入口。重启完成链接关联提交，不把该次异常当作完全没有文件效果，也不会遗留无法迁移的工具链接。
 
 ## 检查
 
@@ -24,4 +26,4 @@ rtk proxy dotnet build src/KageDesktopTool/KageDesktopTool.csproj -c Release --n
 rtk proxy dotnet src/KageDesktopTool/bin/Release/net10.0-windows/KageDesktopTool.dll --folder-action-check
 ```
 
-全套 30 项共用业务检查及 Release 构建通过。Windows 新增会话检查已通过；最终复核和既有会话回归结果在任务 Answer 中记录。
+全套 30 项共用业务检查及 Release 构建通过，构建为 0 警告／0 错误。新增 Windows 会话检查及既有 04 生命周期、05 内容布局、06 外观图标、07 真实文件移动回归均通过。本地检查包已更新到 `.scratch/desktop-folder/verification/发布包 含空格/`，包内 `--folder-action-check` 也通过；完整发布仍由任务 13 交付。最终规范／规格复核结果在任务 Answer 中记录。

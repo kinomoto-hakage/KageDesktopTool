@@ -170,6 +170,13 @@ static class FolderChangeChecks
         fixture.Store.Save(fixture.Store.Read().State with { PendingFolderChange = intent });
         workspace = new DesktopWorkspace(fixture.Store, new TestStartup(), shell);
         Check((await workspace.InitializeAsync(Displays)).Succeeded && workspace.Snapshot.Folders.Count == 1, "操作前中断未生成快捷方式则保留活动入口");
+        shell.ThrowAfterShortcut = true;
+        result = await workspace.DeleteFolderAsync(folder.Folder.Id, FolderDeleteChoice.KeepContents);
+        Check(result.Outcome == Outcome.RecoveryRequired && workspace.Snapshot.Folders.Count == 1, "快捷方式已生成但 Shell 返回异常时保留意图及入口");
+        shell.ThrowAfterShortcut = false;
+        workspace = new DesktopWorkspace(fixture.Store, new TestStartup(), shell);
+        Check((await workspace.InitializeAsync(Displays)).Succeeded && workspace.Snapshot.Folders.Count == 0
+            && fixture.Store.Read().State.RetainedFolders.Length == 2, "重新核对成功文件效果并保存迁移关联");
     }
 
     public static async Task Recycle()
@@ -231,11 +238,13 @@ sealed class FailingShell(IFolderShell real) : IFolderShell
 {
     public bool FailShortcut { get; set; }
     public bool FailRecycle { get; set; }
+    public bool ThrowAfterShortcut { get; set; }
     public string DesktopDirectory => real.DesktopDirectory;
     public void CreateShortcut(string path, string target)
     {
         if (FailShortcut) throw new IOException("注入快捷方式创建失败");
         real.CreateShortcut(path, target);
+        if (ThrowAfterShortcut) throw new IOException("注入快捷方式生成后的 Shell 异常");
     }
     public bool ShortcutTargets(string path, string target) => real.ShortcutTargets(path, target);
     public OperationResult Recycle(string path, Guid id) => new(FailRecycle ? Outcome.Failed : Outcome.Cancelled, FailRecycle ? "注入回收失败" : "注入 Windows 回收取消", path);

@@ -107,6 +107,8 @@ public sealed partial class DesktopWorkspace
             else
             {
                 // 未完成时按真实效果核对，不能以失败返回值猜测目录仍在原位。
+                if (change.Kind == FolderChangeKind.KeepContents && Shell.ShortcutTargets(change.Destination, ContentPath(folder)))
+                    throw new IOException("快捷方式已生成，但 Shell 返回异常；保留意图并在重启时核对关联。");
                 if (!WindowsPaths.HasIdentity(ContentPath(folder), folder.Id)) throw new IOException("文件操作未完成且原目录归属无法核对。");
                 store.Save(original);
                 state = original;
