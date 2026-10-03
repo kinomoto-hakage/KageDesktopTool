@@ -16,8 +16,8 @@ internal static class HeaderLayout
                 || folder.Y >= (long)other.Folder.Y + Height(other.Folder, other.Area) + Gap) ? area : null;
     }
 
-    // 与 MonitorFromWindow 一致，使用物理窗口最大交叠面积对应的显示器。
-    // 尺寸随 DPI 改变，须核对该显示器的尺寸选择仍得到同一最大交叠区域。
+    // 优先使用物理窗口最大交叠面积对应的显示器，并核对尺寸选择。
+    // 高到低 DPI 的接缝可能没有自洽解，此时稳定使用头部原点所在屏。
     internal static DisplayArea? DisplayFor(FolderRecord folder, IReadOnlyList<DisplayArea> displays)
     {
         foreach (var area in displays.OrderBy(a => a.Scale).ThenBy(a => a.X).ThenBy(a => a.Y))
@@ -29,7 +29,9 @@ internal static class HeaderLayout
             var selected = displays.OrderByDescending(Intersection).ThenBy(a => a.X).ThenBy(a => a.Y).FirstOrDefault();
             if (selected == area && Intersection(area) > 0) return area;
         }
-        return null;
+        return displays.Where(a => folder.X >= a.X && folder.Y >= a.Y
+            && folder.X < (long)a.X + a.Width && folder.Y < (long)a.Y + a.Height)
+            .OrderBy(a => a.Scale).ThenBy(a => a.X).ThenBy(a => a.Y).FirstOrDefault();
     }
 
     private static bool Covered(FolderRecord folder, DisplayArea area, IReadOnlyList<DisplayArea> displays)

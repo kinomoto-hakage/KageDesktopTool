@@ -2,7 +2,6 @@
 using System;
 using System.Collections.Generic;
 using System.Runtime.InteropServices;
-using System.Windows;
 using Forms = System.Windows.Forms;
 
 namespace Kage.Desktop;
@@ -34,7 +33,18 @@ internal sealed record NativeViewMetrics(double GridWidth, double GridHeight, do
     private static double MeasureListRow(uint dpi, LOGFONT logicalFont)
     {
         // 控件的字体和小图标明确使用目标 DPI 像素，不能测量默认主屏控件后复用所有屏幕。
+        var display = Array.Find(WindowsDesktop.Displays(), area => Math.Abs(area.Scale * 96 - dpi) < .5);
+        using var owner = new Forms.Form
+        {
+            StartPosition = Forms.FormStartPosition.Manual,
+            Location = new System.Drawing.Point((display?.X ?? 0) + 1, (display?.Y ?? 0) + 1),
+            Size = new System.Drawing.Size(600, 300), AutoScaleMode = Forms.AutoScaleMode.None,
+            ShowInTaskbar = false
+        };
+        // 不显示测量窗口。创建在目标屏的父 HWND，让原生控件内部度量也采用该屏 DPI。
+        _ = owner.Handle;
         using var view = new Forms.ListView { View = Forms.View.List, Size = new System.Drawing.Size(600, 300) };
+        owner.Controls.Add(view);
         var style = (logicalFont.Weight >= 700 ? System.Drawing.FontStyle.Bold : System.Drawing.FontStyle.Regular)
             | (logicalFont.Italic != 0 ? System.Drawing.FontStyle.Italic : System.Drawing.FontStyle.Regular);
         using var font = new System.Drawing.Font(logicalFont.FaceName, Math.Abs(logicalFont.Height), style, System.Drawing.GraphicsUnit.Pixel);

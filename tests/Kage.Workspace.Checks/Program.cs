@@ -30,6 +30,7 @@ var tests = new (string Name, Func<Task> Run)[]
     ("显示环境变化拒绝旧 DPI 输入并可重试", DisplayChecks.StaleDpiInput),
     ("显示环境拔屏分辨率容量不足及重启恢复", DisplayChecks.UnplugAndCapacity),
     ("显示环境恢复优先保留剩余屏位置", DisplayChecks.PreserveSurvivingScreen),
+    ("显示环境混合 DPI 双向及上下跨屏", DisplayChecks.MixedDpiBothDirections),
     ("外观颜色同步校验及取消恢复", AppearanceChecks.InputAndCancel),
     ("外观独立保存失败及重启恢复", AppearanceChecks.Persistence),
     ("图标选择校验保存失败及重启恢复", AppearanceChecks.Icons),

@@ -180,6 +180,37 @@ internal static class DisplayChecks
         Check(workspace.Snapshot.Folders.Single(f => f.Folder.Id == lost.Id).Visible, "断开屏幕入口找到其他空位");
     }
 
+    internal static async Task MixedDpiBothDirections()
+    {
+        using var fixture = new Fixture();
+        var folder = new FolderRecord(Guid.NewGuid(), "反向混合 DPI", -500, 100);
+        Directory.CreateDirectory(Path.Combine(fixture.Content, folder.Name));
+        foreach (var (leftScale, rightScale) in new[] { (1.5, 1.0), (1.0, 1.5), (2.0, 1.25), (1.25, 2.0) })
+        {
+            fixture.Store.Save(new WorkspaceState { Root = fixture.Content, Folders = [folder] });
+            IDesktopWorkspace workspace = new DesktopWorkspace(fixture.Store, new TestStartup());
+            await workspace.InitializeAsync([new(-1200, 0, 1200, 1000, leftScale), new(0, 0, 1600, 1000, rightScale)]);
+            var edit = workspace.BeginLayout(folder.Id)!;
+            edit.BeginDrag(0, 0);
+            edit.DragTo(800, 0);
+            Check(edit.Folders.Single().Folder.X == 300 && edit.Folders.Single().DisplayScale == rightScale,
+                $"{leftScale:P0} 到 {rightScale:P0} 可完整穿过连续接缝");
+            edit.DragTo(0, 0);
+            Check(edit.Folders.Single().Folder.X == -500 && edit.Folders.Single().DisplayScale == leftScale,
+                "同一次输入会话反向跨屏回到起点");
+        }
+        folder = folder with { X = 100, Y = -500 };
+        fixture.Store.Save(new WorkspaceState { Root = fixture.Content, Folders = [folder] });
+        IDesktopWorkspace vertical = new DesktopWorkspace(fixture.Store, new TestStartup());
+        await vertical.InitializeAsync([new(0, -1000, 1200, 1000, 2), new(0, 0, 1200, 1000)]);
+        var move = vertical.BeginLayout(folder.Id)!;
+        move.BeginDrag(0, 0);
+        move.DragTo(0, 800);
+        Check(move.Folders.Single().Folder.Y == 300 && move.Folders.Single().DisplayScale == 1, "上下相邻屏幕高到低 DPI 可跨屏");
+        move.DragTo(0, 0);
+        Check(move.Folders.Single().Folder.Y == -500 && move.Folders.Single().DisplayScale == 2, "上下跨屏立即反向恢复");
+    }
+
     private static void Check(bool condition, string message)
     {
         if (!condition) throw new Exception(message);
