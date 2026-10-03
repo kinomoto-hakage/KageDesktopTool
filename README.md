@@ -1,6 +1,6 @@
 # KageDesktopTool
 
-Windows 桌面整理工具，采用 C#、.NET 10 和 WPF。已交付创建与运行生命周期、原生内容、不重叠布局、外观图标及真实文件移动，本轮增加 [08 重命名及两种删除方式](.scratch/desktop-folder/issues/08-rename-and-delete.md)：同步改名真实内容文件夹、保留内容并生成实际桌面快捷方式、完整目录进入 Windows 回收站，以及中断后的实际结果核对。
+Windows 桌面整理工具，采用 C#、.NET 10 和 WPF。已交付创建与运行生命周期、原生内容、不重叠布局、外观图标、真实文件移动及 Folder 改名／删除，本轮增加 [09 更换根目录及当场失败恢复](.scratch/desktop-folder/issues/09-change-root-and-rollback.md)：迁移全部活动及保留内容、更新关联快捷方式、显示可取消进度，以及失败后的原位置恢复和持久日志。
 
 ## 运行
 
@@ -33,7 +33,8 @@ rtk proxy dotnet run --project src/KageDesktopTool/KageDesktopTool.csproj --no-r
 - 设置中的自启开关需点击“应用自启选择”。只有注册结果和偏好保存都成功才显示成功；失败说明实际结果并尝试恢复原配置。启动目标采用当前包内 EXE 的绝对路径，支持含空格的发布目录。
 - 重复启动打开已有实例的设置；热键被占用时托盘仍可创建，并显示原因。
 - 空间不足时保留 Folder 记录和真实目录，在设置中显示暂未展示；释放空间后“刷新展示”恢复。
-- 已有可用根目录的整体更换需使用任务 09 的迁移功能。已有根目录不可用时，可以明确另选目录用于新建；旧 Folder 保留其原路径关联并显示说明，不将其伪装成已迁移的内容。
+- 在设置中选择新存储根目录，点击“迁移并保存目录”。全部活动及保留内容和关联工具快捷方式完成后才切换配置；同名冲突须先处理或选择其他目录。进度窗口可取消，失败或取消时尝试恢复原位置并保留旧根目录配置，恢复不完整会显示实际路径和说明并暂停修改。迁移期间其他文件及 Folder 操作暂停。
+- 已保存根目录离线时，可点击“离线时另选新建目录”明确设置后续新建位置；已有 Folder 和保留内容继续关联原路径，未进行迁移。有可用内容的根目录须通过整体迁移更换。
 
 ## 状态及恢复
 
@@ -47,7 +48,7 @@ rtk proxy dotnet run --project src/KageDesktopTool/KageDesktopTool.csproj --no-r
 
 ## 验证
 
-业务检查与 UI 共用 `IDesktopWorkspace`，使用随机隔离目录；只在状态存储和 Windows 自启边界注入故障。无需外部测试包。
+业务检查与 UI 共用 `IDesktopWorkspace`，使用随机隔离目录；只在状态存储、自启及指定文件系统／Shell 边界注入故障。无需外部测试包。
 
 ```powershell
 rtk proxy dotnet restore tests/Kage.Workspace.Checks/Kage.Workspace.Checks.csproj --configfile NuGet.Config
@@ -58,10 +59,13 @@ rtk proxy dotnet src/KageDesktopTool/bin/Debug/net10.0-windows/KageDesktopTool.d
 rtk proxy dotnet src/KageDesktopTool/bin/Debug/net10.0-windows/KageDesktopTool.dll --appearance-check
 rtk proxy dotnet src/KageDesktopTool/bin/Debug/net10.0-windows/KageDesktopTool.dll --file-move-check
 rtk proxy dotnet src/KageDesktopTool/bin/Debug/net10.0-windows/KageDesktopTool.dll --folder-action-check
+rtk proxy dotnet src/KageDesktopTool/bin/Debug/net10.0-windows/KageDesktopTool.dll --root-migration-check
 ```
 
 最后五项需在当前用户的交互式 Windows 会话中运行。`--session-check` 使用随机隔离目录及随机临时自启项，短暂显示测试头部、模拟输入 `Ctrl+Alt+K` 并恢复占用状态；`--content-layout-check` 核对实际 WPF 网格／列表、真实窗口边界、捕获释放、双击打开及外部变化；`--appearance-check` 检查真实外观输入、透明背景、调色盘焦点、图标切换及重启恢复；`--file-move-check` 使用真实鼠标/OLE、实际桌面随机命名夹具、隔离 Explorer 目录和真实冲突对话框，核对字节、源消失、取消及权限失败，短暂显露桌面后恢复窗口。结束后释放资源、关闭夹具 Explorer 并恢复 ACL，不读写正式工作区或以个人内容作夹具。日志和预览写到 `.scratch/desktop-folder/verification/`；构建及检查产物不纳入 Git。详见 [05 验收记录](docs/verification/05-content-and-layout.md)、[06 验收记录](docs/verification/06-appearance-and-icons.md) 和 [07 验收记录](docs/verification/07-file-moves-and-conflicts.md)。
 
 `--folder-action-check` 检查真实头部菜单和改名／删除窗口、实际用户桌面快捷方式、完整目录回收及改名后内容刷新，仅使用随机临时夹具并在结束后清理。共用业务检查中的原生回收同样需在实际用户会话运行，受限进程无法读取实际用户的回收站。详见 [08 验收记录](docs/verification/08-rename-and-delete.md)。
+
+`--root-migration-check` 需在当前用户交互式 Windows 会话运行，检查真实设置按钮、迁移进度、工具快捷方式目标及当场取消恢复，使用随机隔离夹具。根迁移逐项保存旧／新路径、执行／恢复阶段及关联快捷方式目标变化。恢复不完整保留可定位的实际内容和日志；中断后重启暂停修改，启动恢复由任务 10 接入。详见 [09 验收记录](docs/verification/09-change-root-and-rollback.md)。
 
 结构：`src/Kage.Workspace/` 提供共用业务 interface 和真实状态／目录处理；`src/KageDesktopTool/` 提供 WPF、桌面宿主、托盘、热键、单实例及注册表适配器。`prototypes/` 保留已验收的原型。

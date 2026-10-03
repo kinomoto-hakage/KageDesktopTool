@@ -16,6 +16,9 @@ internal sealed class SettingsWindow : Window
     private bool rootEdited;
     private bool startupEdited;
     private bool refreshingUi;
+    internal TextBox RootInput => root;
+    internal Button MigrateButton { get; }
+    internal System.Threading.Tasks.Task<Kage.Workspace.OperationResult?>? PendingMigration { get; private set; }
 
     internal SettingsWindow(Runtime runtime)
     {
@@ -39,8 +42,25 @@ internal sealed class SettingsWindow : Window
             using var picker = new System.Windows.Forms.FolderBrowserDialog { Description = "选择集中存放内容文件夹的目录", UseDescriptionForTitle = true };
             if (picker.ShowDialog() == System.Windows.Forms.DialogResult.OK) root.Text = picker.SelectedPath;
         });
-        AddButton(rootActions, "保存目录", async () => { await Apply(() => runtime.Workspace.SelectRootAsync(root.Text)); rootEdited = false; Refresh(); });
+        MigrateButton = AddButton(rootActions, "迁移并保存目录", async () =>
+        {
+            controls.IsEnabled = false;
+            try
+            {
+                PendingMigration = runtime.MigrateRootAsync(root.Text);
+                var result = await PendingMigration;
+                if (result?.Succeeded == true) rootEdited = false;
+            }
+            finally { controls.IsEnabled = true; Refresh(); }
+        });
+        AddButton(rootActions, "离线时另选新建目录", async () =>
+        {
+            await Apply(() => runtime.Workspace.SelectRootAsync(root.Text));
+            rootEdited = false;
+            Refresh();
+        });
         controls.Children.Add(rootActions);
+        controls.Children.Add(new TextBlock { Text = "更换目录会迁移全部活动及保留内容，并更新工具生成的快捷方式；取消时尝试恢复原位置。", TextWrapping = TextWrapping.Wrap, Margin = new Thickness(0, 8, 0, 0) });
         controls.Children.Add(startup);
         AddButton(controls, "应用自启选择", async () => { await Apply(() => runtime.Workspace.SetStartupAsync(startup.IsChecked == true)); startupEdited = false; Refresh(); });
         var actions = new StackPanel { Orientation = Orientation.Horizontal, Margin = new Thickness(0, 15, 0, 0) };
@@ -98,10 +118,11 @@ internal sealed class SettingsWindow : Window
         }
     }
 
-    private static void AddButton(Panel parent, string text, Action action)
+    private static Button AddButton(Panel parent, string text, Action action)
     {
         var button = new Button { Content = text, Padding = new Thickness(10, 5, 10, 5), Margin = new Thickness(0, 0, 8, 0), HorizontalAlignment = HorizontalAlignment.Left };
         button.Click += (_, _) => action();
         parent.Children.Add(button);
+        return button;
     }
 }

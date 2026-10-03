@@ -35,7 +35,7 @@ public sealed class JsonWorkspaceStore(string directory) : IWorkspaceStore
         if (state.Folders == null || state.IconChoice is not ("a" or "b" or "c" or "d")) throw new InvalidDataException("状态字段无效。");
         if (state.PendingStartup is { } startup && startup.Enabled != (startup.TargetCommand != null))
             throw new InvalidDataException("未完成自启记录的目标配置与开关不一致。");
-        if (new[] { state.PendingStartup != null, state.PendingCreate != null, state.PendingFolderChange != null }.Count(value => value) > 1)
+        if (new[] { state.PendingStartup != null, state.PendingCreate != null, state.PendingFolderChange != null, state.PendingRootMigration != null }.Count(value => value) > 1)
             throw new InvalidDataException("状态存在冲突的未完成操作。");
         if (state.RetainedFolders == null) throw new InvalidDataException("保留内容关联无效。");
         var retainedIds = new HashSet<Guid>();
@@ -72,6 +72,34 @@ public sealed class JsonWorkspaceStore(string directory) : IWorkspaceStore
                 || !double.IsFinite(folder.Opacity) || folder.Opacity is < 0 or > 1
                 || folder.Color == null || !System.Text.RegularExpressions.Regex.IsMatch(folder.Color, "^#[0-9a-fA-F]{6}$"))
                 throw new InvalidDataException("Folder 尺寸或外观无效。");
+        }
+        if (state.PendingRootMigration is { } migration) ValidateMigration(state, migration);
+    }
+
+    private static void ValidateMigration(WorkspaceState state, PendingRootMigration migration)
+    {
+        var oldRoot = WindowsPaths.Root(migration.OldRoot);
+        var newRoot = WindowsPaths.Root(migration.NewRoot);
+        bool Same(string first, string second) => string.Equals(WindowsPaths.Root(first), WindowsPaths.Root(second), StringComparison.OrdinalIgnoreCase);
+        if (migration.OperationId == Guid.Empty || !Same(oldRoot, state.Root) || Same(oldRoot, newRoot)
+            || newRoot.StartsWith(oldRoot + Path.DirectorySeparatorChar, StringComparison.OrdinalIgnoreCase)
+            || migration.Items == null || migration.Items.Length != state.Folders.Length + state.RetainedFolders.Length)
+            throw new InvalidDataException("根迁移日志的根目录、标识或清单无效。");
+        var expected = state.Folders.Select(folder => (folder.Id, Path: Path.Combine(folder.ContentRoot ?? state.Root, folder.Name), Shortcut: (string?)null))
+            .Concat(state.RetainedFolders.Select(folder => (folder.FolderId, Path: folder.ContentPath, Shortcut: (string?)folder.ShortcutPath)))
+            .ToDictionary(folder => folder.Item1);
+        var ids = new HashSet<Guid>();
+        var targets = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
+        var sources = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
+        foreach (var item in migration.Items)
+        {
+            if (item == null || !ids.Add(item.FolderId) || !expected.TryGetValue(item.FolderId, out var folder)
+                || !Enum.IsDefined(item.Phase) || !Same(item.SourcePath, folder.Path)
+                || (folder.Shortcut == null ? item.ShortcutPath != null : item.ShortcutPath == null || !Same(item.ShortcutPath, folder.Shortcut))
+                || !Same(item.DestinationPath, Path.Combine(newRoot, Path.GetFileName(folder.Path)))
+                || !sources.Add(WindowsPaths.Root(item.SourcePath)) || !targets.Add(WindowsPaths.Root(item.DestinationPath))
+                || Same(newRoot, item.SourcePath) || newRoot.StartsWith(WindowsPaths.Root(item.SourcePath) + Path.DirectorySeparatorChar, StringComparison.OrdinalIgnoreCase))
+                throw new InvalidDataException("根迁移逐项日志与正常映射不一致，停止写入。");
         }
     }
 

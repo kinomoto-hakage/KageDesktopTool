@@ -1,6 +1,7 @@
 namespace Kage.Workspace;
 
-public sealed partial class DesktopWorkspace(IWorkspaceStore store, IStartupRegistration startup, IFolderShell? folderShell = null) : IDesktopWorkspace
+public sealed partial class DesktopWorkspace(IWorkspaceStore store, IStartupRegistration startup, IFolderShell? folderShell = null,
+    IRootDirectoryTransfer? rootTransfer = null) : IDesktopWorkspace
 {
     private readonly SemaphoreSlim operations = new(1, 1);
     private IFolderShell Shell => folderShell ?? WindowsFolderShell.Default;
@@ -54,6 +55,8 @@ public sealed partial class DesktopWorkspace(IWorkspaceStore store, IStartupRegi
 
     private void RecoverPending()
     {
+        if (state.PendingRootMigration != null)
+            throw new IOException("存在未完成的根目录迁移，保留原配置和逐项实际路径；请核对迁移记录，启动恢复尚待接入。");
         RecoverFolderChange();
         if (state.PendingCreate is { } pending)
         {
@@ -93,7 +96,7 @@ public sealed partial class DesktopWorkspace(IWorkspaceStore store, IStartupRegi
         if (blocked) return Locked();
         var full = WindowsPaths.Root(root);
         var folders = state.Folders;
-        if (state.Folders.Length != 0 && !string.Equals(full, WindowsPaths.Root(state.Root), StringComparison.OrdinalIgnoreCase))
+        if ((state.Folders.Length != 0 || state.RetainedFolders.Length != 0) && !string.Equals(full, WindowsPaths.Root(state.Root), StringComparison.OrdinalIgnoreCase))
         {
             var unavailable = false;
             try { WindowsPaths.CheckRoot(state.Root, false); WindowsPaths.CheckRoot(state.Root, true); }
@@ -292,7 +295,7 @@ public sealed partial class DesktopWorkspace(IWorkspaceStore store, IStartupRegi
     public LayoutInteraction? BeginLayout(Guid id)
     {
         var current = snapshot;
-        return current.RecoveryRequired || !current.Folders.Any(folder => folder.Folder.Id == id && folder.Visible)
+        return current.RecoveryRequired || current.RootMigration != null || !current.Folders.Any(folder => folder.Folder.Id == id && folder.Visible)
             ? null : new(id, current, displays);
     }
 
@@ -346,7 +349,7 @@ public sealed partial class DesktopWorkspace(IWorkspaceStore store, IStartupRegi
     {
         var current = snapshot;
         var folder = current.Folders.FirstOrDefault(folder => folder.Folder.Id == id);
-        return current.RecoveryRequired || folder == null ? null : new(this, folder.Folder);
+        return current.RecoveryRequired || current.RootMigration != null || folder == null ? null : new(this, folder.Folder);
     }
 
     public Task<OperationResult> ApplyAppearanceAsync(AppearanceInteraction interaction) => Run(() =>
@@ -400,9 +403,19 @@ public sealed partial class DesktopWorkspace(IWorkspaceStore store, IStartupRegi
             var area = folder.LayoutHidden ? null : HeaderLayout.Available(folder, displays, placed);
             if (area != null) placed.Add((folder, area));
             var path = ContentPath(folder);
+            string? notice = area == null ? "桌面空间不足，记录与内容保留；释放空间后可在设置刷新。" : null;
+            var migrationItem = state.PendingRootMigration?.Items.FirstOrDefault(item => item.FolderId == folder.Id);
+            if (migrationItem != null)
+            {
+                try
+                {
+                    if (!Directory.Exists(path) && WindowsPaths.HasIdentity(migrationItem.DestinationPath, folder.Id)) path = migrationItem.DestinationPath;
+                }
+                catch (Exception error) { notice = $"迁移目标暂不可核对：{migrationItem.DestinationPath}。{error.Message}"; }
+                notice = $"{notice}\n迁移状态：{migrationItem.Phase}。原位置：{migrationItem.SourcePath}；目标：{migrationItem.DestinationPath}。{migrationItem.Error}".Trim();
+            }
             int? count = null;
             var entries = new List<ContentEntry>();
-            string? notice = area == null ? "桌面空间不足，记录与内容保留；释放空间后可在设置刷新。" : null;
             try
             {
                 foreach (var info in new DirectoryInfo(path).EnumerateFileSystemInfos())
@@ -425,6 +438,9 @@ public sealed partial class DesktopWorkspace(IWorkspaceStore store, IStartupRegi
         try { WindowsPaths.CheckRoot(state.Root, false); }
         catch (Exception e) { messages.Add($"存储根目录不可用：{e.Message}。请明确选择可用目录；已有 Folder 关联将保留。"); }
         if (state.PendingCreate is { } pending) messages.Add($"待恢复创建：{Path.Combine(state.Root, pending.Name)}，稳定标识 {pending.Id}");
-        snapshot = new(state.Root, state.StartupEnabled, state.IconChoice, rendered.AsReadOnly(), blocked, messages.AsReadOnly());
+        if (state.PendingRootMigration is { } migration)
+            messages.AddRange(migration.Items.Select(item => $"迁移 {item.Phase}：{item.SourcePath}（{(Directory.Exists(item.SourcePath) ? "存在" : "不在此处")}） → {item.DestinationPath}（{(Directory.Exists(item.DestinationPath) ? "存在" : "不在此处")}）；快捷方式：{item.ShortcutPath ?? "无"}。{item.Error}"));
+        snapshot = new(state.Root, state.StartupEnabled, state.IconChoice, rendered.AsReadOnly(), blocked, messages.AsReadOnly())
+            { RootMigration = state.PendingRootMigration };
     }
 }

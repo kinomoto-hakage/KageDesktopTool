@@ -44,7 +44,10 @@ internal sealed class Runtime : IDisposable
     private LayoutInteraction? activeInteraction;
     internal bool Interacting => activeInteraction != null;
     internal bool DraggingFiles { get; set; }
-    internal bool Moving => moveDialog != null || DraggingFiles;
+    internal bool Moving => moveDialog != null || DraggingFiles || Migrating;
+    private RootMigrationDialog? rootMigration;
+    internal bool Migrating => rootMigration != null;
+    internal RootMigrationDialog? ActiveRootMigration => rootMigration;
     private MoveDialog? moveDialog;
     private FolderActionDialog? folderAction;
     internal FolderActionDialog? ActiveFolderAction => folderAction;
@@ -240,7 +243,7 @@ internal sealed class Runtime : IDisposable
 
     internal async Task CreateAsync()
     {
-        if (creating || exiting || disposed || ChangingFolder) return;
+        if (creating || exiting || disposed || ChangingFolder || Migrating) return;
         creating = true;
         try
         {
@@ -295,6 +298,7 @@ internal sealed class Runtime : IDisposable
 
     internal async Task ExitAsync()
     {
+        if (Migrating) { rootMigration?.Cancel(); Balloon("正在停止根目录迁移并恢复，请等待结果后再退出。"); return; }
         if (ChangingFolder) { Balloon("请先完成或关闭 Folder 操作窗口再退出。"); folderAction?.Activate(); return; }
         if (Moving) { moveDialog?.Cancel(); Balloon("正在结束文件移动，请等待逐项结果后再退出。"); return; }
         if (exiting) return;
@@ -305,6 +309,19 @@ internal sealed class Runtime : IDisposable
         if (result.Outcome == Outcome.Failed) MessageBox.Show($"退出前状态提交失败：{result.Message}。原记录及内容均保留。", "退出 Kage");
         Dispose();
         Application.Current.Shutdown();
+    }
+
+    internal async Task<OperationResult?> MigrateRootAsync(string target)
+    {
+        if (Exiting || Moving || ChangingFolder || Interacting || creating || appearance != null)
+        {
+            Balloon("请先结束当前操作，再更换存储根目录。");
+            return null;
+        }
+        var dialog = rootMigration = new RootMigrationDialog();
+        dialog.Show();
+        try { return await dialog.StartAsync(Workspace, target); }
+        finally { rootMigration = null; Render(); }
     }
 
     internal static void Open(string path)

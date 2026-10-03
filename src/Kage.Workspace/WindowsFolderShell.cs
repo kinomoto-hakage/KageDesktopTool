@@ -8,6 +8,38 @@ public sealed class WindowsFolderShell(string? desktopDirectory = null) : IFolde
 {
     internal static IFolderShell Default { get; } = new WindowsFolderShell();
     public string DesktopDirectory => desktopDirectory ?? Environment.GetFolderPath(Environment.SpecialFolder.DesktopDirectory);
+    public void RetargetShortcut(string shortcutPath, string previousTarget, string targetPath, Guid folderId)
+        => Sta(() =>
+        {
+            if (!OperatingSystem.IsWindows()) throw new PlatformNotSupportedException();
+            if (!File.Exists(shortcutPath) || !WindowsPaths.HasIdentity(targetPath, folderId)) throw new IOException("工具快捷方式或目标归属不可确认。");
+            object? shell = null;
+            object? link = null;
+            var temporary = Path.Combine(Path.GetDirectoryName(shortcutPath)!, ".kage-link-" + Guid.NewGuid().ToString("N") + ".lnk");
+            try
+            {
+                shell = Activator.CreateInstance(Type.GetTypeFromProgID("WScript.Shell", true)!);
+                dynamic automation = shell!;
+                link = automation.CreateShortcut(shortcutPath);
+                dynamic shortcut = link;
+                string actual = shortcut.TargetPath;
+                string description = shortcut.Description;
+                if (!string.Equals(Path.GetFullPath(actual), Path.GetFullPath(previousTarget), StringComparison.OrdinalIgnoreCase)
+                    || description != "Kage 保留的内容文件夹 " + folderId.ToString("N"))
+                    throw new IOException($"快捷方式已被外部修改，未覆盖：{shortcutPath}");
+                Release(link);
+                link = null;
+                link = automation.CreateShortcut(temporary);
+                shortcut = link;
+                shortcut.TargetPath = targetPath;
+                shortcut.WorkingDirectory = targetPath;
+                shortcut.Description = description;
+                shortcut.Save();
+                File.Replace(temporary, shortcutPath, null);
+                return true;
+            }
+            finally { Release(link); Release(shell); if (File.Exists(temporary)) File.Delete(temporary); }
+        });
 
     private static T Sta<T>(Func<T> action)
     {

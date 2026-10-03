@@ -24,13 +24,17 @@ public sealed record FolderSnapshot(FolderRecord Folder, string ActualPath, bool
     public IReadOnlyList<ContentEntry> Entries { get; init; } = [];
 }
 public sealed record WorkspaceSnapshot(string Root, bool StartupEnabled, string IconChoice,
-    IReadOnlyList<FolderSnapshot> Folders, bool RecoveryRequired, IReadOnlyList<string> Notices);
+    IReadOnlyList<FolderSnapshot> Folders, bool RecoveryRequired, IReadOnlyList<string> Notices)
+{
+    public PendingRootMigration? RootMigration { get; init; }
+}
 
 public interface IDesktopWorkspace
 {
     WorkspaceSnapshot Snapshot { get; }
     Task<OperationResult> InitializeAsync(IReadOnlyList<DisplayArea> displays);
     Task<OperationResult> SelectRootAsync(string root);
+    Task<OperationResult> MigrateRootAsync(string root, IProgress<RootMigrationProgress>? progress = null, CancellationToken cancellation = default);
     Task<OperationResult> CreateFolderAsync(string name, ConflictChoice conflict = ConflictChoice.Ask, CancellationToken cancellation = default);
     Task<OperationResult> RenameFolderAsync(Guid id, string name, ConflictChoice conflict = ConflictChoice.Ask, CancellationToken cancellation = default);
     Task<OperationResult> DeleteFolderAsync(Guid id, FolderDeleteChoice choice, ConflictChoice conflict = ConflictChoice.Ask, CancellationToken cancellation = default);
@@ -58,6 +62,15 @@ public sealed record PendingFolderChange([property: JsonRequired] Guid FolderId,
     [property: JsonRequired] FolderChangeKind Kind, [property: JsonRequired] string Destination);
 public sealed record RetainedFolder([property: JsonRequired] Guid FolderId,
     [property: JsonRequired] string ContentPath, [property: JsonRequired] string ShortcutPath);
+public enum MigrationPhase { Planned, Moving, Moved, UpdatingShortcut, Completed, Restoring, Restored, RecoveryRequired }
+public sealed record RootMigrationItem([property: JsonRequired] Guid FolderId,
+    [property: JsonRequired] string SourcePath, [property: JsonRequired] string DestinationPath,
+    [property: JsonRequired] string? ShortcutPath, [property: JsonRequired] MigrationPhase Phase = MigrationPhase.Planned,
+    string? Error = null);
+public sealed record PendingRootMigration([property: JsonRequired] Guid OperationId,
+    [property: JsonRequired] string OldRoot, [property: JsonRequired] string NewRoot,
+    [property: JsonRequired] RootMigrationItem[] Items);
+public sealed record RootMigrationProgress(int Completed, int Total, string Message, RootMigrationItem? Item = null);
 public sealed record WorkspaceState
 {
     [System.Text.Json.Serialization.JsonRequired]
@@ -74,6 +87,7 @@ public sealed record WorkspaceState
     public PendingStartup? PendingStartup { get; init; }
     public PendingFolderChange? PendingFolderChange { get; init; }
     public RetainedFolder[] RetainedFolders { get; init; } = [];
+    public PendingRootMigration? PendingRootMigration { get; init; }
 }
 
 public sealed record StateRead(WorkspaceState State, bool NeedsBackupRestore = false, string? Notice = null);
@@ -96,6 +110,14 @@ public interface IFolderShell
     string DesktopDirectory { get; }
     void CreateShortcut(string shortcutPath, string targetPath);
     bool ShortcutTargets(string shortcutPath, string targetPath);
+    void RetargetShortcut(string shortcutPath, string previousTarget, string targetPath, Guid folderId);
     OperationResult Recycle(string contentPath, Guid folderId);
     string? FindRecycledFolder(string contentPath, Guid folderId);
+}
+
+// 只替换指定目录的文件系统故障；默认适配器执行真实复制、字节核对和源移除。
+public interface IRootDirectoryTransfer
+{
+    void Move(string source, string destination, CancellationToken cancellation);
+    void Restore(string source, string destination, CancellationToken cancellation);
 }

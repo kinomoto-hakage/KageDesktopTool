@@ -31,7 +31,14 @@ var tests = new (string Name, Func<Task> Run)[]
     ("Folder 改名同名无效占用及保存恢复", FolderChangeChecks.RenameFailures),
     ("Folder 删除保留真实快捷方式关联与重启", FolderChangeChecks.KeepContents),
     ("Folder 删除快捷方式失败及保存中断恢复", FolderChangeChecks.DeleteFailures),
-    ("Folder 删除真实 Windows 整目录回收与恢复", FolderChangeChecks.Recycle)
+    ("Folder 删除真实 Windows 整目录回收与恢复", FolderChangeChecks.Recycle),
+    ("根迁移完整内容保留快捷方式与重启", RootMigrationChecks.Complete),
+    ("根迁移取消恢复及修改排队", RootMigrationChecks.Cancel),
+    ("根迁移逐项失败及恢复失败真实路径", RootMigrationChecks.TransferFailures),
+    ("根迁移冲突路径及状态保存故障", RootMigrationChecks.ValidationAndSave),
+    ("根迁移保留快捷方式取消恢复与故障", RootMigrationChecks.ShortcutRollback),
+    ("根迁移真实跨盘及部分复制恢复", RootMigrationChecks.CrossVolume),
+    ("根迁移只读文件及当场恢复保持属性", RootMigrationChecks.ReadOnlyContents)
 };
 var failures = 0;
 var selected = tests.Where(t => args.Length == 0 || t.Name.Contains(args[0], StringComparison.Ordinal)).ToArray();

@@ -134,7 +134,7 @@ internal sealed class FolderHeader : Window
 
     internal async Task ToggleAsync()
     {
-        if (Runtime.Current.Interacting || Runtime.Current.ChangingFolder) return;
+        if (Runtime.Current.Interacting || Runtime.Current.ChangingFolder || Runtime.Current.Migrating) return;
         var result = await Runtime.Current.Workspace.ToggleFolderAsync(FolderId);
         Runtime.Current.Render();
         if (!result.Succeeded) Runtime.Current.Balloon(result.Message);
