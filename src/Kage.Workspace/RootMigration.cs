@@ -2,6 +2,16 @@ namespace Kage.Workspace;
 
 public sealed partial class DesktopWorkspace
 {
+    public Task<OperationResult> RecoverRootMigrationAsync(IProgress<RootMigrationProgress>? progress = null)
+        => Run(() =>
+        {
+            if (backupRestore) return new(Outcome.RecoveryRequired, "请先恢复状态备份，再核对迁移内容。");
+            if (state.PendingRootMigration == null)
+                return blocked ? Locked() : new(Outcome.Success, "没有未完成的根目录迁移。");
+            var original = state with { PendingRootMigration = null };
+            return RollbackMigration(original, new IOException("正在恢复中断的迁移"), progress, recovering: true);
+        });
+
     public Task<OperationResult> MigrateRootAsync(string root, IProgress<RootMigrationProgress>? progress = null, CancellationToken cancellation = default)
         => Run(() =>
         {
@@ -51,27 +61,29 @@ public sealed partial class DesktopWorkspace
             catch (Exception error) { return RollbackMigration(original, error, progress); }
         });
 
-    private void ReportMigration(IProgress<RootMigrationProgress>? progress, string message, RootMigrationItem item)
+    private void ReportMigration(IProgress<RootMigrationProgress>? progress, string message, RootMigrationItem item, bool restoring = false)
     {
         Publish();
-        try { progress?.Report(new(state.PendingRootMigration!.Items.Count(entry => entry.Phase == MigrationPhase.Completed),
+        try { progress?.Report(new(state.PendingRootMigration!.Items.Count(entry => entry.Phase == (restoring ? MigrationPhase.Restored : MigrationPhase.Completed)),
             state.PendingRootMigration.Items.Length, message, item)); } catch { }
     }
 
-    private OperationResult RollbackMigration(WorkspaceState original, Exception error, IProgress<RootMigrationProgress>? progress)
+    private OperationResult RollbackMigration(WorkspaceState original, Exception error, IProgress<RootMigrationProgress>? progress, bool recovering = false)
     {
         var failures = new List<string>();
-        foreach (var item in state.PendingRootMigration!.Items.Reverse().Where(item => item.Phase != MigrationPhase.Planned).ToArray())
+        foreach (var item in state.PendingRootMigration!.Items.Reverse().ToArray())
         {
             try
             {
+                var observed = InspectMigrationItem(item);
+                if (observed.Notice != null) throw new IOException(observed.Notice);
                 SaveMigrationItem(item with { Phase = MigrationPhase.Restoring });
-                ReportMigration(progress, "迁移已停止，正在恢复原位置及快捷方式目标。", item);
+                ReportMigration(progress, "迁移已停止，正在恢复原位置及快捷方式目标。", item, restoring: true);
                 CheckAncestors(Path.GetDirectoryName(item.SourcePath)!);
                 if (Directory.Exists(item.SourcePath))
                 {
                     CheckAncestors(item.SourcePath);
-                    if (File.Exists(Path.Combine(item.SourcePath, WindowsPaths.IdentityFile)) && !WindowsPaths.HasIdentity(item.SourcePath, item.FolderId))
+                    if (!WindowsPaths.HasIdentity(item.SourcePath, item.FolderId))
                         throw new IOException("恢复原位置已有其他归属标识，未合并或覆盖。");
                 }
                 if (Directory.Exists(item.DestinationPath))
@@ -87,7 +99,9 @@ public sealed partial class DesktopWorkspace
                     Shell.RetargetShortcut(item.ShortcutPath, item.DestinationPath, item.SourcePath, item.FolderId);
                 if (item.ShortcutPath != null && !Shell.ShortcutTargets(item.ShortcutPath, item.SourcePath))
                     throw new IOException("原快捷方式目标尚未恢复。");
-                SaveMigrationItem(item with { Phase = MigrationPhase.Restored });
+                var restored = item with { Phase = MigrationPhase.Restored, Error = null };
+                SaveMigrationItem(restored);
+                ReportMigration(progress, "已核对原内容及快捷方式目标。", restored, restoring: true);
             }
             catch (Exception restoreError)
             {
@@ -100,7 +114,12 @@ public sealed partial class DesktopWorkspace
         }
         if (failures.Count == 0)
         {
-            try { store.Save(original); state = original; }
+            if (state.PendingRootMigration!.Items.Select(InspectMigrationItem).Any(item => !item.Restored))
+                failures.Add("最终核对仍有未恢复内容或快捷方式，迁移记录保留。");
+        }
+        if (failures.Count == 0)
+        {
+            try { store.Save(original); state = original; blocked = false; notices.Clear(); }
             catch (Exception saveError) { failures.Add($"原配置恢复提交失败：{saveError.Message}"); }
         }
         if (failures.Count != 0)
@@ -111,6 +130,7 @@ public sealed partial class DesktopWorkspace
             return new(Outcome.RecoveryRequired, notices.Last(), original.Root);
         }
         Publish();
+        if (recovering) return new(Outcome.Success, "已恢复全部原内容和快捷方式目标，旧根目录配置已确认，恢复状态已解除。", original.Root);
         return new(error is OperationCanceledException ? Outcome.Cancelled : Outcome.Failed,
             $"迁移未完成：{(error is OperationCanceledException ? "已取消" : error.Message)}。已恢复全部原内容和快捷方式目标，旧根目录配置保留。", original.Root);
     }

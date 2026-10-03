@@ -129,7 +129,8 @@ public sealed class WindowsDirectoryTransfer : IRootDirectoryTransfer
 
     private static void RemoveCopiedContents(string source, string destination)
     {
-        foreach (var entry in new DirectoryInfo(source).EnumerateFileSystemInfos())
+        // 中断时尚存内容仍需可确认归属，目录标识最后才移除。
+        foreach (var entry in new DirectoryInfo(source).EnumerateFileSystemInfos().OrderBy(entry => entry.Name == WindowsPaths.IdentityFile ? 1 : 0))
         {
             var original = entry.FullName;
             var copied = Path.Combine(destination, entry.Name);

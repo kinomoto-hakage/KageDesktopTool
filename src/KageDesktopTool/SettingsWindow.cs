@@ -2,6 +2,7 @@ using System;
 using System.Linq;
 using System.Windows;
 using System.Windows.Controls;
+using Kage.Workspace;
 
 namespace Kage.Desktop;
 
@@ -12,12 +13,17 @@ internal sealed class SettingsWindow : Window
     private readonly CheckBox startup = new() { Content = "登录 Windows 后自动运行", Margin = new Thickness(0, 18, 0, 8) };
     private readonly TextBlock status = new() { TextWrapping = TextWrapping.Wrap, Margin = new Thickness(0, 15, 0, 10) };
     private readonly StackPanel folders = new();
+    private readonly StackPanel recovery = new();
+    private readonly StackPanel rootActions = new() { Orientation = Orientation.Horizontal };
     private readonly StackPanel controls = new() { Margin = new Thickness(22) };
     private bool rootEdited;
     private bool startupEdited;
     private bool refreshingUi;
     internal TextBox RootInput => root;
     internal Button MigrateButton { get; }
+    internal Button RecoverMigrationButton { get; }
+    internal StackPanel RecoveryRows => recovery;
+    internal System.Threading.Tasks.Task<OperationResult?>? PendingRecovery { get; private set; }
     internal System.Threading.Tasks.Task<Kage.Workspace.OperationResult?>? PendingMigration { get; private set; }
 
     internal SettingsWindow(Runtime runtime)
@@ -36,7 +42,6 @@ internal sealed class SettingsWindow : Window
         root.TextChanged += (_, _) => { if (!refreshingUi) rootEdited = true; };
         startup.Checked += (_, _) => { if (!refreshingUi) startupEdited = true; };
         startup.Unchecked += (_, _) => { if (!refreshingUi) startupEdited = true; };
-        var rootActions = new StackPanel { Orientation = Orientation.Horizontal };
         AddButton(rootActions, "选择目录…", () =>
         {
             using var picker = new System.Windows.Forms.FolderBrowserDialog { Description = "选择集中存放内容文件夹的目录", UseDescriptionForTitle = true };
@@ -79,6 +84,18 @@ internal sealed class SettingsWindow : Window
                 await Apply(runtime.Workspace.ConfirmPendingCreateAsync);
         });
         controls.Children.Add(status);
+        RecoverMigrationButton = AddButton(controls, "重试恢复旧位置及快捷方式", async () =>
+        {
+            controls.IsEnabled = false;
+            try
+            {
+                PendingRecovery = runtime.RecoverRootMigrationAsync();
+                var result = await PendingRecovery;
+                if (result?.Succeeded == true) rootEdited = false;
+            }
+            finally { controls.IsEnabled = true; Refresh(); }
+        });
+        controls.Children.Add(recovery);
         controls.Children.Add(new TextBlock { Text = "桌面 Folder", FontWeight = FontWeights.SemiBold, Margin = new Thickness(0, 8, 0, 8) });
         controls.Children.Add(folders);
         controls.Children.Add(new TextBlock { Text = "关闭设置后继续在后台运行。请从托盘“退出”结束程序，内容文件夹会保留。",
@@ -101,11 +118,35 @@ internal sealed class SettingsWindow : Window
     internal void Refresh()
     {
         var snapshot = runtime.Workspace.Snapshot;
+        root.IsEnabled = !snapshot.RecoveryRequired;
+        rootActions.IsEnabled = !snapshot.RecoveryRequired;
+        MigrateButton.IsEnabled = !snapshot.RecoveryRequired;
+        RecoverMigrationButton.Visibility = snapshot.RootMigration == null ? Visibility.Collapsed : Visibility.Visible;
         refreshingUi = true;
         if (!rootEdited) root.Text = snapshot.Root;
         if (!startupEdited) startup.IsChecked = snapshot.StartupEnabled;
         refreshingUi = false;
         status.Text = string.Join("\n", new[] { runtime.SessionStatus }.Concat(snapshot.Notices));
+        recovery.Children.Clear();
+        if (snapshot.RootMigration != null)
+        {
+            recovery.Children.Add(new TextBlock { Text = $"未恢复项目：{snapshot.MigrationRecovery.Count(item => !item.Restored)} / {snapshot.MigrationRecovery.Count}。全部内容及链接核对完成、配置保存成功后解除恢复状态。",
+                TextWrapping = TextWrapping.Wrap, Margin = new Thickness(0, 12, 0, 8) });
+            foreach (var observed in snapshot.MigrationRecovery)
+            {
+                var item = observed.Item;
+                var row = new StackPanel { Margin = new Thickness(0, 0, 0, 12) };
+                row.Children.Add(new TextBlock { Text = $"{System.IO.Path.GetFileName(item.SourcePath)} · {(observed.Restored ? "原位置已核对，等待提交" : "未恢复")}", FontWeight = FontWeights.SemiBold });
+                row.Children.Add(new TextBlock { Text = $"原位置：{item.SourcePath}（{PathStatus(observed.SourceStatus)}）\n迁移位置：{item.DestinationPath}（{PathStatus(observed.DestinationStatus)}）"
+                    + (item.ShortcutPath == null ? "" : $"\n快捷方式：{item.ShortcutPath}\n实际目标：{observed.ShortcutTarget ?? "缺失或无法核对"}")
+                    + $"\n{observed.Notice ?? item.Error}", TextWrapping = TextWrapping.Wrap });
+                if (observed.SourceStatus is MigrationPathStatus.Owned or MigrationPathStatus.Unverified)
+                    AddButton(row, "打开原位置", () => Runtime.Open(item.SourcePath));
+                if (observed.DestinationStatus is MigrationPathStatus.Owned or MigrationPathStatus.Unverified)
+                    AddButton(row, "打开迁移位置", () => Runtime.Open(item.DestinationPath));
+                recovery.Children.Add(row);
+            }
+        }
         folders.Children.Clear();
         foreach (var folder in snapshot.Folders)
         {
@@ -117,6 +158,14 @@ internal sealed class SettingsWindow : Window
             folders.Children.Add(row);
         }
     }
+
+    private static string PathStatus(MigrationPathStatus status) => status switch
+    {
+        MigrationPathStatus.Missing => "不存在",
+        MigrationPathStatus.Owned => "真实目录，归属已确认",
+        MigrationPathStatus.Unverified => "存在，归属未确认",
+        _ => "无法核对"
+    };
 
     private static Button AddButton(Panel parent, string text, Action action)
     {

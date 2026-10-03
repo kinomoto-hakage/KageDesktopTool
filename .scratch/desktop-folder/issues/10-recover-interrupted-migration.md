@@ -1,8 +1,8 @@
 # 10: 中断后恢复迁移并定位实际内容
 
 Type: implementation
-Status: ready-for-agent
-Labels: ready-for-agent
+Status: claimed
+Labels: claimed
 Approved: 2026-10-02
 Plan: ../ticket-plan.md
 Spec: ../spec.md
@@ -35,3 +35,4 @@ User stories: 25, 58, 59
 ## Comments
 
 - 用户已认可合并方案、阻塞关系及本票验收标准，已正式发布。
+- 2026-10-03：通过 implement 开始实施；沿用已认可的 `IDesktopWorkspace` seam、真实临时目录及 Windows 会话验收。

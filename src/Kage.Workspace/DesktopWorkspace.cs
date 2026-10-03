@@ -56,7 +56,11 @@ public sealed partial class DesktopWorkspace(IWorkspaceStore store, IStartupRegi
     private void RecoverPending()
     {
         if (state.PendingRootMigration != null)
-            throw new IOException("存在未完成的根目录迁移，保留原配置和逐项实际路径；请核对迁移记录，启动恢复尚待接入。");
+        {
+            blocked = true;
+            notices.Add("存在未完成的根目录迁移，已核对实际内容位置和快捷方式；请在设置查看未恢复清单，并重试恢复旧位置。修改操作暂时停用。");
+            return;
+        }
         RecoverFolderChange();
         if (state.PendingCreate is { } pending)
         {
@@ -394,6 +398,7 @@ public sealed partial class DesktopWorkspace(IWorkspaceStore store, IStartupRegi
     {
         // 发布已提交的几何结果，不再次重排；重新寻找空位只在显式刷新／恢复中执行并保存。
         var folders = placement ?? state.Folders;
+        var recovery = state.PendingRootMigration?.Items.Select(InspectMigrationItem).ToArray() ?? [];
         if (state.PendingFolderChange is { Kind: FolderChangeKind.Rename } change && RenamedDirectoryExists(change, change.FolderId))
             folders = folders.Select(folder => folder.Id == change.FolderId ? folder with { Name = Path.GetFileName(change.Destination) } : folder).ToArray();
         var placed = new List<(FolderRecord Folder, DisplayArea Area)>();
@@ -405,19 +410,21 @@ public sealed partial class DesktopWorkspace(IWorkspaceStore store, IStartupRegi
             var path = ContentPath(folder);
             string? notice = area == null ? "桌面空间不足，记录与内容保留；释放空间后可在设置刷新。" : null;
             var migrationItem = state.PendingRootMigration?.Items.FirstOrDefault(item => item.FolderId == folder.Id);
+            var readable = true;
             if (migrationItem != null)
             {
-                try
-                {
-                    if (!Directory.Exists(path) && WindowsPaths.HasIdentity(migrationItem.DestinationPath, folder.Id)) path = migrationItem.DestinationPath;
-                }
-                catch (Exception error) { notice = $"迁移目标暂不可核对：{migrationItem.DestinationPath}。{error.Message}"; }
-                notice = $"{notice}\n迁移状态：{migrationItem.Phase}。原位置：{migrationItem.SourcePath}；目标：{migrationItem.DestinationPath}。{migrationItem.Error}".Trim();
+                var observed = recovery.Single(item => item.Item.FolderId == folder.Id);
+                path = observed.SourceStatus == MigrationPathStatus.Owned ? migrationItem.SourcePath
+                    : observed.DestinationStatus == MigrationPathStatus.Owned ? migrationItem.DestinationPath : migrationItem.SourcePath;
+                readable = observed.SourceStatus == MigrationPathStatus.Owned || observed.DestinationStatus == MigrationPathStatus.Owned;
+                if (!readable) area = null;
+                notice = $"{notice}\n{(observed.Restored ? "已核对旧位置；等待恢复配置提交" : "迁移尚未恢复")}。原位置：{migrationItem.SourcePath}；目标：{migrationItem.DestinationPath}。{observed.Notice}".Trim();
             }
             int? count = null;
             var entries = new List<ContentEntry>();
             try
             {
+                if (!readable) throw new IOException("尚无已确认归属的内容位置，暂停枚举。");
                 foreach (var info in new DirectoryInfo(path).EnumerateFileSystemInfos())
                 {
                     if (WindowsPaths.IsIdentityFile(info.FullName)) continue;
@@ -438,9 +445,9 @@ public sealed partial class DesktopWorkspace(IWorkspaceStore store, IStartupRegi
         try { WindowsPaths.CheckRoot(state.Root, false); }
         catch (Exception e) { messages.Add($"存储根目录不可用：{e.Message}。请明确选择可用目录；已有 Folder 关联将保留。"); }
         if (state.PendingCreate is { } pending) messages.Add($"待恢复创建：{Path.Combine(state.Root, pending.Name)}，稳定标识 {pending.Id}");
-        if (state.PendingRootMigration is { } migration)
-            messages.AddRange(migration.Items.Select(item => $"迁移 {item.Phase}：{item.SourcePath}（{(Directory.Exists(item.SourcePath) ? "存在" : "不在此处")}） → {item.DestinationPath}（{(Directory.Exists(item.DestinationPath) ? "存在" : "不在此处")}）；快捷方式：{item.ShortcutPath ?? "无"}。{item.Error}"));
+        if (state.PendingRootMigration != null)
+            messages.Add($"迁移清单已按实际位置核对：{recovery.Count(item => !item.Restored)} 项尚未恢复。查看下方原位置、迁移位置和实际快捷方式目标。");
         snapshot = new(state.Root, state.StartupEnabled, state.IconChoice, rendered.AsReadOnly(), blocked, messages.AsReadOnly())
-            { RootMigration = state.PendingRootMigration };
+            { RootMigration = state.PendingRootMigration, MigrationRecovery = Array.AsReadOnly(recovery) };
     }
 }

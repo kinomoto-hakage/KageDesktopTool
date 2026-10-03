@@ -17,6 +17,7 @@ public static class Program
         if (args.Contains("--file-move-check")) return FileMoveChecks.Run();
         if (args.Contains("--folder-action-check")) return FolderActionChecks.Run();
         if (args.Contains("--root-migration-check")) return RootMigrationChecks.Run();
+        if (args.Contains("--migration-recovery-check")) return MigrationRecoveryChecks.Run();
         if (args.Length == 2 && args[0] == "--open-target-check")
         {
             File.WriteAllText(args[1], "隔离目标已被 Windows Shell 打开");

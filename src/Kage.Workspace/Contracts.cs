@@ -27,6 +27,7 @@ public sealed record WorkspaceSnapshot(string Root, bool StartupEnabled, string 
     IReadOnlyList<FolderSnapshot> Folders, bool RecoveryRequired, IReadOnlyList<string> Notices)
 {
     public PendingRootMigration? RootMigration { get; init; }
+    public IReadOnlyList<MigrationRecoveryItem> MigrationRecovery { get; init; } = [];
 }
 
 public interface IDesktopWorkspace
@@ -35,6 +36,7 @@ public interface IDesktopWorkspace
     Task<OperationResult> InitializeAsync(IReadOnlyList<DisplayArea> displays);
     Task<OperationResult> SelectRootAsync(string root);
     Task<OperationResult> MigrateRootAsync(string root, IProgress<RootMigrationProgress>? progress = null, CancellationToken cancellation = default);
+    Task<OperationResult> RecoverRootMigrationAsync(IProgress<RootMigrationProgress>? progress = null);
     Task<OperationResult> CreateFolderAsync(string name, ConflictChoice conflict = ConflictChoice.Ask, CancellationToken cancellation = default);
     Task<OperationResult> RenameFolderAsync(Guid id, string name, ConflictChoice conflict = ConflictChoice.Ask, CancellationToken cancellation = default);
     Task<OperationResult> DeleteFolderAsync(Guid id, FolderDeleteChoice choice, ConflictChoice conflict = ConflictChoice.Ask, CancellationToken cancellation = default);
@@ -71,6 +73,9 @@ public sealed record PendingRootMigration([property: JsonRequired] Guid Operatio
     [property: JsonRequired] string OldRoot, [property: JsonRequired] string NewRoot,
     [property: JsonRequired] RootMigrationItem[] Items);
 public sealed record RootMigrationProgress(int Completed, int Total, string Message, RootMigrationItem? Item = null);
+public enum MigrationPathStatus { Missing, Owned, Unverified, Unavailable }
+public sealed record MigrationRecoveryItem(RootMigrationItem Item, MigrationPathStatus SourceStatus,
+    MigrationPathStatus DestinationStatus, string? ShortcutTarget, bool Restored, string? Notice);
 public sealed record WorkspaceState
 {
     [System.Text.Json.Serialization.JsonRequired]
@@ -110,6 +115,7 @@ public interface IFolderShell
     string DesktopDirectory { get; }
     void CreateShortcut(string shortcutPath, string targetPath);
     bool ShortcutTargets(string shortcutPath, string targetPath);
+    string? ReadShortcutTarget(string shortcutPath, Guid folderId);
     void RetargetShortcut(string shortcutPath, string previousTarget, string targetPath, Guid folderId);
     OperationResult Recycle(string contentPath, Guid folderId);
     string? FindRecycledFolder(string contentPath, Guid folderId);

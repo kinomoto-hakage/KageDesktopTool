@@ -18,10 +18,18 @@ internal sealed class RootMigrationDialog : Window
     internal OperationResult? Result { get; private set; }
     internal string StatusText => status.Text;
     private bool finished;
+    private readonly bool recovering;
 
-    internal RootMigrationDialog()
+    internal RootMigrationDialog(bool recovering = false)
     {
-        Title = "更换存储根目录";
+        this.recovering = recovering;
+        Title = recovering ? "恢复中断的根目录迁移" : "更换存储根目录";
+        if (recovering)
+        {
+            status.Text = "正在核对并恢复原内容及快捷方式…";
+            CancelButton.Content = "正在恢复，请等待";
+            CancelButton.IsEnabled = false;
+        }
         Width = 720;
         Height = 460;
         WindowStartupLocation = WindowStartupLocation.CenterScreen;
@@ -44,7 +52,7 @@ internal sealed class RootMigrationDialog : Window
 
     internal void Cancel()
     {
-        if (finished) return;
+        if (finished || recovering) return;
         cancellation.Cancel();
         status.Text = "已请求取消，正在停止迁移并尝试恢复原内容及快捷方式。请等待结果。";
         CancelButton.IsEnabled = false;
@@ -52,12 +60,14 @@ internal sealed class RootMigrationDialog : Window
 
     internal Task<OperationResult> StartAsync(IDesktopWorkspace workspace, string target)
         => Pending = ExecuteAsync(workspace, target);
+    internal Task<OperationResult> StartRecoveryAsync(IDesktopWorkspace workspace)
+        => Pending = ExecuteAsync(workspace, null);
 
-    private async Task<OperationResult> ExecuteAsync(IDesktopWorkspace workspace, string target)
+    private async Task<OperationResult> ExecuteAsync(IDesktopWorkspace workspace, string? target)
     {
         try
         {
-            Result = await workspace.MigrateRootAsync(target, new Progress<RootMigrationProgress>(update =>
+            var reporter = new Progress<RootMigrationProgress>(update =>
             {
                 if (finished) return;
                 progress.Maximum = Math.Max(1, update.Total);
@@ -68,7 +78,9 @@ internal sealed class RootMigrationDialog : Window
                     details.AppendText($"{update.Item.SourcePath}\n→ {update.Item.DestinationPath}\n{update.Message}\n\n");
                     details.ScrollToEnd();
                 }
-            }), cancellation.Token);
+            });
+            Result = target == null ? await workspace.RecoverRootMigrationAsync(reporter)
+                : await workspace.MigrateRootAsync(target, reporter, cancellation.Token);
             status.Text = Result.Message;
             details.AppendText("\n最终结果：" + Result.Outcome + "\n" + string.Join("\n", workspace.Snapshot.Notices));
             return Result;

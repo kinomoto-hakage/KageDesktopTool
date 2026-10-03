@@ -1,5 +1,8 @@
 using Kage.Workspace;
 
+if (args.Length == 3 && args[0] == "--interrupt-migration")
+    return await MigrationRecoveryChecks.InterruptChild(args[1], args[2]);
+
 var tests = new (string Name, Func<Task> Run)[]
 {
     ("真实创建与稳定标识重启", CreateAndRestart),
@@ -38,7 +41,12 @@ var tests = new (string Name, Func<Task> Run)[]
     ("根迁移冲突路径及状态保存故障", RootMigrationChecks.ValidationAndSave),
     ("根迁移保留快捷方式取消恢复与故障", RootMigrationChecks.ShortcutRollback),
     ("根迁移真实跨盘及部分复制恢复", RootMigrationChecks.CrossVolume),
-    ("根迁移只读文件及当场恢复保持属性", RootMigrationChecks.ReadOnlyContents)
+    ("根迁移只读文件及当场恢复保持属性", RootMigrationChecks.ReadOnlyContents),
+    ("中断迁移执行前重启核对及恢复", MigrationRecoveryChecks.BeforeExecution),
+    ("中断迁移按真实路径及断开链接核对", MigrationRecoveryChecks.ObserveActualPaths),
+    ("中断迁移真实进程退出及重复恢复", MigrationRecoveryChecks.ProcessInterruptions),
+    ("中断迁移逐项失败及配置保存后重试", MigrationRecoveryChecks.RetryFailures),
+    ("中断迁移不同字节及归属冲突保留证据", MigrationRecoveryChecks.ConflictingContents)
 };
 var failures = 0;
 var selected = tests.Where(t => args.Length == 0 || t.Name.Contains(args[0], StringComparison.Ordinal)).ToArray();

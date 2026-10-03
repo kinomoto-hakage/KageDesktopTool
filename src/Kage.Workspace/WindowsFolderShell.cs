@@ -101,6 +101,27 @@ public sealed class WindowsFolderShell(string? desktopDirectory = null) : IFolde
         finally { Release(link); Release(shell); }
     });
 
+    public string? ReadShortcutTarget(string shortcutPath, Guid folderId) => Sta<string?>(() =>
+    {
+        if (!OperatingSystem.IsWindows()) throw new PlatformNotSupportedException();
+        if (!File.Exists(shortcutPath)) return null;
+        object? shell = null;
+        object? link = null;
+        try
+        {
+            shell = Activator.CreateInstance(Type.GetTypeFromProgID("WScript.Shell", true)!);
+            dynamic automation = shell!;
+            link = automation.CreateShortcut(shortcutPath);
+            dynamic shortcut = link;
+            string description = shortcut.Description;
+            if (description != "Kage 保留的内容文件夹 " + folderId.ToString("N"))
+                throw new IOException("快捷方式归属已变化，未覆盖。");
+            string target = shortcut.TargetPath;
+            return WindowsPaths.Root(target);
+        }
+        finally { Release(link); Release(shell); }
+    });
+
     public OperationResult Recycle(string contentPath, Guid folderId) => Sta(() =>
     {
         if (!OperatingSystem.IsWindows()) throw new PlatformNotSupportedException();

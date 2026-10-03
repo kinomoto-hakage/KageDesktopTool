@@ -212,6 +212,7 @@ static class RootMigrationChecks
         public string DesktopDirectory => real.DesktopDirectory;
         public void CreateShortcut(string path, string target) => real.CreateShortcut(path, target);
         public bool ShortcutTargets(string path, string target) => real.ShortcutTargets(path, target);
+        public string? ReadShortcutTarget(string path, Guid id) => real.ReadShortcutTarget(path, id);
         public OperationResult Recycle(string path, Guid id) => real.Recycle(path, id);
         public string? FindRecycledFolder(string path, Guid id) => real.FindRecycledFolder(path, id);
         public void RetargetShortcut(string path, string previous, string target, Guid id)

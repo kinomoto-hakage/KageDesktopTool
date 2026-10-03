@@ -247,6 +247,7 @@ sealed class FailingShell(IFolderShell real) : IFolderShell
         if (ThrowAfterShortcut) throw new IOException("注入快捷方式生成后的 Shell 异常");
     }
     public bool ShortcutTargets(string path, string target) => real.ShortcutTargets(path, target);
+    public string? ReadShortcutTarget(string path, Guid id) => real.ReadShortcutTarget(path, id);
     public void RetargetShortcut(string path, string previous, string target, Guid id) => real.RetargetShortcut(path, previous, target, id);
     public OperationResult Recycle(string path, Guid id) => new(FailRecycle ? Outcome.Failed : Outcome.Cancelled, FailRecycle ? "注入回收失败" : "注入 Windows 回收取消", path);
     public string? FindRecycledFolder(string path, Guid id) => real.FindRecycledFolder(path, id);

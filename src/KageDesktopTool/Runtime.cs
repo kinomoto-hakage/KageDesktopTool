@@ -312,15 +312,21 @@ internal sealed class Runtime : IDisposable
     }
 
     internal async Task<OperationResult?> MigrateRootAsync(string target)
+        => await RunRootMigrationAsync(target);
+
+    internal async Task<OperationResult?> RecoverRootMigrationAsync()
+        => await RunRootMigrationAsync(null);
+
+    private async Task<OperationResult?> RunRootMigrationAsync(string? target)
     {
         if (Exiting || Moving || ChangingFolder || Interacting || creating || appearance != null)
         {
-            Balloon("请先结束当前操作，再更换存储根目录。");
+            Balloon("请先结束当前操作，再迁移或恢复存储根目录。");
             return null;
         }
-        var dialog = rootMigration = new RootMigrationDialog();
+        var dialog = rootMigration = new RootMigrationDialog(recovering: target == null);
         dialog.Show();
-        try { return await dialog.StartAsync(Workspace, target); }
+        try { return target == null ? await dialog.StartRecoveryAsync(Workspace) : await dialog.StartAsync(Workspace, target); }
         finally { rootMigration = null; Render(); }
     }
 
