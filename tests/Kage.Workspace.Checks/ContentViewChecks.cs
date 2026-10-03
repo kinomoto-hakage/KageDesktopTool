@@ -52,7 +52,7 @@ internal static class ContentViewChecks
         await workspace.InitializeAsync(areas);
         Check(workspace.Snapshot.Folders.First().Folder == saved, "重启恢复查看方式、两种尺寸、排序键和方向");
         var other = workspace.Snapshot.Folders.Last().Folder;
-        Check(other.ListIconSize == 16 && other.GridIconSize == 32 && other.SortKey == ContentSortKey.Name
+        Check(other.ListIconSize == 32 && other.GridIconSize == 48 && other.SortKey == ContentSortKey.Name
             && other.CustomOrder == null, "其他 Folder 与旧字段缺省值独立");
     }
 
@@ -155,7 +155,7 @@ internal static class ContentViewChecks
         workspace = new DesktopWorkspace(fixture.Store, new TestStartup());
         Check((await workspace.InitializeAsync(areas)).Succeeded, "有效旧版状态缺少新字段仍直接加载");
         var legacy = workspace.Snapshot.Folders.Single().Folder;
-        Check(legacy.ListIconSize == 16 && legacy.GridIconSize == 32 && legacy.SortKey == ContentSortKey.Name
+        Check(legacy.ListIconSize == 32 && legacy.GridIconSize == 48 && legacy.SortKey == ContentSortKey.Name
             && !legacy.SortDescending && legacy.CustomOrder == null && legacy.Id == folder.Folder.Id && legacy.Grid,
             "旧状态恢复默认值并保留原查看方式及稳定 Folder 标识");
     }

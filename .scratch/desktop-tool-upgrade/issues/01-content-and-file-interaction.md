@@ -1,8 +1,8 @@
 # 01: Folder 内容展示与文件交互
 
 Type: implementation
-Status: resolved
-Labels: resolved
+Status: claimed
+Labels: claimed
 Approved: 2026-10-03
 Spec: ../spec.md
 Plan: ../ticket-plan.md
@@ -53,3 +53,15 @@ User stories: 1-24, 38, 47, 49, 51-53
 已交付真实双击打开、单项／多项 Windows 原生完整对象菜单、Ctrl／Shift 点击与框选、边缘滚动、快捷方式标签与箭头处理、两种视图四档尺寸、自然名称／日期／大小／自定义排序、真实内部多选重排及圆角滚动条。查看偏好与手动顺序按 Folder 保存，兼容旧状态默认值，失败保留已提交值；准确名称／路径优先协调选择及硬链接，内容改名先记录意图并在重启协调真实副作用。跨 Folder、桌面与 Explorer 多选移入移出继续执行真实移动。
 
 详见 [验收记录](../../../docs/verification/upgrade-01-content-and-file-interaction.md)。Standards 与 Spec 复审剩余发现均为 0。
+
+## 追加反馈与修正（2026-10-03）
+
+用户运行后报告右键准备转圈约数秒、左上角出现红叉辅助窗口、ChatGPT 在 16／32 退回白纸占位而 96 尺寸不正确、Wallpaper Engine 四档均为白纸占位。默认尺寸改为网格大 48 DIP、列表中 32 DIP。
+
+用户明确接受由资源管理器展示系统菜单：打开真实内容目录并定位当前单项／多项选择，调用系统实际右键，由 Explorer 根据当前 Windows 设置显示现代或传统菜单。移除 Kage 内同步 `IContextMenu` 构建及可激活的临时 ToolWindow，不写全系统菜单注册表、不伪造现代菜单。
+
+- [ ] 复现并记录旧菜单阻塞与标题栏辅助窗口，测量修复后响应和 UI 停顿。
+- [ ] Explorer 原生菜单单项、多项、更多选项及实际命令通过真实输入验证；准备阶段不阻塞 Kage，退出取消后不再发送右键。
+- [ ] 新建与缺少字段的状态使用网格 48／列表 32，已有显式尺寸保持已保存值。
+- [ ] 包应用解析实际 AppsFolder 标识、注册包清单及 targetsize 资源；InternetShortcut 使用实际 IconFile／IconIndex；图标四档图案及尺寸准确。
+- [ ] 缓存按实际文件变化、系统偏好变化与过期失效，保留 Shell 的其他适用状态覆盖；业务和 Windows 输入回归、审查及发布验收通过。

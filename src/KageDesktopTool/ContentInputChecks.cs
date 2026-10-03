@@ -9,6 +9,7 @@ using System.Threading.Tasks;
 using System.Windows;
 using System.Windows.Controls;
 using System.Windows.Controls.Primitives;
+using System.Windows.Automation;
 using System.Windows.Media;
 using System.Windows.Media.Imaging;
 using Kage.Workspace;
@@ -67,10 +68,20 @@ internal static class ContentInputChecks
                 async Task Click(FrameworkElement element, bool twice = false)
                 {
                     await Task.Delay((int)GetDoubleClickTime() + 100);
+                    var parent = FolderHeader.FindParent<ListBoxItem>(element);
+                    if (parent != null) { contents.Items.ScrollIntoView(parent); header.UpdateLayout(); }
                     var point = Center(element);
                     CheckHit(header, point);
                     await MouseAt(point, twice);
                     await Task.Delay(550);
+                }
+                async Task FolderRight(ListBoxItem item)
+                {
+                    var point = Center(item);
+                    var hit = WindowsDesktop.WindowFromPoint(new WindowsDesktop.POINT { X = (int)point.X, Y = (int)point.Y });
+                    if (hit != header.Handle) { Desktop(); await Task.Delay(350); }
+                    await MouseAt(point, false, 8);
+                    await WaitUntil(() => ShellContextMenu.ActiveMenuWindow != IntPtr.Zero);
                 }
                 if (refreshOnly)
                 {
@@ -147,11 +158,12 @@ internal static class ContentInputChecks
 
                 // 原生菜单的窗口类区别于 WPF Folder 管理菜单；Esc 只取消本次菜单。
                 var right = Center(Item(link));
-                await MouseAt(right, false, 8);
+                await FolderRight(Item(link));
                 await Task.Delay(600);
-                Require(FindWindow("#32768", null) != IntPtr.Zero, "图标右键呈现 Windows 原生完整菜单");
+                Require(ShellContextMenu.ActiveMenuWindow != IntPtr.Zero, "图标右键在 Explorer 呈现系统默认原生菜单");
                 Key(0x1B); await Task.Delay(500);
-                Require(FindWindow("#32768", null) == IntPtr.Zero, "Esc 真实输入取消原生菜单");
+                Require(ShellContextMenu.ActiveMenuWindow == IntPtr.Zero, "Esc 真实输入取消原生菜单");
+                Desktop(); await Task.Delay(350);
                 Require(contents.SelectedPaths().SequenceEqual(new[] { link }), "右键未选项目先切换当前选择");
                 contents.Items.UpdateLayout();
                 // 空白框选向上覆盖多行，真实修饰键修改集合。
@@ -200,20 +212,22 @@ internal static class ContentInputChecks
                 // 单项系统命令及已安装编辑器处理器来自实际 .txt 对象菜单。
                 contents.Items.SelectedItems.Clear();
                 await Click(((Grid)Item(document).Content).Children[0] as FrameworkElement ?? throw new Exception());
-                await MouseAt(Center(Item(document)), false, 8); await Task.Delay(500);
+                await FolderRight(Item(document)); await Task.Delay(500);
                 var labels = MenuLabels();
+                if (labels.Any(label => label.Contains("显示更多选项", StringComparison.Ordinal)))
+                { await ClickMenu("显示更多选项"); await Task.Delay(500); labels = MenuLabels(); }
                 File.AppendAllText(log, "实际原生菜单：" + string.Join(" | ", labels) + "\n");
                 Require(labels.Any(label => label.Contains("Code", StringComparison.OrdinalIgnoreCase) || label.Contains("7-Zip", StringComparison.OrdinalIgnoreCase)), "已安装 Code／7-Zip 的适用对象菜单处理器呈现");
                 Require(labels.Any(label => label.Contains("属性", StringComparison.Ordinal)) && labels.Any(label => label.Contains("删除", StringComparison.Ordinal)), "系统文件命令呈现");
                 await ClickMenu("属性"); await Task.Delay(700);
                 Require(WindowWithTitle(Path.GetFileName(document) + " 属性") != IntPtr.Zero, "原生属性命令打开实际对象属性窗口");
                 Key(0x1B); await Task.Delay(400);
-                await MouseAt(Center(Item(document)), false, 8); await Task.Delay(400);
+                await FolderRight(Item(document)); await Task.Delay(400);
+                if (MenuLabels().Any(label => label.Contains("显示更多选项", StringComparison.Ordinal)))
+                { await ClickMenu("显示更多选项"); await Task.Delay(400); }
                 await ClickMenu("重命名"); await Task.Delay(350);
-                Require(WindowWithTitle("重命名项目") != IntPtr.Zero, "原生重命名命令进入真实名称输入");
                 await TypeText("renamed.txt");
                 await Task.Delay(150);
-                File.AppendAllText(log, "真实改名输入：" + ContentPointerInput.Descendant<TextBox>(app.Windows.OfType<ContentRenameDialog>().Single())?.Text + "\n");
                 Key(0x0D); await Task.Delay(700);
                 var renamedPath = Path.Combine(folder.ActualPath, "renamed.txt");
                 Require(File.Exists(renamedPath) && !File.Exists(document), "原生菜单改名更新实际路径");
@@ -221,7 +235,7 @@ internal static class ContentInputChecks
                 // 改名后的项目在自动排序末尾，先用小列表并滚动到当前对象。
                 var renamedItem = Item(renamedPath);
                 contents.Items.ScrollIntoView(renamedItem); contents.Items.UpdateLayout();
-                await MouseAt(Center(renamedItem), false, 8); await Task.Delay(500);
+                await FolderRight(renamedItem); await Task.Delay(500);
                 await ClickMenu("删除"); await Task.Delay(900);
                 Require(!File.Exists(renamedPath), "原生删除命令执行实际文件结果");
                 Require(!contents.SelectedPaths().Contains(renamedPath) && workspace.Snapshot.Folders.First().FileCount == 47,
@@ -237,10 +251,10 @@ internal static class ContentInputChecks
                 await Click(((Grid)Item(command).Content).Children[0] as FrameworkElement ?? throw new Exception());
                 keybd_event(0x11, 0, 2, UIntPtr.Zero);
                 var selectedBeforeMenu = contents.SelectedPaths();
-                await MouseAt(Center(Item(link)), false, 8); await Task.Delay(400);
-                Require(contents.SelectedPaths().SequenceEqual(selectedBeforeMenu) && ShellContextMenu.ActiveMenu != IntPtr.Zero,
+                await FolderRight(Item(link)); await Task.Delay(400);
+                Require(contents.SelectedPaths().SequenceEqual(selectedBeforeMenu) && ShellContextMenu.ActiveMenuWindow != IntPtr.Zero,
                     "右键已选项目保留多项集合并取得原生集合菜单");
-                Key(0x1B); await Task.Delay(350);
+                Key(0x1B); await Task.Delay(350); Desktop(); await Task.Delay(350);
                 var beforeOrder = workspace.Snapshot.Folders.First().Entries.Select(entry => entry.Name).ToArray();
                 var origin = Center((Image)((Grid)Item(link).Content).Children[0]);
                 await Drag(origin, new Point(origin.X + 1, origin.Y));
@@ -362,13 +376,16 @@ internal static class ContentInputChecks
     private static async Task WaitUntil(Func<bool> ready)
     { for (var i = 0; i < 30 && !ready(); i++) await Task.Delay(100); }
     private static void Key(byte key) { keybd_event(key, 0, 0, UIntPtr.Zero); keybd_event(key, 0, 2, UIntPtr.Zero); }
-    private static string[] MenuLabels() => Enumerable.Range(0, GetMenuItemCount(ShellContextMenu.ActiveMenu)).Select(index =>
-    { var text = new StringBuilder(512); GetMenuString(ShellContextMenu.ActiveMenu, (uint)index, text, text.Capacity, 0x400); return text.ToString(); }).ToArray();
+    private static AutomationElement[] MenuItems() => AutomationElement.FromHandle(ShellContextMenu.ActiveMenuWindow).FindAll(TreeScope.Descendants,
+        new OrCondition(new PropertyCondition(AutomationElement.ControlTypeProperty, ControlType.MenuItem), new PropertyCondition(AutomationElement.ControlTypeProperty, ControlType.Button)))
+        .Cast<AutomationElement>().ToArray();
+    private static string[] MenuLabels() => MenuItems().Select(item => item.Current.Name).ToArray();
     private static async Task ClickMenu(string text)
     {
-        var index = Array.FindIndex(MenuLabels(), label => label.Contains(text, StringComparison.Ordinal));
-        if (index < 0 || !GetMenuItemRect(IntPtr.Zero, ShellContextMenu.ActiveMenu, (uint)index, out var rect)) throw new IOException("原生菜单没有可命中的命令：" + text);
-        await MouseAt(new Point((rect.Left + rect.Right) / 2, (rect.Top + rect.Bottom) / 2), false);
+        var item = MenuItems().FirstOrDefault(item => item.Current.Name.Contains(text, StringComparison.Ordinal));
+        if (item == null) throw new IOException("原生菜单没有可命中的命令：" + text);
+        var rect = item.Current.BoundingRectangle;
+        await MouseAt(new Point(rect.Left + rect.Width / 2, rect.Top + rect.Height / 2), false);
     }
     private static async Task TypeText(string text)
     {
@@ -429,9 +446,6 @@ internal static class ContentInputChecks
     [DllImport("user32.dll", CharSet = CharSet.Unicode)] private static extern IntPtr FindWindow(string className, string? name);
     [DllImport("user32.dll")] private static extern bool SetForegroundWindow(IntPtr hwnd);
     [DllImport("user32.dll")] private static extern bool PostMessage(IntPtr hwnd, uint message, IntPtr wp, IntPtr lp);
-    [DllImport("user32.dll")] private static extern int GetMenuItemCount(IntPtr menu);
-    [DllImport("user32.dll", CharSet = CharSet.Unicode)] private static extern int GetMenuString(IntPtr menu, uint item, StringBuilder text, int capacity, uint flags);
-    [DllImport("user32.dll")] private static extern bool GetMenuItemRect(IntPtr owner, IntPtr menu, uint item, out WindowsDesktop.RECT rect);
     [StructLayout(LayoutKind.Sequential)] private struct NativeInput { internal uint Type; internal InputUnion Data; }
     [StructLayout(LayoutKind.Explicit, Size = 32)] private struct InputUnion { [FieldOffset(0)] internal KeyboardInput Keyboard; }
     [StructLayout(LayoutKind.Sequential)] private struct KeyboardInput { internal ushort Key, Scan; internal uint Flags, Time; internal UIntPtr Extra; }

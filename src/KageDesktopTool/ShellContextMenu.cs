@@ -1,136 +1,191 @@
 using System;
+using System.Diagnostics;
 using System.IO;
 using System.Linq;
 using System.Runtime.InteropServices;
 using System.Text;
+using System.Threading.Tasks;
+using System.Threading;
+using System.Collections.Generic;
 using System.Windows;
-using System.Windows.Input;
-using System.Windows.Interop;
+using System.Windows.Automation;
 
 namespace Kage.Desktop;
 
-// 菜单来自实际对象的 IShellFolder，不重建系统或第三方命令。
+// 原生菜单由 Explorer 拥有，跟随当前 Windows 的现代／传统设置与扩展。
 internal static class ShellContextMenu
 {
-    internal static IntPtr ActiveMenu { get; private set; }
-    internal static string? Show(Window owner, string[] paths, Point screen)
+    internal static IntPtr ActiveMenuWindow { get; private set; }
+    internal static IntPtr ExplorerWindow { get; private set; }
+    internal static long LastMenuLatency { get; private set; }
+    internal static string LastMenuClass { get; private set; } = "";
+    private static int showing;
+    private static CancellationTokenSource? currentRequest;
+    internal static void CancelPending() => Volatile.Read(ref currentRequest)?.Cancel();
+
+    internal static async Task ShowAsync(string[] paths)
     {
-        if (paths.Length == 0) return null;
-        if (paths.Any(path => !string.Equals(Path.GetDirectoryName(path), Path.GetDirectoryName(paths[0]), StringComparison.OrdinalIgnoreCase)))
+        if (paths.Length == 0) return;
+        if (Interlocked.CompareExchange(ref showing, 1, 0) != 0) throw new InvalidOperationException("当前系统菜单尚未结束，请先完成或取消。");
+        using var cancellation = new CancellationTokenSource();
+        currentRequest = cancellation;
+        try { await ShowSelectionAsync(paths, cancellation.Token); }
+        finally { currentRequest = null; ActiveMenuWindow = IntPtr.Zero; Interlocked.Exchange(ref showing, 0); }
+    }
+
+    private static async Task ShowSelectionAsync(string[] paths, CancellationToken cancellation)
+    {
+        var directory = Path.GetDirectoryName(paths[0])!;
+        if (paths.Any(path => !string.Equals(Path.GetDirectoryName(path), directory, StringComparison.OrdinalIgnoreCase)))
             throw new IOException("原生菜单要求同一内容文件夹中的选择集合。");
-        // Explorer 子 HWND 不能成为前台菜单所有者；临时顶层窗口承接键盘及扩展菜单消息。
-        var menuOwner = new Window { Width = 1, Height = 1, Opacity = 0, ShowInTaskbar = false,
-            WindowStyle = WindowStyle.ToolWindow, Left = owner.Left, Top = owner.Top };
-        menuOwner.Show();
-        menuOwner.Activate();
-        var handle = new WindowInteropHelper(menuOwner).Handle;
-        var pidls = new IntPtr[paths.Length];
-        IShellFolder? folder = null;
-        object? context = null;
-        var menu = IntPtr.Zero;
-        HwndSource? source = null;
-        HwndSourceHook? hook = null;
+        var watch = Stopwatch.StartNew();
+        ActiveMenuWindow = ExplorerWindow = IntPtr.Zero;
+        await Task.Run(() => OpenSelection(directory, paths), cancellation);
+        cancellation.ThrowIfCancellationRequested();
+        IntPtr window = IntPtr.Zero;
+        Point? itemPoint = null;
+        for (var attempt = 0; attempt < 40; attempt++)
+        {
+            (window, itemPoint) = await Task.Run(() => FindSelection(directory, paths));
+            if (window != IntPtr.Zero && itemPoint != null) break;
+            await Task.Delay(80, cancellation);
+        }
+        if (window == IntPtr.Zero || itemPoint == null) throw new IOException("已请求在资源管理器定位选择，暂未找到可见项目；可在资源管理器直接右键。");
+        ExplorerWindow = window;
+        SetForegroundWindow(window);
+        await Task.Delay(80, cancellation);
+        var point = new WindowsDesktop.POINT { X = (int)itemPoint.Value.X, Y = (int)itemPoint.Value.Y };
+        var hit = WindowsDesktop.WindowFromPoint(point);
+        if (hit != window && !WindowsDesktop.IsChild(window, hit))
+            throw new IOException("资源管理器中的选中项目被其他窗口遮挡，未发送右键；请在资源管理器直接操作。");
+        SetCursorPos(point.X, point.Y);
+        await Task.Delay(40, cancellation);
+        mouse_event(8, 0, 0, 0, UIntPtr.Zero);
+        try { await Task.Delay(30); }
+        finally { mouse_event(16, 0, 0, 0, UIntPtr.Zero); }
+        for (var attempt = 0; attempt < 60; attempt++)
+        {
+            ActiveMenuWindow = FindMenu(window);
+            if (ActiveMenuWindow != IntPtr.Zero) break;
+            await Task.Delay(50, cancellation);
+        }
+        LastMenuLatency = watch.ElapsedMilliseconds;
+        if (ActiveMenuWindow == IntPtr.Zero) throw new IOException("资源管理器已定位当前选择，系统菜单暂未就绪；可直接右键重试。");
+        var menuClass = new StringBuilder(256); GetClassName(ActiveMenuWindow, menuClass, menuClass.Capacity);
+        LastMenuClass = menuClass.ToString();
         try
         {
+            while (true)
+            {
+                var menu = FindMenu(window);
+                if (menu != IntPtr.Zero) { ActiveMenuWindow = menu; await Task.Delay(60, cancellation); continue; }
+                // “显示更多选项”可能短暂销毁现代窗口，再创建传统窗口。
+                await Task.Delay(180, cancellation);
+                if (FindMenu(window) == IntPtr.Zero) break;
+            }
+        }
+        finally { ActiveMenuWindow = IntPtr.Zero; }
+    }
+
+    private static void OpenSelection(string directory, string[] paths)
+    {
+        var initialized = CoInitializeEx(IntPtr.Zero, 0) >= 0;
+        var folder = IntPtr.Zero;
+        var pidls = new IntPtr[paths.Length];
+        try
+        {
+            Marshal.ThrowExceptionForHR(SHParseDisplayName(directory, IntPtr.Zero, out folder, 0, out _));
             var children = new IntPtr[paths.Length];
             for (var i = 0; i < paths.Length; i++)
             {
                 Marshal.ThrowExceptionForHR(SHParseDisplayName(paths[i], IntPtr.Zero, out pidls[i], 0, out _));
-                var iid = typeof(IShellFolder).GUID;
-                Marshal.ThrowExceptionForHR(SHBindToParent(pidls[i], ref iid, out var parent, out children[i]));
-                if (i == 0) folder = parent;
-                else Marshal.ReleaseComObject(parent);
+                children[i] = ILFindLastID(pidls[i]);
             }
-            var contextId = typeof(IContextMenu).GUID;
-            Marshal.ThrowExceptionForHR(folder!.GetUIObjectOf(handle, (uint)children.Length, children, ref contextId, IntPtr.Zero, out context));
-            var commands = (IContextMenu)context;
-            menu = CreatePopupMenu();
-            if (menu == IntPtr.Zero) throw new IOException("Windows 未能创建菜单。");
-            // CMF_NORMAL；Shift 同时请求扩展命令，保留传统完整菜单的处理器。
-            Marshal.ThrowExceptionForHR(commands.QueryContextMenu(menu, 0, 1, 0x7fff, (paths.Length == 1 ? 0x10u : 0u) | ((Keyboard.Modifiers & ModifierKeys.Shift) != 0 ? 0x100u : 0u)));
-            source = HwndSource.FromHwnd(handle);
-            hook = (IntPtr hwnd, int message, IntPtr wp, IntPtr lp, ref bool handled) =>
-            {
-                if (message is not (0x117 or 0x2b or 0x2c or 0x120)) return IntPtr.Zero;
-                if (context is IContextMenu3 third && third.HandleMenuMsg2((uint)message, wp, lp, out var result) >= 0)
-                { handled = true; return result; }
-                if (message != 0x120 && context is IContextMenu2 second && second.HandleMenuMsg((uint)message, wp, lp) >= 0) handled = true;
-                return IntPtr.Zero;
-            };
-            source.AddHook(hook);
-            SetForegroundWindow(handle);
-            ActiveMenu = menu;
-            var command = TrackPopupMenuEx(menu, 0x100 | 0x2, (int)screen.X, (int)screen.Y, handle, IntPtr.Zero);
-            if (command == 0) return null;
-            var verb = new StringBuilder(256);
-            // Shell 的 rename 依赖宿主内联编辑；本宿主经业务接口提交真实改名。
-            if (paths.Length == 1 && commands.GetCommandString(new UIntPtr(command - 1), 4, IntPtr.Zero, verb, (uint)verb.Capacity) >= 0
-                && verb.ToString().Equals("rename", StringComparison.OrdinalIgnoreCase)) return paths[0];
-            var info = new InvokeInfo
-            {
-                Size = Marshal.SizeOf<InvokeInfo>(), Mask = 0x4000 | 0x20000000
-                    | ((Keyboard.Modifiers & ModifierKeys.Shift) != 0 ? 0x10000000 : 0)
-                    | ((Keyboard.Modifiers & ModifierKeys.Control) != 0 ? 0x40000000 : 0),
-                Window = handle, Verb = new IntPtr(command - 1), VerbUnicode = new IntPtr(command - 1), Show = 1,
-                Point = new NativePoint { X = (int)screen.X, Y = (int)screen.Y }
-            };
-            Marshal.ThrowExceptionForHR(commands.InvokeCommand(ref info));
-            return null;
+            Marshal.ThrowExceptionForHR(SHOpenFolderAndSelectItems(folder, (uint)children.Length, children, 0));
         }
         finally
         {
-            if (hook != null) source?.RemoveHook(hook);
-            ActiveMenu = IntPtr.Zero;
-            if (menu != IntPtr.Zero) DestroyMenu(menu);
-            if (context != null) Marshal.ReleaseComObject(context);
-            if (folder != null) Marshal.ReleaseComObject(folder);
             foreach (var pidl in pidls) if (pidl != IntPtr.Zero) Marshal.FreeCoTaskMem(pidl);
-            menuOwner.Close();
+            if (folder != IntPtr.Zero) Marshal.FreeCoTaskMem(folder);
+            if (initialized) CoUninitialize();
         }
     }
 
-    [ComImport, Guid("000214E6-0000-0000-C000-000000000046"), InterfaceType(ComInterfaceType.InterfaceIsIUnknown)]
-    private interface IShellFolder
+    private static (IntPtr Window, Point? Item) FindSelection(string directory, string[] expected)
     {
-        void ParseDisplayName(); void EnumObjects(); void BindToObject(); void BindToStorage(); void CompareIDs();
-        void CreateViewObject(); void GetAttributesOf();
-        [PreserveSig] int GetUIObjectOf(IntPtr owner, uint count, [MarshalAs(UnmanagedType.LPArray, SizeParamIndex = 1)] IntPtr[] children,
-            ref Guid iid, IntPtr reserved, [MarshalAs(UnmanagedType.IUnknown)] out object context);
+        dynamic shell = Activator.CreateInstance(Type.GetTypeFromProgID("Shell.Application")!)!;
+        dynamic windows = shell.Windows();
+        try
+        {
+            for (var i = 0; i < (int)windows.Count; i++)
+            {
+                dynamic browser = windows.Item(i);
+                if (browser == null) continue;
+                try
+                {
+                    dynamic document = browser.Document; dynamic folder = document.Folder; dynamic self = folder.Self;
+                    try
+                    {
+                        if (!string.Equals((string)self.Path, directory, StringComparison.OrdinalIgnoreCase)) continue;
+                        dynamic selected = document.SelectedItems();
+                        var actual = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
+                        try
+                        {
+                            for (var index = 0; index < (int)selected.Count; index++)
+                            {
+                                dynamic entry = selected.Item(index);
+                                try { actual.Add((string)entry.Path); }
+                                finally { Marshal.ReleaseComObject(entry); }
+                            }
+                        }
+                        finally { Marshal.ReleaseComObject(selected); }
+                        if (!actual.SetEquals(expected)) continue;
+                        var hwnd = new IntPtr((long)browser.HWND);
+                        var selection = AutomationElement.FromHandle(hwnd).FindAll(TreeScope.Descendants, new AndCondition(
+                            new PropertyCondition(AutomationElement.ControlTypeProperty, ControlType.ListItem),
+                            new PropertyCondition(SelectionItemPattern.IsSelectedProperty, true),
+                            new PropertyCondition(AutomationElement.IsOffscreenProperty, false)));
+                        foreach (AutomationElement item in selection)
+                        {
+                            var rect = item.Current.BoundingRectangle;
+                            if (!rect.IsEmpty && rect.Width > 0 && rect.Height > 0) return (hwnd, new Point(rect.Left + rect.Width / 2, rect.Top + rect.Height / 2));
+                        }
+                    }
+                    finally { Marshal.ReleaseComObject(self); Marshal.ReleaseComObject(folder); Marshal.ReleaseComObject(document); }
+                }
+                catch (Exception e) when (e is COMException or ElementNotAvailableException or InvalidOperationException) { }
+                finally { Marshal.ReleaseComObject(browser); }
+            }
+        }
+        finally { Marshal.ReleaseComObject(windows); Marshal.ReleaseComObject(shell); }
+        return (IntPtr.Zero, null);
     }
 
-    [ComImport, Guid("000214E4-0000-0000-C000-000000000046"), InterfaceType(ComInterfaceType.InterfaceIsIUnknown)]
-    private interface IContextMenu
+    private static IntPtr FindMenu(IntPtr explorer)
     {
-        [PreserveSig] int QueryContextMenu(IntPtr menu, uint index, uint first, uint last, uint flags);
-        [PreserveSig] int InvokeCommand(ref InvokeInfo info);
-        [PreserveSig] int GetCommandString(UIntPtr command, uint flags, IntPtr reserved, [MarshalAs(UnmanagedType.LPWStr)] StringBuilder text, uint capacity);
+        GetWindowThreadProcessId(explorer, out var pid);
+        var result = IntPtr.Zero;
+        EnumWindows((hwnd, _) =>
+        {
+            GetWindowThreadProcessId(hwnd, out var ownerPid);
+            if (ownerPid != pid || !WindowsDesktop.IsWindowVisible(hwnd)) return true;
+            var name = new StringBuilder(256); GetClassName(hwnd, name, name.Capacity);
+            if (name.ToString() is "#32768" or "Microsoft.UI.Content.PopupWindowSiteBridge" or "Xaml_WindowedPopupClass") result = hwnd;
+            return true;
+        }, IntPtr.Zero);
+        return result;
     }
-    [ComImport, Guid("000214F4-0000-0000-C000-000000000046"), InterfaceType(ComInterfaceType.InterfaceIsIUnknown)]
-    private interface IContextMenu2
-    {
-        void QueryContextMenu(); void InvokeCommand(); void GetCommandString();
-        [PreserveSig] int HandleMenuMsg(uint message, IntPtr wp, IntPtr lp);
-    }
-    [ComImport, Guid("BCFCE0A0-EC17-11D0-8D10-00A0C90F2719"), InterfaceType(ComInterfaceType.InterfaceIsIUnknown)]
-    private interface IContextMenu3
-    {
-        void QueryContextMenu(); void InvokeCommand(); void GetCommandString(); void HandleMenuMsg();
-        [PreserveSig] int HandleMenuMsg2(uint message, IntPtr wp, IntPtr lp, out IntPtr result);
-    }
-    [StructLayout(LayoutKind.Sequential)] private struct NativePoint { internal int X, Y; }
-    [StructLayout(LayoutKind.Sequential, CharSet = CharSet.Unicode)]
-    private struct InvokeInfo
-    {
-        internal int Size, Mask;
-        internal IntPtr Window, Verb, Parameters, Directory;
-        internal int Show, HotKey;
-        internal IntPtr Icon, Title, VerbUnicode, ParametersUnicode, DirectoryUnicode, TitleUnicode;
-        internal NativePoint Point;
-    }
-    [DllImport("shell32.dll", CharSet = CharSet.Unicode)] private static extern int SHParseDisplayName(string name, IntPtr bind, out IntPtr pidl, uint mask, out uint attributes);
-    [DllImport("shell32.dll")] private static extern int SHBindToParent(IntPtr pidl, ref Guid iid, out IShellFolder folder, out IntPtr child);
-    [DllImport("user32.dll")] private static extern IntPtr CreatePopupMenu();
+
+    [DllImport("shell32.dll", CharSet = CharSet.Unicode)] private static extern int SHParseDisplayName(string name, IntPtr context, out IntPtr pidl, uint mask, out uint attributes);
+    [DllImport("shell32.dll")] private static extern IntPtr ILFindLastID(IntPtr pidl);
+    [DllImport("shell32.dll")] private static extern int SHOpenFolderAndSelectItems(IntPtr folder, uint count, [MarshalAs(UnmanagedType.LPArray, SizeParamIndex = 1)] IntPtr[] children, uint flags);
+    [DllImport("ole32.dll")] private static extern int CoInitializeEx(IntPtr reserved, uint flags);
+    [DllImport("ole32.dll")] private static extern void CoUninitialize();
     [DllImport("user32.dll")] private static extern bool SetForegroundWindow(IntPtr window);
-    [DllImport("user32.dll")] private static extern bool DestroyMenu(IntPtr menu);
-    [DllImport("user32.dll")] private static extern uint TrackPopupMenuEx(IntPtr menu, uint flags, int x, int y, IntPtr owner, IntPtr parameters);
+    [DllImport("user32.dll")] private static extern bool SetCursorPos(int x, int y);
+    [DllImport("user32.dll")] private static extern void mouse_event(uint flags, uint x, uint y, uint data, UIntPtr extra);
+    [DllImport("user32.dll")] private static extern uint GetWindowThreadProcessId(IntPtr window, out uint process);
+    [DllImport("user32.dll", CharSet = CharSet.Unicode)] private static extern int GetClassName(IntPtr window, StringBuilder text, int count);
+    private delegate bool WindowCallback(IntPtr window, IntPtr parameter);
+    [DllImport("user32.dll")] private static extern bool EnumWindows(WindowCallback callback, IntPtr parameter);
 }

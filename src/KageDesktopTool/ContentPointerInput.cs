@@ -164,25 +164,28 @@ internal sealed class ContentPointerInput : IDisposable
         var item = FolderHeader.FindParent<ListBoxItem>(e.OriginalSource as DependencyObject);
         if (item == null) return;
         e.Handled = true;
-        await ShowMenuAsync(items.PointToScreen(e.GetPosition(items)));
+        await ShowMenuAsync();
     }
 
-    private async Task ShowMenuAsync(Point screen)
+    private async Task ShowMenuAsync()
     {
         if (menuOpen || Runtime.Current.Moving || Runtime.Current.Interacting) return;
         menuOpen = true;
         try
         {
-            var rename = ShellContextMenu.Show(Window.GetWindow(items), contents.SelectedPaths(), screen);
-            if (rename != null) new ContentRenameDialog(contents.FolderId, rename).ShowDialog();
+            await ShellContextMenu.ShowAsync(contents.SelectedPaths());
         }
+        catch (OperationCanceledException) { }
         catch (Exception e) { Runtime.Current.Balloon("文件菜单无法完成：" + e.Message); }
         finally
         {
             menuOpen = false;
-            var result = await Runtime.Current.Workspace.RefreshAsync(WindowsDesktop.Displays());
-            if (!disposed) Runtime.Current.Render();
-            if (!result.Succeeded) Runtime.Current.Balloon(result.Message);
+            if (!disposed)
+            {
+                var result = await Runtime.Current.Workspace.RefreshAsync(WindowsDesktop.Displays());
+                Runtime.Current.Render();
+                if (!result.Succeeded) Runtime.Current.Balloon(result.Message);
+            }
         }
     }
 

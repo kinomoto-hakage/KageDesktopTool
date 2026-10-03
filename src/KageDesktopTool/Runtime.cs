@@ -123,6 +123,7 @@ internal sealed class Runtime : IDisposable
     {
         displayRefreshPending = true;
         NativeViewMetrics.Invalidate();
+        ShellIcons.Invalidate();
         Dispatch(async () => await RefreshDisplayEnvironmentAsync());
     }
 
@@ -441,6 +442,7 @@ internal sealed class Runtime : IDisposable
     {
         if (disposed) return;
         disposed = true;
+        ShellContextMenu.CancelPending();
         refresh.Stop();
         source.RemoveHook(hook);
         SystemEvents.DisplaySettingsChanged -= SystemDisplayChanged;

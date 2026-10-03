@@ -65,7 +65,8 @@ internal static class ContentLayoutChecks
                 {
                     var image = Image(item);
                     var text = (TextBlock)((Grid)item.Content).Children[1];
-                    Check(Math.Abs(item.ActualWidth - metrics.GridWidth) < 1 && Math.Abs(item.ActualHeight - metrics.GridHeight) < 1, "系统完整等尺寸网格");
+                    Check(image.Width == 48 && image.Height == 48 && item.ActualWidth >= 60 && item.ActualHeight >= 48 + 2 * metrics.FontSize,
+                        "默认大 48 DIP 图标及两行文字拥有足够完整格子");
                     Check(Math.Abs(image.TranslatePoint(new Point(image.ActualWidth / 2, 0), item).X - item.ActualWidth / 2) < .6, "图标位于完整格子中心");
                     Check(Math.Abs(text.TranslatePoint(new Point(text.ActualWidth / 2, 0), item).X - item.ActualWidth / 2) < .6 && text.TextAlignment == TextAlignment.Center && text.TextWrapping == TextWrapping.Wrap, "文件名居中且长名称换行");
                     Check(text.FontFamily.Source == SystemFonts.IconFontFamily.Source && text.FontSize == SystemFonts.IconFontSize, "系统标题字体");
@@ -73,7 +74,7 @@ internal static class ContentLayoutChecks
                 var cells = list.Items.Cast<ListBoxItem>().ToArray();
                 var firstRow = cells.Where(item => Math.Abs(item.TranslatePoint(new Point(), list).Y - cells[0].TranslatePoint(new Point(), list).Y) < .6).ToArray();
                 for (var i = 1; i < firstRow.Length; i++)
-                    Check(Math.Abs(firstRow[i].TranslatePoint(new Point(), list).X - firstRow[i - 1].TranslatePoint(new Point(), list).X - metrics.GridWidth) < .6, "网格项间距一致");
+                    Check(Math.Abs(firstRow[i].TranslatePoint(new Point(), list).X - firstRow[i - 1].TranslatePoint(new Point(), list).X - firstRow[i - 1].ActualWidth) < .6, "网格项间距一致且不重叠");
                 cells[0].IsSelected = true;
                 Arrange(first);
                 Render(first, "05-网格.png");
@@ -86,9 +87,9 @@ internal static class ContentLayoutChecks
                 var left = Image(row).TranslatePoint(new Point(), first.Surface).X;
                 var textLeft = ((TextBlock)((Grid)row.Content).Children[1]).TranslatePoint(new Point(), first.Surface).X;
                 var originalWidth = row.ActualWidth;
-                Check(double.IsNaN(row.Width) && Math.Abs(row.ActualHeight - metrics.ListHeight) < 1, "原生小图标列表行高，行宽由视口计算");
+                Check(double.IsNaN(row.Width) && Image(row).Width == 32 && row.ActualHeight >= 34, "默认中 32 DIP 列表行高容纳图像，行宽由视口计算");
                 var rows = list.Items.Cast<ListBoxItem>().ToArray();
-                Check(Math.Abs(rows[1].TranslatePoint(new Point(), list).Y - rows[0].TranslatePoint(new Point(), list).Y - metrics.ListHeight) < .6, "列表相邻行间距为本机原生行高");
+                Check(Math.Abs(rows[1].TranslatePoint(new Point(), list).Y - rows[0].TranslatePoint(new Point(), list).Y - rows[0].ActualHeight) < .6, "中图标列表相邻行连续且不重叠");
                 row.IsSelected = true;
                 Render(first, "05-列表.png");
                 foreach (var width in new[] { 460.0, 260.0, 480.0, 300.0 })
