@@ -1,7 +1,7 @@
 # 01: Folder 内容展示与文件交互
 
 Type: implementation
-Status: ready-for-agent
+Status: claimed
 Labels: ready-for-agent
 Approved: 2026-10-03
 Spec: ../spec.md

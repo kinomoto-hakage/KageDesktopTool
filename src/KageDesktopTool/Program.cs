@@ -17,6 +17,7 @@ public static class Program
         if (args.Contains("--desktop-recovery-check")) return DesktopRecoveryChecks.Run();
         if (args.Contains("--manual-desktop-check")) return ManualDesktopChecks.Run();
         if (args.Contains("--content-layout-check")) return ContentLayoutChecks.Run();
+        if (args.Contains("--content-input-check")) return ContentInputChecks.Run();
         if (args.Contains("--display-dpi-check")) return DisplayDpiChecks.Run();
         if (args.Contains("--appearance-check")) return AppearanceChecks.Run();
         if (args.Contains("--file-move-check")) return FileMoveChecks.Run();

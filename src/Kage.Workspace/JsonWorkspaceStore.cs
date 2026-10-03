@@ -35,7 +35,7 @@ public sealed class JsonWorkspaceStore(string directory) : IWorkspaceStore
         if (state.Folders == null || state.IconChoice is not ("a" or "b" or "c" or "d")) throw new InvalidDataException("状态字段无效。");
         if (state.PendingStartup is { } startup && startup.Enabled != (startup.TargetCommand != null))
             throw new InvalidDataException("未完成自启记录的目标配置与开关不一致。");
-        if (new[] { state.PendingStartup != null, state.PendingCreate != null, state.PendingFolderChange != null, state.PendingRootMigration != null }.Count(value => value) > 1)
+        if (new[] { state.PendingStartup != null, state.PendingCreate != null, state.PendingFolderChange != null, state.PendingRootMigration != null, state.PendingContentRename != null }.Count(value => value) > 1)
             throw new InvalidDataException("状态存在冲突的未完成操作。");
         if (state.RetainedFolders == null) throw new InvalidDataException("保留内容关联无效。");
         var retainedIds = new HashSet<Guid>();
@@ -60,6 +60,15 @@ public sealed class JsonWorkspaceStore(string directory) : IWorkspaceStore
                 || (change.Kind == FolderChangeKind.Recycle && !string.Equals(destination, content, StringComparison.OrdinalIgnoreCase)))
                 throw new InvalidDataException("未完成 Folder 操作的目标路径无效。");
         }
+        if (state.PendingContentRename is { } contentRename)
+        {
+            if (!state.Folders.Any(folder => folder.Id == contentRename.FolderId) || string.IsNullOrWhiteSpace(contentRename.Identity))
+                throw new InvalidDataException("未完成内容改名缺少 Folder 或可靠身份。");
+            WindowsPaths.Name(contentRename.SourceName);
+            WindowsPaths.Name(contentRename.DestinationName);
+            if (WindowsPaths.IsIdentityFile(contentRename.SourceName) || WindowsPaths.IsIdentityFile(contentRename.DestinationName))
+                throw new InvalidDataException("未完成内容改名包含内部标识。");
+        }
         var ids = new HashSet<Guid>();
         var names = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
         foreach (var folder in state.Folders.Concat(state.PendingCreate is null ? [] : new[] { state.PendingCreate }))
@@ -67,6 +76,18 @@ public sealed class JsonWorkspaceStore(string directory) : IWorkspaceStore
             if (folder == null || folder.Id == Guid.Empty || !ids.Add(folder.Id) || !names.Add(folder.Name)) throw new InvalidDataException("Folder 标识或名称重复／无效。");
             WindowsPaths.Name(folder.Name);
             if (folder.ContentRoot != null) WindowsPaths.Root(folder.ContentRoot);
+            if (folder.ListIconSize is not (16 or 32 or 48 or 96) || folder.GridIconSize is not (16 or 32 or 48 or 96)
+                || !Enum.IsDefined(folder.SortKey) || folder.CustomOrder?.Any(item => item == null) == true)
+                throw new InvalidDataException("内容视图或排序字段无效。");
+            if (folder.CustomOrder != null)
+            {
+                var contentNames = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
+                foreach (var item in folder.CustomOrder)
+                {
+                    WindowsPaths.Name(item.Name);
+                    if (!contentNames.Add(item.Name) || WindowsPaths.IsIdentityFile(item.Name)) throw new InvalidDataException("自定义顺序重复或包含内部标识。");
+                }
+            }
             if (!double.IsFinite(folder.HeaderWidth) || !double.IsFinite(folder.HeaderHeight) || !double.IsFinite(folder.BodyHeight)
                 || folder.HeaderWidth is < 240 or > 760 || folder.HeaderHeight is < 42 or > 82 || folder.BodyHeight is < 160 or > 720
                 || !double.IsFinite(folder.Opacity) || folder.Opacity is < 0 or > 1

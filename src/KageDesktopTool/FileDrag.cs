@@ -31,55 +31,42 @@ internal static class FileDrag
         };
     }
 
-    internal static void Send(ListBox items)
-    {
-        Point? origin = null;
-        ListBoxItem? pressed = null;
-        items.PreviewMouseLeftButtonDown += (_, e) =>
-        {
-            pressed = FolderHeader.FindParent<ListBoxItem>(e.OriginalSource as DependencyObject);
-            origin = pressed == null ? null : e.GetPosition(items);
-            // 在已有多选项目上起拖时保留选择；普通点击在释放时仍可收拢为单选。
-            if (pressed?.IsSelected == true && Keyboard.Modifiers == ModifierKeys.None) e.Handled = true;
-        };
-        items.PreviewMouseLeftButtonUp += (_, _) =>
-        {
-            if (origin != null && pressed != null && Keyboard.Modifiers == ModifierKeys.None)
-            { items.SelectedItems.Clear(); pressed.IsSelected = true; }
-            origin = null;
-            pressed = null;
-        };
-        items.PreviewMouseMove += async (_, e) =>
-        {
-            if (origin == null || e.LeftButton != MouseButtonState.Pressed || Runtime.Current.Moving) return;
-            var position = e.GetPosition(items);
-            if (Math.Abs(position.X - origin.Value.X) < SystemParameters.MinimumHorizontalDragDistance && Math.Abs(position.Y - origin.Value.Y) < SystemParameters.MinimumVerticalDragDistance) return;
-            origin = null;
-            var paths = items.SelectedItems.Cast<ListBoxItem>().Select(item => (string)item.Tag).ToArray();
-            if (paths.Length == 0) return;
-            e.Handled = true;
-            await DragAsync(items, paths);
-        };
-    }
-
-    internal static async Task DragAsync(FrameworkElement source, string[] paths)
+    internal static async Task DragAsync(FrameworkElement source, string[] paths, FolderContents? contents = null)
     {
         MoveTarget? target = null;
         string? error = null;
         var released = false;
         var escaped = false;
+        string? before = null;
+        var reorder = false;
+        void Feedback(object sender, GiveFeedbackEventArgs e)
+        {
+            if (contents == null) return;
+            GetCursorPos(out var cursor);
+            var screen = new Point(cursor.X, cursor.Y);
+            if (contents.ContainsScreenPoint(screen)) contents.InsertionAt(screen, true);
+            else contents.Feedback.Children.Clear();
+        }
         void Continue(object sender, QueryContinueDragEventArgs e)
         {
             if (e.EscapePressed) { escaped = true; e.Action = DragAction.Cancel; e.Handled = true; return; }
             if ((e.KeyStates & DragDropKeyStates.LeftMouseButton) != 0) return;
             released = true;
-            try { target = TargetAtCursor(); }
+            try
+            {
+                target = TargetAtCursor();
+                GetCursorPos(out var cursor);
+                var screen = new Point(cursor.X, cursor.Y);
+                reorder = contents != null && target?.FolderId == contents.FolderId && contents.ContainsScreenPoint(screen);
+                if (reorder) before = contents!.InsertionAt(screen, false);
+            }
             catch (Exception exception) { error = exception.Message; }
             // 结束 OLE 预览而不交付原生 Drop，随后通过共用 interface 只执行一次移动。
             e.Action = DragAction.Cancel;
             e.Handled = true;
         }
         source.QueryContinueDrag += Continue;
+        source.GiveFeedback += Feedback;
         Runtime.Current.DraggingFiles = true;
         try
         {
@@ -87,7 +74,20 @@ internal static class FileDrag
             data.SetData("Preferred DropEffect", new MemoryStream(BitConverter.GetBytes(2)));
             _ = DragDrop.DoDragDrop(source, data, DragDropEffects.Move);
         }
-        finally { source.QueryContinueDrag -= Continue; Runtime.Current.DraggingFiles = false; }
+        finally
+        {
+            source.QueryContinueDrag -= Continue; source.GiveFeedback -= Feedback;
+            contents?.Feedback.Children.Clear();
+            Runtime.Current.DraggingFiles = false;
+        }
+        if (reorder && !escaped && released)
+        {
+            var result = await Runtime.Current.Workspace.ReorderContentsAsync(contents!.FolderId, paths, before);
+            Runtime.Current.Render();
+            if (!result.Succeeded) Runtime.Current.Balloon(result.Message);
+            return;
+        }
+        if (!escaped && target?.FolderId == contents?.FolderId && contents != null) return;
         if (escaped || !released) await Runtime.Current.MoveFilesAsync(paths, MoveTarget.Directory(""), cancelled: true);
         else if (target != null) await Runtime.Current.MoveFilesAsync(paths, target);
         else await Runtime.Current.MoveFilesAsync(paths, MoveTarget.Directory(""), targetError: error ?? "请选择桌面空白处、Folder 或资源管理器中的实际目录内容区。");

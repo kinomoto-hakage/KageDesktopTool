@@ -5,6 +5,8 @@ namespace Kage.Workspace;
 public enum ConflictChoice { Ask, KeepBoth, Skip, Cancel }
 public enum Outcome { Success, Conflict, Skipped, Cancelled, Failed, RecoveryRequired }
 public enum FolderDeleteChoice { KeepContents, Recycle, Cancel }
+public enum ContentSortKey { Name, Modified, Size, Custom }
+public sealed record ContentOrderItem(string Name, string? Identity = null);
 public sealed record OperationResult(Outcome Outcome, string Message, string? ActualPath = null)
 {
     public bool Succeeded => Outcome == Outcome.Success;
@@ -17,8 +19,15 @@ public sealed record FolderRecord([property: JsonRequired] Guid Id, [property: J
     [property: JsonRequired] double HeaderWidth = 300, [property: JsonRequired] double HeaderHeight = 48, [property: JsonRequired] double BodyHeight = 260,
     [property: JsonRequired] bool Expanded = false, [property: JsonRequired] bool Grid = true,
     [property: JsonRequired] string Color = "#666666", [property: JsonRequired] double Opacity = .68,
-    string? ContentRoot = null, bool LayoutHidden = false);
-public sealed record ContentEntry(string ActualPath, string Name, bool IsDirectory, long ModifiedTicks, long Length);
+    string? ContentRoot = null, bool LayoutHidden = false,
+    int ListIconSize = 16, int GridIconSize = 32, ContentSortKey SortKey = ContentSortKey.Name,
+    bool SortDescending = false, ContentOrderItem[]? CustomOrder = null);
+public sealed record ContentEntry(string ActualPath, string Name, bool IsDirectory, long? ModifiedTicks, long? Length,
+    string? Identity = null)
+{
+    public string DisplayName => !IsDirectory && Name.EndsWith(".lnk", StringComparison.OrdinalIgnoreCase)
+        ? Name[..^4] : Name;
+}
 public sealed record FolderSnapshot(FolderRecord Folder, string ActualPath, bool Visible, int? FileCount, string? Notice)
 {
     public IReadOnlyList<ContentEntry> Entries { get; init; } = [];
@@ -51,6 +60,9 @@ public interface IDesktopWorkspace
     LayoutInteraction? BeginLayout(Guid id);
     Task<OperationResult> CommitLayoutAsync(LayoutInteraction interaction);
     Task<OperationResult> SetViewAsync(Guid id, bool grid);
+    Task<OperationResult> SetContentViewAsync(Guid id, bool grid, int iconSize, ContentSortKey sortKey, bool descending);
+    Task<OperationResult> ReorderContentsAsync(Guid id, IReadOnlyList<string> selectedPaths, string? beforePath);
+    Task<OperationResult> RenameContentAsync(Guid id, string actualPath, string name);
     AppearanceInteraction? BeginAppearance(Guid id);
     Task<OperationResult> ApplyAppearanceAsync(AppearanceInteraction interaction);
     OperationResult CancelAppearance(AppearanceInteraction interaction);
@@ -65,6 +77,8 @@ public sealed record PendingStartup([property: JsonRequired] bool Enabled,
 public enum FolderChangeKind { Rename, KeepContents, Recycle }
 public sealed record PendingFolderChange([property: JsonRequired] Guid FolderId,
     [property: JsonRequired] FolderChangeKind Kind, [property: JsonRequired] string Destination);
+public sealed record PendingContentRename([property: JsonRequired] Guid FolderId, [property: JsonRequired] string SourceName,
+    [property: JsonRequired] string DestinationName, [property: JsonRequired] string Identity);
 public sealed record RetainedFolder([property: JsonRequired] Guid FolderId,
     [property: JsonRequired] string ContentPath, [property: JsonRequired] string ShortcutPath);
 public enum MigrationPhase { Planned, Moving, Moved, UpdatingShortcut, Completed, Restoring, Restored, RecoveryRequired }
@@ -94,6 +108,7 @@ public sealed record WorkspaceState
     public FolderRecord? PendingCreate { get; init; }
     public PendingStartup? PendingStartup { get; init; }
     public PendingFolderChange? PendingFolderChange { get; init; }
+    public PendingContentRename? PendingContentRename { get; init; }
     public RetainedFolder[] RetainedFolders { get; init; } = [];
     public PendingRootMigration? PendingRootMigration { get; init; }
 }

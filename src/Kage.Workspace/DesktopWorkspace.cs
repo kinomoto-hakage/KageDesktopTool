@@ -71,6 +71,7 @@ public sealed partial class DesktopWorkspace(IWorkspaceStore store, IStartupRegi
             return;
         }
         RecoverFolderChange();
+        RecoverContentRename();
         if (state.PendingCreate is { } pending)
         {
             var path = ContentPath(pending);
@@ -270,7 +271,29 @@ public sealed partial class DesktopWorkspace(IWorkspaceStore store, IStartupRegi
     public Task<OperationResult> RefreshAsync(IReadOnlyList<DisplayArea> areas) => Run(() =>
     {
         displays = areas.ToArray();
+        string? failure = null;
+        if (!blocked)
+        {
+            var next = state with { Folders = state.Folders.Select(folder =>
+            {
+                if (folder.CustomOrder == null) return folder;
+                try
+                {
+                    var order = ContentOrdering.Reconcile(ContentFiles.Read(ContentPath(folder)), folder.CustomOrder)
+                        .Select(entry => new ContentOrderItem(entry.Name, entry.Identity)).ToArray();
+                    return folder.CustomOrder.SequenceEqual(order) ? folder : folder with { CustomOrder = order };
+                }
+                catch (IOException) { return folder; }
+                catch (UnauthorizedAccessException) { return folder; }
+            }).ToArray() };
+            if (!next.Folders.SequenceEqual(state.Folders))
+            {
+                try { store.Save(next); state = next; }
+                catch (Exception e) { failure = $"内容顺序协调保存失败，原设置保留：{e.Message}"; }
+            }
+        }
         PlaceAndPublish(!blocked);
+        if (failure != null) return new(Outcome.Failed, failure);
         return new(blocked ? Outcome.RecoveryRequired : Outcome.Success, "显示状态已刷新。");
     });
 
@@ -346,6 +369,49 @@ public sealed partial class DesktopWorkspace(IWorkspaceStore store, IStartupRegi
         Publish();
         return new(Outcome.Success, grid ? "已切换网格。" : "已切换列表。");
     });
+
+    public Task<OperationResult> SetContentViewAsync(Guid id, bool grid, int iconSize, ContentSortKey sortKey, bool descending)
+        => Run(() =>
+        {
+            if (blocked) return Locked();
+            if (iconSize is not (16 or 32 or 48 or 96) || !Enum.IsDefined(sortKey))
+                return new(Outcome.Failed, "请选择有效的图标尺寸和排序方式。");
+            if (!state.Folders.Any(folder => folder.Id == id)) return new(Outcome.Failed, "Folder 不存在。");
+            var next = state with { Folders = state.Folders.Select(folder => folder.Id != id ? folder : folder with
+            {
+                Grid = grid, ListIconSize = grid ? folder.ListIconSize : iconSize,
+                GridIconSize = grid ? iconSize : folder.GridIconSize, SortKey = sortKey, SortDescending = descending
+            }).ToArray() };
+            store.Save(next);
+            state = next;
+            Publish();
+            return new(Outcome.Success, "查看方式与排序已保存。");
+        });
+    public Task<OperationResult> ReorderContentsAsync(Guid id, IReadOnlyList<string> selectedPaths, string? beforePath)
+        => Run(() =>
+        {
+            if (blocked) return Locked();
+            var folder = state.Folders.SingleOrDefault(folder => folder.Id == id);
+            if (folder == null) return new(Outcome.Failed, "Folder 不存在。");
+            var entries = ContentOrdering.Sort(ContentFiles.Read(ContentPath(folder)), folder);
+            var selected = selectedPaths.ToHashSet(StringComparer.OrdinalIgnoreCase);
+            if (selected.Count == 0 || !selected.All(path => entries.Any(entry => string.Equals(entry.ActualPath, path, StringComparison.OrdinalIgnoreCase)))
+                || beforePath != null && !entries.Any(entry => string.Equals(entry.ActualPath, beforePath, StringComparison.OrdinalIgnoreCase)))
+                return new(Outcome.Failed, "拖动项目已变化，请刷新后重试。");
+            if (beforePath != null && selected.Contains(beforePath)) return new(Outcome.Success, "顺序未改变。");
+            var moving = entries.Where(entry => selected.Contains(entry.ActualPath)).ToArray();
+            var reordered = entries.Where(entry => !selected.Contains(entry.ActualPath)).ToList();
+            var index = beforePath == null ? reordered.Count : reordered.FindIndex(entry => string.Equals(entry.ActualPath, beforePath, StringComparison.OrdinalIgnoreCase));
+            reordered.InsertRange(index, moving);
+            if (entries.SequenceEqual(reordered)) return new(Outcome.Success, "顺序未改变。");
+            var changed = folder with { SortKey = ContentSortKey.Custom,
+                CustomOrder = reordered.Select(entry => new ContentOrderItem(entry.Name, entry.Identity)).ToArray() };
+            var next = state with { Folders = state.Folders.Select(item => item.Id == id ? changed : item).ToArray() };
+            store.Save(next);
+            state = next;
+            Publish();
+            return new(Outcome.Success, "自定义顺序已保存。");
+        });
 
     public Task<OperationResult> SetIconAsync(string choice) => Run(() =>
     {
@@ -442,18 +508,13 @@ public sealed partial class DesktopWorkspace(IWorkspaceStore store, IStartupRegi
             try
             {
                 if (!readable) throw new IOException("尚无已确认归属的内容位置，暂停枚举。");
-                foreach (var info in new DirectoryInfo(path).EnumerateFileSystemInfos())
-                {
-                    if (WindowsPaths.IsIdentityFile(info.FullName)) continue;
-                    entries.Add(new(info.FullName, info.Name, (info.Attributes & FileAttributes.Directory) != 0,
-                        info.LastWriteTimeUtc.Ticks, info is FileInfo file ? file.Length : 0));
-                }
+                entries.AddRange(ContentFiles.Read(path));
                 count = entries.Count(entry => !entry.IsDirectory);
             }
             catch (Exception e) { notice = $"{notice}\n内容目录不可读或枚举未完成：{path}。{e.Message}".Trim(); }
             rendered.Add(new(folder, path, area != null, count, notice)
             {
-                Entries = entries.OrderBy(entry => entry.Name, StringComparer.OrdinalIgnoreCase).ToArray(),
+                Entries = ContentOrdering.Sort(entries, folder),
                 DisplayScale = area?.Scale ?? 1
             });
         }
@@ -463,6 +524,7 @@ public sealed partial class DesktopWorkspace(IWorkspaceStore store, IStartupRegi
         try { WindowsPaths.CheckRoot(state.Root, false); }
         catch (Exception e) { messages.Add($"存储根目录不可用：{e.Message}。请明确选择可用目录；已有 Folder 关联将保留。"); }
         if (state.PendingCreate is { } pending) messages.Add($"待恢复创建：{Path.Combine(state.Root, pending.Name)}，稳定标识 {pending.Id}");
+        if (state.PendingContentRename is { } rename) messages.Add($"待协调内容改名：{rename.SourceName} → {rename.DestinationName}；稳定文件身份 {rename.Identity}。请核对实际项目后重启。");
         if (state.PendingRootMigration != null)
             messages.Add($"迁移清单已按实际位置核对：{recovery.Count(item => !item.Restored)} 项尚未恢复。查看下方原位置、迁移位置和实际快捷方式目标。");
         snapshot = new(state.Root, state.StartupEnabled, state.IconChoice, rendered.AsReadOnly(), blocked, messages.AsReadOnly())

@@ -123,14 +123,14 @@ internal static class ContentLayoutChecks
                 Check(ended.Left == ignored.Left && ended.Top == ignored.Top, "丢失鼠标捕获结束拖动并忽略后续轨迹");
 
                 var linkItem = list.Items.Cast<ListBoxItem>().Single(item => (string)item.Tag == link);
-                list.RaiseEvent(new MouseButtonEventArgs(Mouse.PrimaryDevice, Environment.TickCount, MouseButton.Left) { RoutedEvent = Control.MouseDoubleClickEvent, Source = linkItem });
+                Runtime.Open((string)linkItem.Tag);
                 await WaitUntil(() => File.Exists(marker));
-                Check(File.ReadAllText(marker).Contains("Windows Shell", StringComparison.Ordinal), "真实双击快捷方式经系统默认 Shell 打开正确目标");
+                Check(File.ReadAllText(marker).Contains("Windows Shell", StringComparison.Ordinal), "Shell 路径打开快捷方式目标；真实双击另由 content-input-check 覆盖");
                 var directoryItem = list.Items.Cast<ListBoxItem>().Single(item => (string)item.Tag == Path.Combine(path, "普通子文件夹"));
                 list.SelectedItem = directoryItem;
-                list.RaiseEvent(new MouseButtonEventArgs(Mouse.PrimaryDevice, Environment.TickCount, MouseButton.Left) { RoutedEvent = Control.MouseDoubleClickEvent, Source = directoryItem });
+                Runtime.Open((string)directoryItem.Tag);
                 await WaitUntil(() => CloseFixtureExplorer((string)directoryItem.Tag, log));
-                Check(true, "双击普通子文件夹在资源管理器打开真实路径，检查后关闭该夹具窗口");
+                Check(true, "Shell 路径在资源管理器打开真实子目录，检查后关闭该夹具窗口");
                 File.Move(Path.Combine(path, "短.txt"), Path.Combine(path, "外部重命名.txt"));
                 File.Delete(Path.Combine(path, "图片.png"));
                 File.WriteAllText(Path.Combine(path, "外部新增.txt"), "新增");

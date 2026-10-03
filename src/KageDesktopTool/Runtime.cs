@@ -50,6 +50,7 @@ internal sealed class Runtime : IDisposable
     private DisplayArea[] displayEnvironment = WindowsDesktop.Displays();
     private LayoutInteraction? activeInteraction;
     internal bool Interacting => activeInteraction != null;
+    internal bool ContentInputActive => Headers.Values.Any(header => header.Contents.InputActive);
     internal bool DraggingFiles { get; set; }
     internal bool Moving => moveDialog != null || DraggingFiles || Migrating;
     private RootMigrationDialog? rootMigration;
@@ -130,7 +131,7 @@ internal sealed class Runtime : IDisposable
 
     internal async Task RefreshDisplayEnvironmentAsync()
     {
-        if (refreshing || Exiting || Moving || ChangingFolder) return;
+        if (refreshing || Exiting || Moving || ChangingFolder || ContentInputActive) return;
         var displays = WindowsDesktop.Displays();
         var changed = displayRefreshPending || !displayEnvironment.SequenceEqual(displays);
         if (Interacting)
@@ -208,7 +209,7 @@ internal sealed class Runtime : IDisposable
                 taskbarRestarted = false;
             }
             // 不在文件移动、迁移或鼠标捕获期间重新挂接窗口。
-            if (Interacting || Moving || ChangingFolder || refreshing) return;
+            if (Interacting || Moving || ChangingFolder || refreshing || ContentInputActive) return;
             if (!DesktopAvailable || reportedAvailability != DesktopAvailable) Render();
             var available = DesktopAvailable;
             if (reportedAvailability == available) return;
