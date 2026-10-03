@@ -12,6 +12,8 @@ public static class Program
     public static int Main(string[] args)
     {
         if (args.Contains("--session-check")) return SessionChecks.Run();
+        if (args.Contains("--desktop-recovery-check")) return DesktopRecoveryChecks.Run();
+        if (args.Contains("--manual-desktop-check")) return ManualDesktopChecks.Run();
         if (args.Contains("--content-layout-check")) return ContentLayoutChecks.Run();
         if (args.Contains("--appearance-check")) return AppearanceChecks.Run();
         if (args.Contains("--file-move-check")) return FileMoveChecks.Run();

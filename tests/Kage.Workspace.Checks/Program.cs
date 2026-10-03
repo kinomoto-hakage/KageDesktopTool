@@ -46,7 +46,9 @@ var tests = new (string Name, Func<Task> Run)[]
     ("中断迁移按真实路径及断开链接核对", MigrationRecoveryChecks.ObserveActualPaths),
     ("中断迁移真实进程退出及重复恢复", MigrationRecoveryChecks.ProcessInterruptions),
     ("中断迁移逐项失败及配置保存后重试", MigrationRecoveryChecks.RetryFailures),
-    ("中断迁移不同字节及归属冲突保留证据", MigrationRecoveryChecks.ConflictingContents)
+    ("中断迁移不同字节及归属冲突保留证据", MigrationRecoveryChecks.ConflictingContents),
+    ("桌面会话不可用保留内容及恢复状态", DesktopSessionChecks.Availability),
+    ("桌面会话恢复不打断或重复文件移动", DesktopSessionChecks.DuringMove)
 };
 var failures = 0;
 var selected = tests.Where(t => args.Length == 0 || t.Name.Contains(args[0], StringComparison.Ordinal)).ToArray();

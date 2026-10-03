@@ -9,10 +9,19 @@ public sealed partial class DesktopWorkspace(IWorkspaceStore store, IStartupRegi
     private DisplayArea[] displays = [];
     private bool blocked = true;
     private bool backupRestore;
+    private bool desktopAvailable;
     private readonly List<string> notices = [];
     private string? startupNotice;
     private volatile WorkspaceSnapshot snapshot = new(@"D:\KageFiles\", false, "d", [], true, []);
     public WorkspaceSnapshot Snapshot => snapshot;
+
+    // 会话展示状态不写入配置，也不触发文件恢复；重启须重新核对宿主。
+    public Task<OperationResult> ReportDesktopAvailabilityAsync(bool available) => Run(() =>
+    {
+        desktopAvailable = available;
+        snapshot = snapshot with { DesktopAvailable = available };
+        return new(Outcome.Success, available ? "桌面展示已恢复。" : "桌面展示暂不可用；内容及配置保留，可从设置打开实际目录。");
+    });
 
     private async Task<OperationResult> Run(Func<OperationResult> operation)
     {
@@ -448,6 +457,6 @@ public sealed partial class DesktopWorkspace(IWorkspaceStore store, IStartupRegi
         if (state.PendingRootMigration != null)
             messages.Add($"迁移清单已按实际位置核对：{recovery.Count(item => !item.Restored)} 项尚未恢复。查看下方原位置、迁移位置和实际快捷方式目标。");
         snapshot = new(state.Root, state.StartupEnabled, state.IconChoice, rendered.AsReadOnly(), blocked, messages.AsReadOnly())
-            { RootMigration = state.PendingRootMigration, MigrationRecovery = Array.AsReadOnly(recovery) };
+            { DesktopAvailable = desktopAvailable, RootMigration = state.PendingRootMigration, MigrationRecovery = Array.AsReadOnly(recovery) };
     }
 }

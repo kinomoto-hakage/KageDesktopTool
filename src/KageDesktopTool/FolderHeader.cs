@@ -111,7 +111,7 @@ internal sealed class FolderHeader : Window
         Menu(menu, "设置", () => Runtime.Current.ShowSettings());
         ContextMenu = menu;
         SourceInitialized += (_, _) => Attach();
-        Closed += (_, _) => { closed = true; interaction?.EndDrag(); Contents.Dispose(); };
+        Closed += async (_, _) => { closed = true; Contents.Dispose(); await EndInteractionAsync(); };
         Update(folder);
     }
 
@@ -166,12 +166,14 @@ internal sealed class FolderHeader : Window
 
     internal void Attach()
     {
-        Host = WindowsDesktop.Host();
-        if (Host == IntPtr.Zero) return;
-        var style = WindowsDesktop.GetWindowLongPtr(Handle, -16).ToInt64();
-        WindowsDesktop.SetWindowLongPtr(Handle, -16, new IntPtr((style & ~0x80000000L) | 0x40000000L));
-        WindowsDesktop.SetParent(Handle, Host);
-        if (WindowsDesktop.GetParent(Handle) != Host) Host = IntPtr.Zero;
+        var previous = Host;
+        Host = WindowsDesktop.Attach(Handle);
+        if (Host != IntPtr.Zero && previous != Host)
+        {
+            // 重新挂接后通过 WPF 重新登记 OLE 接收，不重复订阅输入事件。
+            AllowDrop = false;
+            AllowDrop = true;
+        }
     }
 
     internal void Update(FolderSnapshot folder)
@@ -197,12 +199,12 @@ internal sealed class FolderHeader : Window
         Contents.Visibility = Record.Expanded ? Visibility.Visible : Visibility.Collapsed;
         expand.Content = Record.Expanded ? "▴" : "▾";
         if (Handle == IntPtr.Zero) return;
-        if (!WindowsDesktop.IsWindow(Host)) Attach();
+        if (!WindowsDesktop.Attached(Handle, Host)) Attach();
         if (!folder.Visible || Host == IntPtr.Zero) { Hide(); return; }
-        var point = new WindowsDesktop.POINT { X = Record.X, Y = Record.Y };
-        WindowsDesktop.ScreenToClient(Host, ref point);
         Show();
-        WindowsDesktop.SetWindowPos(Handle, IntPtr.Zero, point.X, point.Y, (int)Math.Ceiling(Width * displayScale), (int)Math.Ceiling(Height * displayScale), 0x10 | 0x40);
+        if (!WindowsDesktop.Position(Handle, Host, Record.X, Record.Y,
+            (int)Math.Ceiling(Width * displayScale), (int)Math.Ceiling(Height * displayScale)))
+        { Host = IntPtr.Zero; Hide(); }
     }
 
     internal void ApplyStyle(string value, double opacity)

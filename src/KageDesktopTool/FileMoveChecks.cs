@@ -246,7 +246,7 @@ internal static class FileMoveChecks
     private static Point Center(Rect rectangle) => new(rectangle.Left + rectangle.Width / 2, rectangle.Top + rectangle.Height / 2);
     private static AutomationElement? FindItem(AutomationElement root, params string[] names) => root.FindAll(TreeScope.Descendants, new PropertyCondition(AutomationElement.ControlTypeProperty, ControlType.ListItem)).Cast<AutomationElement>().FirstOrDefault(item => names.Contains(item.Current.Name));
     private static AutomationElement? ShellItem(IntPtr window, string name) => FindItem(AutomationElement.FromHandle(window), name, Path.GetFileNameWithoutExtension(name));
-    private static Point ExplorerBackground(IntPtr window)
+    internal static Point ExplorerBackground(IntPtr window)
     {
         var list = AutomationElement.FromHandle(window).FindFirst(TreeScope.Descendants, new PropertyCondition(AutomationElement.ControlTypeProperty, ControlType.List));
         if (list == null) throw new Exception("Explorer 内容视图未找到。");
@@ -264,7 +264,7 @@ internal static class FileMoveChecks
         }
         throw new Exception("未找到桌面空白位置。");
     }
-    private static async Task PhysicalDrag(Point source, Point destination, bool escape = false)
+    internal static async Task PhysicalDrag(Point source, Point destination, bool escape = false)
     {
         SetCursorPos((int)source.X, (int)source.Y);
         mouse_event(2, 0, 0, 0, UIntPtr.Zero);
@@ -293,8 +293,8 @@ internal static class FileMoveChecks
         while (DateTime.UtcNow < deadline) { if (condition()) return; await Task.Delay(100); }
         throw new TimeoutException("真实拖放未在时限内完成。");
     }
-    private static IntPtr ExplorerWindow(string path) => WithExplorer(path, browser => new IntPtr((long)browser.HWND));
-    private static void SelectShellItems(string path, string[] names) => WithExplorer(path, browser =>
+    internal static IntPtr ExplorerWindow(string path) => WithExplorer(path, browser => new IntPtr((long)browser.HWND));
+    internal static void SelectShellItems(string path, string[] names) => WithExplorer(path, browser =>
     {
         dynamic document = browser.Document;
         dynamic folder = document.Folder;
@@ -336,7 +336,7 @@ internal static class FileMoveChecks
         try { shortcut.TargetPath = target; shortcut.Save(); }
         finally { Marshal.FinalReleaseComObject(shortcut); Marshal.FinalReleaseComObject(shell); }
     }
-    private static void DesktopVisibility(bool minimize)
+    internal static void DesktopVisibility(bool minimize)
     {
         dynamic shell = Activator.CreateInstance(Type.GetTypeFromProgID("Shell.Application")!)!;
         try { if (minimize) shell.MinimizeAll(); else shell.UndoMinimizeAll(); }

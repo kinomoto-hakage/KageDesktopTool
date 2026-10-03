@@ -1,7 +1,7 @@
 # 11: 显示桌面及 Explorer 重启后恢复操作
 
 Type: implementation
-Status: ready-for-agent
+Status: claimed
 Labels: ready-for-agent
 Approved: 2026-10-02
 Plan: ../ticket-plan.md
@@ -35,3 +35,4 @@ User stories: 62, 65, 66, 68, 69
 ## Comments
 
 - 用户已认可合并方案、阻塞关系及本票验收标准，已正式发布。
+- 2026-10-03：用户调用 implement 开始本票；05、07 均为 resolved。沿用已认可的 IDesktopWorkspace 与真实 Windows 会话验收边界；复核基点为 9c68ff91。

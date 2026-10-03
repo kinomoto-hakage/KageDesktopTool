@@ -21,9 +21,10 @@ internal sealed class Runtime : IDisposable
     internal static BitmapImage ApplicationIcon => Current?.applicationIcon ?? IconChoices.Image("d");
     internal IDesktopWorkspace Workspace { get; }
     internal Dictionary<Guid, FolderHeader> Headers { get; } = new();
-    internal bool DesktopAvailable => Headers.Values.All(h => h.Host != IntPtr.Zero);
+    internal bool DesktopAvailable => WindowsDesktop.Host() != IntPtr.Zero
+        && Headers.Values.All(h => WindowsDesktop.Attached(h.Handle, h.Host));
     internal string SessionStatus => (HotkeyRegistered ? "Ctrl+Alt+K 已启用。" : "Ctrl+Alt+K 注册失败，可能被占用；可从托盘创建。")
-        + (DesktopAvailable ? "" : "\n桌面宿主不可用，暂不展示头部；可以在设置中打开实际内容目录。");
+        + (DesktopAvailable ? "" : "\n桌面展示暂不可用，头部和展示部分等待恢复；内容及配置保留，可在设置中打开实际目录。");
     internal Window Controller { get; }
     internal bool HotkeyRegistered { get; }
     internal Forms.NotifyIcon Tray { get; }
@@ -41,6 +42,9 @@ internal sealed class Runtime : IDisposable
     private bool creating;
     private bool exiting;
     private bool disposed;
+    private bool sessionRefreshing;
+    private bool taskbarRestarted;
+    private bool? reportedAvailability;
     private LayoutInteraction? activeInteraction;
     internal bool Interacting => activeInteraction != null;
     internal bool DraggingFiles { get; set; }
@@ -64,6 +68,11 @@ internal sealed class Runtime : IDisposable
         hook = (IntPtr hwnd, int message, IntPtr wp, IntPtr lp, ref bool handled) =>
         {
             if (message == 0x312 && wp.ToInt32() == 1) { _ = CreateAsync(); handled = true; }
+            if (message == WindowsDesktop.TaskbarCreated)
+            {
+                taskbarRestarted = true;
+                Dispatch(async () => await RefreshDesktopSessionAsync());
+            }
             return IntPtr.Zero;
         };
         source.AddHook(hook);
@@ -88,6 +97,7 @@ internal sealed class Runtime : IDisposable
         refresh = new DispatcherTimer { Interval = TimeSpan.FromSeconds(3) };
         refresh.Tick += async (_, _) =>
         {
+            await RefreshDesktopSessionAsync();
             if (refreshing || exiting || Interacting || Moving || ChangingFolder) return;
             refreshing = true;
             try
@@ -100,6 +110,7 @@ internal sealed class Runtime : IDisposable
         };
         refresh.Start();
         Render();
+        _ = RefreshDesktopSessionAsync();
         if (!HotkeyRegistered) Balloon("Ctrl+Alt+K 注册失败，可能被其他程序占用；仍可从托盘创建 Folder。");
     }
 
@@ -128,6 +139,12 @@ internal sealed class Runtime : IDisposable
         }
         foreach (var folder in snapshot.Folders)
         {
+            // Explorer 退出可销毁跨进程子窗口；失效 HWND 必须重建 WPF 窗口。
+            if (Headers.TryGetValue(folder.Folder.Id, out var lost) && !WindowsDesktop.IsWindow(lost.Handle))
+            {
+                lost.Close();
+                Headers.Remove(folder.Folder.Id);
+            }
             if (!Headers.TryGetValue(folder.Folder.Id, out var header))
             {
                 header = new FolderHeader(folder);
@@ -138,6 +155,35 @@ internal sealed class Runtime : IDisposable
         }
         if (appearance != null && !appearance.Interaction.Closed) PreviewAppearance(appearance.Interaction);
         settings?.Refresh();
+    }
+
+    internal async Task RefreshDesktopSessionAsync()
+    {
+        if (Exiting || sessionRefreshing) return;
+        sessionRefreshing = true;
+        try
+        {
+            if (taskbarRestarted)
+            {
+                // 复用同一个 NotifyIcon 和菜单；控制器热键无需重新注册。
+                Tray.Visible = false;
+                Tray.Icon = trayIcon;
+                Tray.Visible = true;
+                taskbarRestarted = false;
+            }
+            // 不在文件移动、迁移或鼠标捕获期间重新挂接窗口。
+            if (Interacting || Moving || ChangingFolder || refreshing) return;
+            if (!DesktopAvailable || reportedAvailability != DesktopAvailable) Render();
+            var available = DesktopAvailable;
+            if (reportedAvailability == available) return;
+            var previous = reportedAvailability;
+            var result = await Workspace.ReportDesktopAvailabilityAsync(available);
+            if (Exiting) return;
+            reportedAvailability = available;
+            settings?.Refresh();
+            if (!available || previous == false) Balloon(result.Message);
+        }
+        finally { sessionRefreshing = false; }
     }
 
     private void ApplyIcons(string key)

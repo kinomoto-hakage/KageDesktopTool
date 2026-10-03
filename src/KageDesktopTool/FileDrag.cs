@@ -2,10 +2,8 @@ using System;
 using System.IO;
 using System.Linq;
 using System.Runtime.InteropServices;
-using System.Text;
 using System.Threading.Tasks;
 using System.Windows;
-using System.Windows.Automation;
 using System.Windows.Controls;
 using System.Windows.Input;
 using Kage.Workspace;
@@ -101,60 +99,8 @@ internal static class FileDrag
         var window = WindowsDesktop.WindowFromPoint(point);
         foreach (var header in Runtime.Current.Headers.Values)
             if (window == header.Handle || WindowsDesktop.IsChild(header.Handle, window)) return MoveTarget.Folder(header.FolderId);
-        // 只认原生内容视图，排除地址栏、导航树和其他应用窗口。
-        var inView = false;
-        for (var current = window; current != IntPtr.Zero; current = WindowsDesktop.GetParent(current))
-        {
-            var name = new StringBuilder(256);
-            GetClassName(current, name, name.Capacity);
-            if (name.ToString() == "SHELLDLL_DefView") { inView = true; break; }
-        }
-        if (!inView) return null;
-        var element = AutomationElement.FromPoint(new Point(point.X, point.Y));
-        string? directoryName = null;
-        for (var current = element; current != null; current = TreeWalker.ControlViewWalker.GetParent(current))
-        {
-            if (current.Current.ControlType == ControlType.ListItem) { directoryName = current.Current.Name; break; }
-            if (current.Current.ControlType == ControlType.List) break;
-        }
-        var host = WindowsDesktop.Host();
-        if (window == host || WindowsDesktop.IsChild(host, window))
-        {
-            if (directoryName == null) return MoveTarget.Desktop;
-            var desktopItem = Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.DesktopDirectory), directoryName);
-            return Directory.Exists(desktopItem) ? MoveTarget.Directory(desktopItem) : null;
-        }
-        dynamic shell = Activator.CreateInstance(Type.GetTypeFromProgID("Shell.Application")!)!;
-        dynamic windows = shell.Windows();
-        try
-        {
-            for (var i = 0; i < (int)windows.Count; i++)
-            {
-                dynamic browser = windows.Item(i);
-                if (browser == null) continue;
-                try
-                {
-                    var handle = new IntPtr((long)browser.HWND);
-                    if (window != handle && !WindowsDesktop.IsChild(handle, window)) continue;
-                    dynamic document = browser.Document;
-                    dynamic folder = document.Folder;
-                    dynamic self = folder.Self;
-                    try
-                    {
-                        string actual = self.Path;
-                        if (directoryName != null) actual = Path.Combine(actual, directoryName);
-                        if (Path.IsPathFullyQualified(actual) && Directory.Exists(actual)) return MoveTarget.Directory(actual);
-                        throw new IOException("资源管理器目标不是可用的实际目录；请选择明确的文件系统目录。");
-                    }
-                    finally { Marshal.FinalReleaseComObject(self); Marshal.FinalReleaseComObject(folder); Marshal.FinalReleaseComObject(document); }
-                }
-                finally { Marshal.FinalReleaseComObject(browser); }
-            }
-        }
-        finally { Marshal.FinalReleaseComObject(windows); Marshal.FinalReleaseComObject(shell); }
-        return null;
+        return WindowsDesktop.ContentTargetAt(point);
     }
 
     [DllImport("user32.dll")] internal static extern bool GetCursorPos(out WindowsDesktop.POINT point);
-    [DllImport("user32.dll", CharSet = CharSet.Unicode)] private static extern int GetClassName(IntPtr window, StringBuilder name, int capacity);
 }

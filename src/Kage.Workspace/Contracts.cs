@@ -26,6 +26,7 @@ public sealed record FolderSnapshot(FolderRecord Folder, string ActualPath, bool
 public sealed record WorkspaceSnapshot(string Root, bool StartupEnabled, string IconChoice,
     IReadOnlyList<FolderSnapshot> Folders, bool RecoveryRequired, IReadOnlyList<string> Notices)
 {
+    public bool DesktopAvailable { get; init; }
     public PendingRootMigration? RootMigration { get; init; }
     public IReadOnlyList<MigrationRecoveryItem> MigrationRecovery { get; init; } = [];
 }
@@ -44,6 +45,7 @@ public interface IDesktopWorkspace
     Task<OperationResult> RestoreBackupAsync();
     Task<OperationResult> ConfirmPendingCreateAsync();
     Task<OperationResult> RefreshAsync(IReadOnlyList<DisplayArea> displays);
+    Task<OperationResult> ReportDesktopAvailabilityAsync(bool available);
     Task<OperationResult> ToggleFolderAsync(Guid id);
     LayoutInteraction? BeginLayout(Guid id);
     Task<OperationResult> CommitLayoutAsync(LayoutInteraction interaction);
