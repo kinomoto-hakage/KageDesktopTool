@@ -103,8 +103,14 @@ internal static class ContentInputChecks
                     var preparedLabels = MenuLabels();
                     Require(preparedLabels.Any(label => label.Contains("属性", StringComparison.Ordinal))
                         && preparedLabels.Any(label => label.Contains("删除", StringComparison.Ordinal)), "重复右键保留真实系统属性和删除命令");
+                    ShellIcons.Invalidate();
+                    await Task.Delay(200);
                     ShellContextMenu.CancelPending();
                     await WaitUntil(() => !contents.InputActive);
+                    await FolderRight(Item(link));
+                    File.AppendAllText(log, $"菜单显示期间系统失效后构建：{ShellContextMenu.LastBuildLatency} ms。\n");
+                    Require(ShellContextMenu.LastBuildLatency > 1000, "显示期间系统缓存失效后取消不重新留存旧菜单");
+                    ShellContextMenu.CancelPending(); await WaitUntil(() => !contents.InputActive);
                     // 用真实文件变化验证不能沿用此前的命令状态。
                     var outside = header.HeaderInput.PointToScreen(new Point(60, 20));
                     File.SetLastWriteTimeUtc(link, DateTime.UtcNow.AddSeconds(1));

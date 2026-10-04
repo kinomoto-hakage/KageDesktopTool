@@ -19,6 +19,7 @@ internal static class ShellContextMenu
     private static CancellationTokenSource? currentRequest;
     private static int showing;
     private static int cancellationRequestId;
+    private static int invalidationGeneration;
     private const int CancelMenuMessage = 0x8000 + 42;
     private static IntPtr ownerWindow;
     private static IntPtr activeMenu;
@@ -31,6 +32,7 @@ internal static class ShellContextMenu
 
     internal static void InvalidatePrepared()
     {
+        Interlocked.Increment(ref invalidationGeneration);
         if (worker.IsValueCreated) _ = worker.Value.ClearPreparedAsync();
     }
 
@@ -242,6 +244,7 @@ internal static class ShellContextMenu
         private readonly string[] paths;
         private readonly bool shift;
         private readonly uint clipboard;
+        private readonly int generation;
         private readonly FileStamp[] stamps;
         internal readonly IntPtr[] Pidls;
         internal IShellFolder? Folder;
@@ -252,6 +255,7 @@ internal static class ShellContextMenu
         internal PreparedMenu(string[] paths, bool shift)
         {
             this.paths = paths; this.shift = shift;
+            generation = Volatile.Read(ref invalidationGeneration);
             clipboard = GetClipboardSequenceNumber();
             stamps = paths.Select(FileStamp.Read).ToArray();
             Pidls = new IntPtr[paths.Length];
@@ -259,7 +263,8 @@ internal static class ShellContextMenu
 
         internal bool Matches(string[] current, bool extended)
         {
-            if (extended != shift || !paths.SequenceEqual(current, StringComparer.OrdinalIgnoreCase)
+            if (generation != Volatile.Read(ref invalidationGeneration)
+                || extended != shift || !paths.SequenceEqual(current, StringComparer.OrdinalIgnoreCase)
                 || clipboard != GetClipboardSequenceNumber() || Stopwatch.GetElapsedTime(Completed).TotalSeconds > 5) return false;
             try { return stamps.SequenceEqual(current.Select(FileStamp.Read)); }
             catch (Exception e) when (e is IOException or UnauthorizedAccessException) { return false; }
