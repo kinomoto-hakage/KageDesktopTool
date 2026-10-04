@@ -58,3 +58,7 @@ Kage 产品菜单逻辑没有因这个系统修复而裁剪命令。既有菜单
 ## Spec
 
 最终剩余发现0。独立定位具体处理器，系统范围和项目关系明确；仅单组件可恢复隔离，现代菜单入口变化已明确，主软件／经典入口保留，真实三处前后对比符合要求。
+
+## 用户验收与票据状态
+
+2026-10-04 用户确认“OK，问题已解决，检查更新对应票据”。[系统菜单故障票据](../../.scratch/windows-shell-latency/issues/01-lnk-context-menu.md) 与 [任务 01：Folder 内容展示与文件交互](../../.scratch/desktop-tool-upgrade/issues/01-content-and-file-interaction.md) 均为 `resolved`，已同步最终结果及用户确认。任务 01 早期首次等待 3–4 秒的记录保留为系统修复前的历史数据，不再作为本机当前未解决项。
