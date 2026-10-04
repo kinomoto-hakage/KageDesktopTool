@@ -52,4 +52,14 @@ rtk proxy python -c "import subprocess; raise SystemExit(subprocess.run(['src/Ka
 
 继续此路线前需要用户明确批准这项具体实验。批准只解决是否允许验证的问题，并不代表现代菜单功能已完成；仍必须验证真正可见的原生命令、目标选择、原地位置、系统设置及生命周期。
 
+较安全的替代验证 `--broker-self-check` 已通过：DLL 只在探针自身进程加载，不注册组件或调用 Explorer；核对 PID、正常反序列化、拒绝构建菜单及文件命令、拒绝目录穿越／奇数字节／超界长度，并在释放全部 COM 引用后允许模块卸载。两项目及桥接 DLL 编译无警告、无错误。该通过不能替代 Explorer 桥接或现代菜单验收。
+
+### Standards
+
+固定点 `1951fc1ee10159ecf35d0ead81b8a22421cbaeb4`，检查点 `ae6c570`；另只读审查待审批的实验源码。规范轴未发现明确规范违例或可行动 heuristic；默认接口查询与桥接注册分支的注释歧义已澄清，剩余发现 0。
+
+### Spec
+
+初审指出 COM 释放异常可能跳过注册清理、检查已有注册只覆盖 HKCU。已修正为 HKCR 合并视图及 HKCU 初查，逐项记录 COM 释放异常，注册删除与原始接口表释放采用独立 `finally`；仍有 COM 引用时保留原始表至进程退出，避免提前释放。规格轴复核剩余发现 0。审查结论仅涉及检查点状态与诊断实验范围，完整原地现代菜单仍未完成。
+
 依据：[IContextMenu](https://learn.microsoft.com/en-us/windows/win32/api/shobjidl_core/nn-shobjidl_core-icontextmenu)、[微软 Windows 11 菜单扩展说明](https://blogs.windows.com/windowsdeveloper/2021/07/19/extending-the-context-menu-and-share-dialog-in-windows-11/)、[IContextMenuSite](https://learn.microsoft.com/en-us/windows/win32/api/shobjidl_core/nn-shobjidl_core-icontextmenusite)。可见行为结论来自本机隔离实验，公开资料并未保证独立进程可以展示完整现代菜单。
