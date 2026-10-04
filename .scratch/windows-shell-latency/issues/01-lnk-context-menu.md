@@ -1,7 +1,7 @@
 # 01：Windows 快捷方式原生菜单数秒等待
 
 Type: task
-Status: claimed
+Status: resolved
 Approved: 2026-10-04
 Blocked by: None
 
@@ -23,3 +23,11 @@ Blocked by: None
 - 根因已锁定 AISTONE 的 PCAppStoreExt 现代卸载组件，CLSID `{24615B2E-CF96-48DA-B77B-B2602608A357}`，其 GetState 无论是否允许慢计算均等待约3000ms。其他现代扩展约0–5ms，旧式强力卸载扩展本身快。
 - 独立完整菜单旧式阻止对比4018→685→恢复3663ms，但旧式阻止未解决实际现代Explorer，已撤回该单值设置。最终仅撤销当前用户的381KB sparse现代卸载菜单包注册；保留主软件、经典强力卸载与其他扩展。原MSIX与组件数据备份，原外部位置恢复已实际验证成功；恢复后4003ms，再应用后快。
 - 真实输入最终通过：Explorer现代695ms／传统193ms，桌面现代249ms／传统131ms，原经典命令集合保留。Kage实际MSI首次651ms、重复8ms，界面最大停顿46ms。产品逻辑没有裁剪命令，失效检查改高精度计时而非要求系统仍慢。最终工具复核与完整回归进行中。
+
+## Answer
+
+已完成系统级根因定位并应用精确隔离：仅当前用户的 PCAppStoreExt 现代卸载菜单组件不再注册，主软件、经典强力卸载和其他菜单保留。现代菜单该一项不再出现，功能可从传统更多选项进入。Windows 11 与 Kage 共同加载此扩展而受影响，不是 Kage 导致的三秒等待；不推断所有 Windows 11 均有此问题。
+
+最终桌面／Explorer 实际鼠标现代与传统检查通过；现有自包含 Kage 试用 EXE 首次914ms、重复8ms、UI最大停顿39ms，无需为系统修复更换EXE。正式 Runtime 失效／Shift／过期／原地／Esc／无红叉检查通过，58组完整业务回归通过。Restore与再次Apply实际成功，损坏数据哈希在恢复前准确拒绝且组件保持停用。复审识别的安装包身份与可重试数据恢复均修正；Standards/Spec剩余发现0。
+
+工具与恢复说明见 [验收报告](../../../docs/verification/windows-lnk-menu-delay.md)。最终状态为修复生效，原签名安装包及组件设置备份保留在忽略目录，不提交 Git。
