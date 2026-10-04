@@ -33,6 +33,18 @@ rtk proxy python -c "import subprocess; raise SystemExit(subprocess.run(['src/Ka
 - 真实右键准备期间 Esc 的新增检查先失败后通过；取消保留当前多项选择，业务刷新完成后再次右键正常弹出。菜单宿主无标题栏／零尺寸断言通过。
 - 完整 **58 组**业务回归通过，原有图标资源和 48／32 默认尺寸保持已有实现。
 
-日志位于忽略目录 `.scratch/desktop-folder/verification/`。发布包和审查结论在最终验收后补充。
+日志位于忽略目录 `.scratch/desktop-folder/verification/`。
 
 审查修正：菜单准备时的实际 Esc 入口原先只结束框选并恢复旧选择，现改为取消菜单请求并保持当前选择；右键命中时明确聚焦内容输入。票据中的现代菜单待审批文字已标记为停止路线的历史记录，不再续请求。
+
+## 最终完整包
+
+自包含 `win-x64` 包：`releases/任务01 原地传统菜单修复/`。最终发布 EXE 的 `--publish-check`、`--content-input-check --menu-placement-only`、`--content-input-check`、`--shell-image-check`、`--shell-diagnostics-check --cancel-only` 串行退出 0。原地检查覆盖准备期间真实 Esc、当前多选保持、取消后再次右键、无标题栏／零尺寸及实际位置。保留前一发布包，用户试用时先从托盘退出旧进程，再运行新完整目录的 EXE。
+
+### Standards
+
+固定基线 `d71e170c7d62dbd2b6fabf92ef4f0462a1ab17ad`。初审指出实际准备期间 Esc 没有取消请求，已通过真实输入检查先复现后修复。复审明确规范违例、正确性及可行动 heuristic 均为 0。
+
+### Spec
+
+初审指出旧桥接待审批文字与最新停止路线冲突，已改为明确历史记录。复审确认最新用户接受的原地传统菜单、无红叉、UI 响应、单项／多项、取消和刷新要求已实现，无范围扩展，剩余发现 0。实现提交 `768c6aa`，审查修正提交 `db52edd`。
