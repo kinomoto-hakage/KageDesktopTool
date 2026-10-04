@@ -19,13 +19,13 @@ namespace Kage.Desktop;
 // 不注入 WPF 事件：经过系统鼠标输入、命中与 Preview 路由验收正式窗口。
 internal static class ContentInputChecks
 {
-    internal static int Run(bool identityOnly = false, bool refreshOnly = false)
+    internal static int Run(bool identityOnly = false, bool refreshOnly = false, bool menuPlacementOnly = false)
     {
         var fixture = Path.Combine(Path.GetTempPath(), "Kage-input-" + Guid.NewGuid().ToString("N"));
         var evidence = Path.Combine(Environment.CurrentDirectory, ".scratch", "desktop-folder", "verification");
         Directory.CreateDirectory(fixture);
         Directory.CreateDirectory(evidence);
-        var log = Path.Combine(evidence, refreshOnly ? "content-refresh-session.txt" : identityOnly ? "content-identity-session.txt" : "content-input-session.txt");
+        var log = Path.Combine(evidence, menuPlacementOnly ? "content-menu-placement-session.txt" : refreshOnly ? "content-refresh-session.txt" : identityOnly ? "content-identity-session.txt" : "content-input-session.txt");
         File.WriteAllText(log, "真实 Windows 内容输入验收\n");
         var app = new Application { ShutdownMode = ShutdownMode.OnExplicitShutdown };
         Runtime? runtime = null;
@@ -84,6 +84,33 @@ internal static class ContentInputChecks
                     if (hit != header.Handle) { Desktop(); await Task.Delay(350); }
                     await MouseAt(point, false, 8);
                     await WaitUntil(() => ShellContextMenu.ActiveMenuWindow != IntPtr.Zero);
+                }
+                if (menuPlacementOnly)
+                {
+                    try
+                    {
+                        var click = Center(Item(link));
+                        await FolderRight(Item(link));
+                        Require(ShellContextMenu.ActiveMenuWindow != IntPtr.Zero, "真实鼠标右键图标后出现系统菜单");
+                        Require(WindowsDesktop.GetWindowRect(ShellContextMenu.ActiveMenuWindow, out var bounds), "读取实际系统菜单位置");
+                        var nearest = new Point(Math.Clamp(click.X, bounds.Left, bounds.Right), Math.Clamp(click.Y, bounds.Top, bounds.Bottom));
+                        File.AppendAllText(log, $"右键位置：{click}；菜单位置：{bounds.Left},{bounds.Top},{bounds.Right},{bounds.Bottom}。\n");
+                        // 只查询随机夹具的实际目录；不能把打开该目录后的菜单当作原地菜单。
+                        var delegated = ExplorerAt(folder.ActualPath);
+                        Key(0x1B);
+                        await WaitUntil(() => ShellContextMenu.ActiveMenuWindow == IntPtr.Zero);
+                        Require(delegated == IntPtr.Zero, "图标菜单直接在 Folder 中展示，不打开或导航资源管理器到内容目录");
+                        Require((click - nearest).Length <= 48, "系统菜单出现在图标右键位置附近，保留屏幕边缘避让");
+                        exit = 0;
+                        return;
+                    }
+                    finally
+                    {
+                        ShellContextMenu.CancelPending();
+                        if (ShellContextMenu.ActiveMenuWindow != IntPtr.Zero) { Key(0x1B); await Task.Delay(250); }
+                        var delegated = ExplorerAt(folder.ActualPath);
+                        if (delegated != IntPtr.Zero) { PostMessage(delegated, 0x10, IntPtr.Zero, IntPtr.Zero); await Task.Delay(350); }
+                    }
                 }
                 if (refreshOnly)
                 {

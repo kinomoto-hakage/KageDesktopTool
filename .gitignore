@@ -11,4 +11,6 @@ prototypes/DesktopFolderPrototype/PROTOTYPE-preview-*.png
 **/bin/
 **/obj/
 .scratch/desktop-folder/verification/
+# 原地现代菜单的隔离能力探针、符号、编译器与缓存，不属于产品。
+.scratch/native-menu-capability/
 releases/
