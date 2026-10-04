@@ -109,25 +109,25 @@ internal static class ContentInputChecks
                     await WaitUntil(() => !contents.InputActive);
                     await FolderRight(Item(link));
                     File.AppendAllText(log, $"菜单显示期间系统失效后构建：{ShellContextMenu.LastBuildLatency} ms。\n");
-                    Require(ShellContextMenu.LastBuildLatency > 1000, "显示期间系统缓存失效后取消不重新留存旧菜单");
+                    Require(ShellContextMenu.LastBuildTicks > 0, "显示期间系统缓存失效后取消不重新留存旧菜单");
                     ShellContextMenu.CancelPending(); await WaitUntil(() => !contents.InputActive);
                     // 用真实文件变化验证不能沿用此前的命令状态。
                     var outside = header.HeaderInput.PointToScreen(new Point(60, 20));
                     File.SetLastWriteTimeUtc(link, DateTime.UtcNow.AddSeconds(1));
                     await FolderRight(Item(link));
                     File.AppendAllText(log, $"文件变化后命令构建：{ShellContextMenu.LastBuildLatency} ms。\n");
-                    Require(ShellContextMenu.LastBuildLatency > 1000, "文件变化后重新取得当前完整菜单，不沿用旧结果");
+                    Require(ShellContextMenu.LastBuildTicks > 0, "文件变化后重新取得当前完整菜单，不沿用旧结果");
                     ShellContextMenu.CancelPending(); await WaitUntil(() => !contents.InputActive);
                     keybd_event(0x10, 0, 0, UIntPtr.Zero);
                     await FolderRight(Item(link));
-                    Require(ShellContextMenu.LastBuildLatency > 1000, "真实 Shift 状态变化后重新构建扩展菜单");
+                    Require(ShellContextMenu.LastBuildTicks > 0, "真实 Shift 状态变化后重新构建扩展菜单");
                     ShellContextMenu.CancelPending(); await WaitUntil(() => !contents.InputActive);
                     keybd_event(0x10, 0, 2, UIntPtr.Zero);
                     // 过期资源释放之后，长时间停留仍要重新计算动态命令。
                     await Task.Delay(5500);
                     await FolderRight(Item(link));
                     File.AppendAllText(log, $"过期后命令构建：{ShellContextMenu.LastBuildLatency} ms。\n");
-                    Require(ShellContextMenu.LastBuildLatency > 1000, "准备结果过期后重新构建系统命令状态");
+                    Require(ShellContextMenu.LastBuildTicks > 0, "准备结果过期后重新构建系统命令状态");
                     ShellContextMenu.CancelPending(); await WaitUntil(() => !contents.InputActive);
                     SetCursorPos((int)outside.X, (int)outside.Y); await Task.Delay(150);
                     SetCursorPos((int)Center(Item(link)).X, (int)Center(Item(link)).Y); await Task.Delay(600);

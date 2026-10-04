@@ -14,3 +14,6 @@ prototypes/DesktopFolderPrototype/PROTOTYPE-preview-*.png
 # 原地现代菜单的隔离能力探针、符号、编译器与缓存，不属于产品。
 .scratch/native-menu-capability/
 releases/
+# 系统菜单诊断的本机日志、包／用户数据备份及一次性探针，保留本地票据。
+.scratch/windows-shell-latency/*
+!.scratch/windows-shell-latency/issues/

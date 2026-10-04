@@ -27,6 +27,7 @@ internal static class ShellContextMenu
     internal static long LastMenuLatency { get; private set; }
     internal static long LastObjectLatency { get; private set; }
     internal static long LastBuildLatency { get; private set; }
+    internal static long LastBuildTicks { get; private set; }
     internal static string LastMenuClass { get; private set; } = "";
     internal static IntPtr ActiveMenuWindow => Volatile.Read(ref activeMenu) == IntPtr.Zero ? IntPtr.Zero : FindMenu(OwnerWindow);
 
@@ -55,7 +56,7 @@ internal static class ShellContextMenu
             throw new InvalidOperationException("当前文件菜单尚未结束，请先完成或取消。");
         using var cancellation = new CancellationTokenSource();
         Volatile.Write(ref currentRequest, cancellation);
-        LastMenuLatency = LastObjectLatency = LastBuildLatency = 0; LastMenuClass = "";
+        LastMenuLatency = LastObjectLatency = LastBuildLatency = LastBuildTicks = 0; LastMenuClass = "";
         var watch = Stopwatch.StartNew();
         try
         {
@@ -148,6 +149,7 @@ internal static class ShellContextMenu
                     native = Build(paths, shift);
                     LastObjectLatency = native.ObjectLatency;
                     LastBuildLatency = native.BuildLatency;
+                    LastBuildTicks = native.BuildTicks;
                 }
                 var context = native.Context;
                 var commands = (IContextMenu)context!;
@@ -228,9 +230,11 @@ internal static class ShellContextMenu
                 native.ObjectLatency = watch.ElapsedMilliseconds;
                 native.Menu = CreatePopupMenu();
                 if (native.Menu == IntPtr.Zero) throw new IOException("Windows 未能创建文件菜单。");
-                // 完整系统及第三方菜单仍由 Shell 提供，提前构建不裁剪命令。
+                // 完整系统及第三方菜单仍由 Shell 提供；诊断计时围绕实际原生调用。
+                var queryStart = Stopwatch.GetTimestamp();
                 Marshal.ThrowExceptionForHR(((IContextMenu)native.Context!).QueryContextMenu(native.Menu, 0, 1, 0x7fff,
                     0x400u | (paths.Length == 1 ? 0x10u : 0u) | (shift ? 0x100u : 0u)));
+                native.BuildTicks = Stopwatch.GetTimestamp() - queryStart;
                 native.BuildLatency = watch.ElapsedMilliseconds - native.ObjectLatency;
                 native.Completed = Stopwatch.GetTimestamp();
                 return native;
@@ -250,7 +254,7 @@ internal static class ShellContextMenu
         internal IShellFolder? Folder;
         internal object? Context;
         internal IntPtr Menu;
-        internal long Completed, ObjectLatency, BuildLatency;
+        internal long Completed, ObjectLatency, BuildLatency, BuildTicks;
 
         internal PreparedMenu(string[] paths, bool shift)
         {
