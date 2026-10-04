@@ -305,22 +305,15 @@ public sealed partial class DesktopWorkspace(IWorkspaceStore store, IStartupRegi
         var target = snapshot.Folders.FirstOrDefault(folder => folder.Folder.Id == id && folder.Visible);
         if (target == null) return new(Outcome.Failed, "Folder 当前不可展示，请先在设置刷新展示。");
         var changed = target.Folder with { Expanded = !target.Folder.Expanded };
-        var next = state.Folders.ToDictionary(folder => folder.Id);
-        next[id] = changed;
         if (changed.Expanded)
         {
-            var area = HeaderLayout.Available(changed, displays, []);
-            if (area == null) return new(Outcome.Failed, "当前位置空间不足，无法展开；请移动或缩小 Folder。");
-            var occupied = new List<(FolderRecord Folder, DisplayArea Area)> { (changed, area) };
-            foreach (var other in snapshot.Folders.Where(folder => folder.Visible && folder.Folder.Id != id))
-            {
-                var placed = HeaderLayout.Find(other.Folder, displays, occupied);
-                if (placed == null) return new(Outcome.Failed, "桌面空间不足，已取消展开并保留原布局；请缩小或折叠其他 Folder。");
-                next[placed.Id] = placed;
-                occupied.Add((placed, HeaderLayout.Available(placed, displays, occupied)!));
-            }
+            var occupied = snapshot.Folders.Where(folder => folder.Visible && folder.Folder.Id != id)
+                .Select(folder => (folder.Folder, HeaderLayout.Available(folder.Folder, displays, [])!)).ToArray();
+            var placed = NearestPlacement.Find(changed, displays, occupied);
+            if (placed == null) return new(Outcome.Failed, "桌面工作区没有可容纳头部与展示部分的空位，已保持折叠；请缩小或折叠 Folder。");
+            changed = placed;
         }
-        var complete = state with { Folders = state.Folders.Select(folder => next[folder.Id]).ToArray() };
+        var complete = state with { Folders = state.Folders.Select(folder => folder.Id == id ? changed : folder).ToArray() };
         store.Save(complete);
         state = complete;
         Publish();
@@ -344,6 +337,15 @@ public sealed partial class DesktopWorkspace(IWorkspaceStore store, IStartupRegi
             if (blocked) return Locked();
             if (!displays.SequenceEqual(interaction.Displays)) return new(Outcome.Failed, "显示环境已变化，本次输入未覆盖新布局；请重试。");
             if (!state.Folders.SequenceEqual(interaction.Original)) return new(Outcome.Failed, "布局已发生变化，本次输入未覆盖新布局；请重试。");
+            if (interaction.Dragged)
+            {
+                var target = proposed.Single(folder => folder.Folder.Id == interaction.Target);
+                var others = proposed.Where(folder => folder.Visible && folder.Folder.Id != interaction.Target)
+                    .Select(folder => (folder.Folder, HeaderLayout.Available(folder.Folder, displays, [])!)).ToArray();
+                var placed = NearestPlacement.Find(target.Folder, displays, others);
+                if (placed == null) return new(Outcome.Failed, "桌面工作区没有可容纳位置，已恢复原布局。");
+                proposed = proposed.Select(folder => folder.Folder.Id == interaction.Target ? folder with { Folder = placed } : folder).ToArray();
+            }
             var occupied = new List<(FolderRecord Folder, DisplayArea Area)>();
             foreach (var folder in proposed.Where(folder => folder.Visible))
             {

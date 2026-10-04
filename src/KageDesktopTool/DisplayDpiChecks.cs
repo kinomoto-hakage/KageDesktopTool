@@ -127,7 +127,7 @@ internal static class DisplayDpiChecks
                 target.DragHeaderTo(new Point(-19999, 8));
                 Check(target.Record.X == edge + 1, "通知恢复后受阻立即反向一物理像素");
                 await target.EndInteractionAsync();
-                var grip = VisualChildren<Thumb>(target).Single();
+                var grip = target.ResizeGrip;
                 var gripPoint = grip.PointToScreen(new Point(grip.ActualWidth / 2, grip.ActualHeight / 2));
                 Check(Hit(gripPoint) == target.Handle, "调尺寸把手物理命中正确");
                 SetCursorPos((int)gripPoint.X, (int)gripPoint.Y);
@@ -185,7 +185,12 @@ internal static class DisplayDpiChecks
                 var text = (TextBlock)((Grid)item.Content).Children[1];
                 Check(image.Source is BitmapSource source && source.PixelWidth >= Math.Round(image.Width * folder.DisplayScale), label + "：原生图标分辨率足够");
                 Check(text.FontFamily.Source == metrics.FontFamily && text.FontSize == metrics.FontSize, label + "：目标 DPI 系统字体");
-                Check(Math.Abs(item.ActualHeight - (folder.Folder.Grid ? metrics.GridHeight : metrics.ListHeight)) < .6, label + "：网格或原生行高");
+                var iconSize = folder.Folder.Grid ? folder.Folder.GridIconSize : folder.Folder.ListIconSize;
+                var minimumHeight = folder.Folder.Grid ? Math.Max(metrics.GridHeight, iconSize + metrics.FontSize * 2)
+                    : Math.Max(metrics.ListHeight, iconSize);
+                Check(item.ActualHeight >= minimumHeight - .6, label + "：行高容纳当前图标及文字并保留原生下限");
+                if (!folder.Folder.Grid && iconSize == (int)ContentIconSize.Small)
+                    Check(Math.Abs(item.ActualHeight - metrics.ListHeight) < .6, label + "：小图标列表保持原生行高");
             }
             File.AppendAllText(log, $"{label}：目标 DPI={folder.DisplayScale * 96}，HWND DPI={WindowsDesktop.GetDpiForWindow(header.Handle)}，WPF DPI={VisualTreeHelper.GetDpi(header).PixelsPerInchX}\n");
         }

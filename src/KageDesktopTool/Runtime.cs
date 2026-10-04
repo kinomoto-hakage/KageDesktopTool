@@ -49,6 +49,7 @@ internal sealed class Runtime : IDisposable
     private bool displayRefreshPending;
     private DisplayArea[] displayEnvironment = WindowsDesktop.Displays();
     private LayoutInteraction? activeInteraction;
+    private readonly DispatcherTimer layoutInput = new() { Interval = TimeSpan.FromMilliseconds(25) };
     internal bool Interacting => activeInteraction != null;
     internal bool ContentInputActive => Headers.Values.Any(header => header.Contents.InputActive);
     internal bool DraggingFiles { get; set; }
@@ -65,6 +66,17 @@ internal sealed class Runtime : IDisposable
     internal Runtime(IDesktopWorkspace workspace)
     {
         Current = this;
+        layoutInput.Tick += (_, _) =>
+        {
+            // Explorer 子窗口不一定持有键盘焦点，Esc 仍须取消当前捕获会话。
+            if (activeInteraction != null && (WindowsDesktop.GetAsyncKeyState(0x1B) & 0x8000) != 0)
+            {
+                foreach (var header in Headers.Values) header.CancelInteraction();
+                activeInteraction = null;
+                layoutInput.Stop();
+                Render();
+            }
+        };
         Workspace = workspace;
         Controller = new Window { Width = 1, Height = 1, ShowInTaskbar = false, WindowStyle = WindowStyle.ToolWindow, Title = "Kage 桌面整理控制器" };
         var handle = new WindowInteropHelper(Controller).EnsureHandle();
@@ -140,6 +152,7 @@ internal sealed class Runtime : IDisposable
             if (!changed) return;
             foreach (var header in Headers.Values) header.CancelInteraction();
             activeInteraction = null;
+            layoutInput.Stop();
         }
         refreshing = true;
         var hidden = Workspace.Snapshot.Folders.Count(f => !f.Visible);
@@ -306,6 +319,7 @@ internal sealed class Runtime : IDisposable
     {
         if (Interacting || Exiting || Moving || ChangingFolder || refreshing || displayRefreshPending) return null;
         activeInteraction = Workspace.BeginLayout(id);
+        if (activeInteraction != null) layoutInput.Start();
         return activeInteraction;
     }
 
@@ -317,12 +331,13 @@ internal sealed class Runtime : IDisposable
 
     internal async Task CommitInteractionAsync(LayoutInteraction interaction)
     {
+        layoutInput.Stop();
         try
         {
             var result = await Workspace.CommitLayoutAsync(interaction);
             if (!result.Succeeded) Balloon(result.Message);
         }
-        finally { activeInteraction = null; Render(); }
+        finally { activeInteraction = null; layoutInput.Stop(); Render(); }
     }
 
     internal async Task CreateAsync()
@@ -442,6 +457,7 @@ internal sealed class Runtime : IDisposable
     {
         if (disposed) return;
         disposed = true;
+        layoutInput.Stop();
         ShellContextMenu.CancelPending();
         ShellContextMenu.InvalidatePrepared();
         refresh.Stop();

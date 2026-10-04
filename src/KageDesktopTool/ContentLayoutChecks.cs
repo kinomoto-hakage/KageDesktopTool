@@ -37,6 +37,13 @@ internal static class ContentLayoutChecks
                 await workspace.SelectRootAsync(Path.Combine(fixture, "内容"));
                 await workspace.CreateFolderAsync("真实内容");
                 await workspace.CreateFolderAsync("同时展开");
+                // 宽度回归需要独立空间；新规格保持其他 Folder 原位，不再由展开自动挪开相邻入口。
+                var neighbor = workspace.Snapshot.Folders.Last();
+                var area = displays.OrderByDescending(d => d.Width).First();
+                var placement = workspace.BeginLayout(neighbor.Folder.Id)!;
+                placement.BeginDrag(0, 0);
+                placement.DragTo(area.X + area.Width - (int)Math.Ceiling(neighbor.Folder.HeaderWidth * area.Scale) - 40 - neighbor.Folder.X, 0);
+                Check((await workspace.CommitLayoutAsync(placement)).Succeeded, "为独立宽度回归预留夹具空间");
                 var folder = workspace.Snapshot.Folders.First();
                 var path = folder.ActualPath;
                 File.WriteAllText(Path.Combine(path, "短.txt"), "真实内容");

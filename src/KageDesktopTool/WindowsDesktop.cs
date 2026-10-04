@@ -152,4 +152,6 @@ internal static class WindowsDesktop
     [DllImport("user32.dll")] internal static extern bool IsChild(IntPtr parent, IntPtr child);
     [DllImport("user32.dll")] internal static extern bool PostMessage(IntPtr hwnd, uint message, IntPtr wp, IntPtr lp);
     [DllImport("user32.dll")] internal static extern void keybd_event(byte key, byte scan, uint flags, UIntPtr extraInfo);
+    [DllImport("user32.dll")] internal static extern short GetAsyncKeyState(int key);
+    [DllImport("user32.dll")] internal static extern bool GetCursorPos(out POINT point);
 }

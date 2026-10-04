@@ -5,6 +5,10 @@ if (args.Length == 3 && args[0] == "--interrupt-migration")
 
 var tests = new (string Name, Func<Task> Run)[]
 {
+    ("升级布局自由穿越与最近释放", UpgradeLayoutChecks.FreeDrag),
+    ("升级布局底部展开与头部独立调高", UpgradeLayoutChecks.ExpansionAndHeader),
+    ("升级布局显示器优先负坐标空洞与容量不足", UpgradeLayoutChecks.DisplayPriorityAndCapacity),
+    ("升级布局最近像素与独立穷举一致", UpgradeLayoutChecks.ExactNearest),
     ("内容视图自然名称与目录优先", ContentViewChecks.NaturalOrder),
     ("内容视图尺寸大小排序与保存重启", ContentViewChecks.ViewPersistence),
     ("内容视图多选手动顺序与外部变化", ContentViewChecks.CustomOrder),
@@ -25,8 +29,8 @@ var tests = new (string Name, Func<Task> Run)[]
     ("真实内容、外部变化及失联目录", ContentsAndChanges),
     ("多 Folder 展开及空间不足回滚", LayoutChecks.Expansion),
     ("屏幕四边受阻反向一像素及滑动", LayoutChecks.ScreenEdges),
-    ("Folder 四向接触、不穿越及尺寸重启恢复", LayoutChecks.ContactAndPersistence),
-    ("对角轨迹沿实际路径不穿越 Folder", LayoutChecks.DiagonalPath),
+    ("Folder 四向穿越及尺寸重启恢复", LayoutChecks.ContactAndPersistence),
+    ("对角轨迹直接穿越 Folder", LayoutChecks.DiagonalPath),
     ("暂未展示 Folder 不挤动展开头部", LayoutChecks.HiddenAndExpansion),
     ("布局保存失败保留原状态与内容", LayoutChecks.SaveFailure),
     ("显示环境相邻负坐标跨屏及反向恢复", DisplayChecks.AdjacentScreens),

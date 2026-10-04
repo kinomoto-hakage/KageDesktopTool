@@ -14,8 +14,8 @@ internal static class LayoutChecks
         await workspace.InitializeAsync([new(0, 0, 1000, 800)]);
         Ensure((await workspace.ToggleFolderAsync(a.Id)).Succeeded, "展开成功");
         var expanded = workspace.Snapshot.Folders.Single(f => f.Folder.Id == a.Id).Folder;
-        Ensure(expanded.Expanded && expanded.X == 12 && expanded.Y == 12, "展开保持本头部位置");
-        Ensure(workspace.Snapshot.Folders.Single(f => f.Folder.Id == b.Id).Folder.Y != 90, "为冲突头部寻找附近空位");
+        Ensure(expanded.Expanded && expanded.X == 12 && expanded.Y == 150, "展开只移动当前 Folder 到最近空位");
+        Ensure(workspace.Snapshot.Folders.Single(f => f.Folder.Id == b.Id).Folder == b, "展开不移动冲突头部");
         Ensure((await workspace.ToggleFolderAsync(b.Id)).Succeeded && workspace.Snapshot.Folders.All(f => f.Folder.Expanded), "多个 Folder 可同时展开");
         Ensure((await workspace.ToggleFolderAsync(a.Id)).Succeeded && workspace.Snapshot.Folders.Single(f => f.Folder.Id == b.Id).Folder.Expanded, "折叠一个不折叠其他");
 
@@ -66,10 +66,10 @@ internal static class LayoutChecks
         foreach (var expanded in new[] { false, true })
         foreach (var (mx, my, ox, oy, dx, dy, expectedX, expectedY) in new[]
         {
-            (100, 100, 500, 100, 3000, 0, 188, 100),
-            (500, 100, 100, 100, -3000, 0, 412, 100),
-            (100, 100, 100, 500, 0, 3000, 100, expanded ? 180 : 440),
-            (100, 600, 100, 100, 0, -3000, 100, expanded ? 420 : 160)
+            (100, 100, 500, 100, 3000, 0, 1500, 100),
+            (500, 100, 100, 100, -3000, 0, 0, 100),
+            (100, 100, 100, 500, 0, 3000, 100, expanded ? 892 : 1152),
+            (100, 600, 100, 100, 0, -3000, 100, 0)
         })
         {
             moving = moving with { X = mx, Y = my, Expanded = expanded };
@@ -81,20 +81,21 @@ internal static class LayoutChecks
             edit.BeginDrag(0, 0);
             edit.DragTo(dx, dy);
             var actual = edit.Folders.Single(f => f.Folder.Id == moving.Id).Folder;
-            Ensure(actual.X == expectedX && actual.Y == expectedY, "大步输入停在四向接触边，不穿越其他 Folder");
+            Ensure(actual.X == expectedX && actual.Y == expectedY, "大步输入穿越其他 Folder 并停在屏幕边界");
             edit.DragTo(dx * 2, dy * 2);
             edit.DragTo(dx * 2 - Math.Sign(dx), dy * 2 - Math.Sign(dy));
             actual = edit.Folders.Single(f => f.Folder.Id == moving.Id).Folder;
-            Ensure(actual.X == expectedX - Math.Sign(dx) && actual.Y == expectedY - Math.Sign(dy), "Folder 接触后立即反向一像素");
+            Ensure(actual.X == expectedX - Math.Sign(dx) && actual.Y == expectedY - Math.Sign(dy), "屏幕边界立即反向一像素");
             edit.DragTo(dx * 2 - Math.Sign(dx) + (dy == 0 ? 0 : 5), dy * 2 - Math.Sign(dy) + (dx == 0 ? 0 : 5));
             actual = edit.Folders.Single(f => f.Folder.Id == moving.Id).Folder;
-            Ensure(actual.X == expectedX - Math.Sign(dx) + (dy == 0 ? 0 : 5) && actual.Y == expectedY - Math.Sign(dy) + (dx == 0 ? 0 : 5), "Folder 接触沿边滑动");
+            Ensure(actual.X == expectedX - Math.Sign(dx) + (dy == 0 ? 0 : 5) && actual.Y == expectedY - Math.Sign(dy) + (dx == 0 ? 0 : 5), "屏幕边界沿边滑动");
             var saved = workspace.Snapshot.Folders.Single(f => f.Folder.Id == moving.Id).Folder;
             Ensure(saved == moving, "鼠标轨迹未提交前不改变持久布局");
             Ensure((await workspace.CommitLayoutAsync(edit)).Succeeded, "输入结束保存位置");
             var restart = new DesktopWorkspace(fixture.Store, new TestStartup());
             await restart.InitializeAsync([new(0, 0, 1800, 1200)]);
-            Ensure(restart.Snapshot.Folders.Single(f => f.Folder.Id == moving.Id).Folder == actual, "重启恢复拖动位置和展开状态");
+            Ensure(restart.Snapshot.Folders.Select(f => f.Folder).SequenceEqual(workspace.Snapshot.Folders.Select(f => f.Folder)), "重启恢复最终位置和展开状态");
+            Ensure(workspace.Snapshot.Folders.Last().Folder == obstacle, "穿越与释放保持其他 Folder 不变");
         }
 
         moving = moving with { X = 12, Y = 20, Expanded = false };
@@ -134,9 +135,9 @@ internal static class LayoutChecks
         edit.BeginDrag(0, 0);
         edit.DragTo(800, 200);
         var stopped = edit.Folders.Single(f => f.Folder.Id == moving.Id).Folder;
-        Ensure(stopped.X == 800 && stopped.Y == 40, "直线对角轨迹先接触障碍上边，阻止法向位移并保留水平滑动");
+        Ensure(stopped.X == 800 && stopped.Y == 200, "直线对角轨迹直接穿越 Folder");
         edit.DragTo(800, 199);
-        Ensure(edit.Folders.Single(f => f.Folder.Id == moving.Id).Folder.Y == 39, "对角接触后立即反向一像素");
+        Ensure(edit.Folders.Single(f => f.Folder.Id == moving.Id).Folder.Y == 199, "对角穿越后立即反向一像素");
     }
 
     internal static async Task HiddenAndExpansion()
@@ -151,9 +152,10 @@ internal static class LayoutChecks
         DisplayArea[] areas = [new(0, 0, 1000, 600)];
         await workspace.InitializeAsync(areas);
         Ensure(!workspace.Snapshot.Folders.Single(f => f.Folder.Id == b.Id).Visible, "空间不足保留展开记录但暂不展示");
-        Ensure((await workspace.ToggleFolderAsync(c.Id)).Succeeded, "展开可见目标成功");
+        var before = workspace.Snapshot.Folders.Select(f => f.Folder).ToArray();
+        Ensure(!(await workspace.ToggleFolderAsync(c.Id)).Succeeded, "保留其他可见入口时没有完整展开空位");
         var target = workspace.Snapshot.Folders.Single(f => f.Folder.Id == c.Id);
-        Ensure(target.Visible && target.Folder.X == 350 && target.Folder.Y == 120, "后台恢复隐藏记录不挤动本头部");
+        Ensure(target.Visible && !target.Folder.Expanded && workspace.Snapshot.Folders.Select(f => f.Folder).SequenceEqual(before), "无空位保持折叠及隐藏记录，不移动其他入口");
         var visible = workspace.Snapshot.Folders.Where(f => f.Visible).Select(f => f.Folder).ToArray();
         await workspace.RefreshAsync(areas);
         Ensure(visible.All(saved => workspace.Snapshot.Folders.Single(f => f.Folder.Id == saved.Id).Folder == saved), "正常刷新恢复其他记录时保留此前可见布局");

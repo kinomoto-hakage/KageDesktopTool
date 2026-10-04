@@ -1,7 +1,7 @@
 # 02: Folder 位置、展开与尺寸调整
 
 Type: implementation
-Status: ready-for-agent
+Status: claimed
 Labels: ready-for-agent
 Approved: 2026-10-03
 Spec: ../spec.md

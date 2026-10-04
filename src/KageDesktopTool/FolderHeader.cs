@@ -19,6 +19,8 @@ internal sealed class FolderHeader : Window
     internal Border Surface { get; }
     internal FolderContents Contents { get; }
     internal Grid HeaderInput => header;
+    internal Thumb HeaderDivider { get; }
+    internal Thumb ResizeGrip { get; }
     internal FolderRecord Record { get; private set; }
     private readonly Grid layout;
     private readonly Grid header;
@@ -30,6 +32,7 @@ internal sealed class FolderHeader : Window
     private double displayScale = 1;
     private FolderSnapshot? geometry;
     private bool positioning;
+    private Point? resizePoint;
 
     internal FolderHeader(FolderSnapshot folder)
     {
@@ -84,20 +87,26 @@ internal sealed class FolderHeader : Window
         Grid.SetRow(Contents, 1);
         layout.Children.Add(Contents);
         var grip = new Thumb { Width = 14, Height = 14, Cursor = Cursors.SizeNWSE, HorizontalAlignment = HorizontalAlignment.Right, VerticalAlignment = VerticalAlignment.Bottom, Margin = new Thickness(0, 0, 3, 3), Opacity = .6 };
+        ResizeGrip = grip;
         var factory = new FrameworkElementFactory(typeof(TextBlock));
         factory.SetValue(TextBlock.TextProperty, "◢");
         factory.SetValue(TextBlock.ForegroundProperty, Brushes.White);
         grip.Template = new ControlTemplate(typeof(Thumb)) { VisualTree = factory };
         Grid.SetRowSpan(grip, 2);
         layout.Children.Add(grip);
-        grip.DragStarted += (_, _) => interaction = Runtime.Current.BeginInteraction(FolderId);
-        grip.DragDelta += (_, e) =>
-        {
-            if (interaction == null) return;
-            interaction.ResizeBy(e.HorizontalChange, e.VerticalChange);
-            Runtime.Current.Preview(interaction);
-        };
-        grip.DragCompleted += async (_, _) => await EndInteractionAsync();
+        HeaderDivider = new Thumb { Height = 8, Cursor = Cursors.SizeNS, VerticalAlignment = VerticalAlignment.Bottom,
+            Margin = new Thickness(8, 0, 8, -4), ToolTip = "拖动调整头部高度" };
+        var divider = new FrameworkElementFactory(typeof(Border));
+        divider.SetValue(Border.BackgroundProperty, Brushes.Transparent);
+        var line = new FrameworkElementFactory(typeof(Border));
+        line.SetValue(Border.HeightProperty, 1.0);
+        line.SetValue(Border.BackgroundProperty, new SolidColorBrush(Color.FromArgb(120, 255, 255, 255)));
+        line.SetValue(Border.VerticalAlignmentProperty, VerticalAlignment.Center);
+        divider.AppendChild(line);
+        HeaderDivider.Template = new ControlTemplate(typeof(Thumb)) { VisualTree = divider };
+        layout.Children.Add(HeaderDivider);
+        ConfigureResize(grip, false);
+        ConfigureResize(HeaderDivider, true);
         Surface.Child = layout;
         Content = Surface;
         var menu = new ContextMenu();
@@ -165,6 +174,7 @@ internal sealed class FolderHeader : Window
         var completed = interaction;
         if (completed == null) return;
         interaction = null;
+        resizePoint = null;
         completed.EndDrag();
         header.ReleaseMouseCapture();
         await Runtime.Current.CommitInteractionAsync(completed);
@@ -174,8 +184,32 @@ internal sealed class FolderHeader : Window
     {
         interaction?.EndDrag();
         interaction = null;
+        resizePoint = null;
         header.ReleaseMouseCapture();
         if (Mouse.Captured != null && IsAncestorOf(Mouse.Captured as DependencyObject)) Mouse.Capture(null);
+    }
+
+    private void ConfigureResize(Thumb thumb, bool headerOnly)
+    {
+        thumb.DragStarted += (_, _) =>
+        {
+            interaction = Runtime.Current.BeginInteraction(FolderId);
+            WindowsDesktop.GetCursorPos(out var cursor);
+            resizePoint = new Point(cursor.X, cursor.Y);
+        };
+        thumb.DragDelta += (_, _) =>
+        {
+            if (interaction == null || resizePoint is not { } previous) return;
+            WindowsDesktop.GetCursorPos(out var cursor);
+            resizePoint = new Point(cursor.X, cursor.Y);
+            // HWND 宿主与目标屏可能有不同 DPI；输入按真实物理像素换算为目标 DIP。
+            var dx = (cursor.X - previous.X) / displayScale;
+            var dy = (cursor.Y - previous.Y) / displayScale;
+            if (headerOnly) interaction.ResizeHeaderBy(dy);
+            else interaction.ResizeBy(dx, dy);
+            Runtime.Current.Preview(interaction);
+        };
+        thumb.DragCompleted += async (_, _) => await EndInteractionAsync();
     }
 
     internal void Attach()
@@ -216,6 +250,7 @@ internal sealed class FolderHeader : Window
         Height = Math.Ceiling((Record.HeaderHeight + (Record.Expanded ? Record.BodyHeight : 0)) * displayScale) / sourceScale;
         layout.RowDefinitions[0].Height = new GridLength(Record.HeaderHeight);
         Contents.Visibility = Record.Expanded ? Visibility.Visible : Visibility.Collapsed;
+        HeaderDivider.Visibility = Record.Expanded ? Visibility.Visible : Visibility.Collapsed;
         expand.Content = Record.Expanded ? "▴" : "▾";
         if (Handle == IntPtr.Zero) return;
         if (!WindowsDesktop.Attached(Handle, Host)) Attach();

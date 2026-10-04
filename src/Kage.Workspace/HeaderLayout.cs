@@ -9,12 +9,15 @@ internal static class HeaderLayout
     internal static DisplayArea? Available(FolderRecord folder, IReadOnlyList<DisplayArea> displays, IReadOnlyList<(FolderRecord Folder, DisplayArea Area)> occupied)
     {
         var area = DisplayFor(folder, displays);
-        return area != null && Covered(folder, area, displays)
+        return area != null && Fits(folder, area, displays, occupied) ? area : null;
+    }
+
+    internal static bool Fits(FolderRecord folder, DisplayArea area, IReadOnlyList<DisplayArea> displays, IReadOnlyList<(FolderRecord Folder, DisplayArea Area)> occupied)
+        => Covered(folder, area, displays)
             && occupied.All(other => (long)folder.X + Width(folder, area) + Gap <= other.Folder.X
                 || folder.X >= other.Folder.X + Width(other.Folder, other.Area) + Gap
                 || (long)folder.Y + Height(folder, area) + Gap <= other.Folder.Y
-                || folder.Y >= (long)other.Folder.Y + Height(other.Folder, other.Area) + Gap) ? area : null;
-    }
+                || folder.Y >= (long)other.Folder.Y + Height(other.Folder, other.Area) + Gap);
 
     // 优先使用物理窗口最大交叠面积对应的显示器，并核对尺寸选择。
     // 高到低 DPI 的接缝可能没有自洽解，此时稳定使用头部原点所在屏。
