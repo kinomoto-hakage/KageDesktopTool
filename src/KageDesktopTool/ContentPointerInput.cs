@@ -44,6 +44,12 @@ internal sealed class ContentPointerInput : IDisposable
         items.PreviewKeyDown += (_, e) =>
         {
             if (e.Key != Key.Escape || !Active) return;
+            if (menuOpen)
+            {
+                ShellContextMenu.CancelPending();
+                e.Handled = true;
+                return;
+            }
             Select(initial);
             Finish();
             e.Handled = true;
@@ -155,6 +161,7 @@ internal sealed class ContentPointerInput : IDisposable
     {
         var item = FolderHeader.FindParent<ListBoxItem>(e.OriginalSource as DependencyObject);
         if (item == null) return;
+        items.Focus();
         if (!item.IsSelected) { items.SelectedItems.Clear(); item.IsSelected = true; }
         e.Handled = true;
     }

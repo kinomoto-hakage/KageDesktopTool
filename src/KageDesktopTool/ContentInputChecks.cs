@@ -89,6 +89,19 @@ internal static class ContentInputChecks
                 {
                     try
                     {
+                        contents.Items.Focus();
+                        contents.Items.SelectedItems.Clear(); Item(link).IsSelected = Item(command).IsSelected = true;
+                        var selectedBeforeCancel = contents.SelectedPaths();
+                        await MouseAt(Center(Item(link)), false, 8);
+                        Require(contents.InputActive && ShellContextMenu.ActiveMenuWindow == IntPtr.Zero, "实际右键进入菜单准备阶段");
+                        Key(0x1B);
+                        await WaitUntil(() => !contents.InputActive);
+                        Require(!contents.InputActive && ShellContextMenu.ActiveMenuWindow == IntPtr.Zero,
+                            "准备期间真实 Esc 取消请求，之后不弹出菜单");
+                        Require(contents.SelectedPaths().SequenceEqual(selectedBeforeCancel), "取消菜单准备保留当前多项选择");
+                        // 取消请求结束后，业务刷新与已排队的 Render 完成再命中重新生成的行。
+                        await Task.Delay(350);
+                        header.UpdateLayout();
                         var click = Center(Item(link));
                         await FolderRight(Item(link));
                         Require(ShellContextMenu.ActiveMenuWindow != IntPtr.Zero, "真实鼠标右键图标后出现系统菜单");
