@@ -45,6 +45,8 @@ internal static class ContentInputChecks
                 var marker = Path.Combine(fixture, "opened.txt");
                 var link = Path.Combine(folder.ActualPath, "01-shortcut.lnk");
                 Shortcut(link, marker);
+                var queuedLink = Path.Combine(folder.ActualPath, "00-queued-shortcut.lnk");
+                if (menuLatencyOnly) Shortcut(queuedLink, marker);
                 var command = Path.Combine(folder.ActualPath, "02-program.cmd");
                 File.WriteAllText(command, "@echo off\r\necho opened>\"" + marker + "\"\r\n");
                 var document = Path.Combine(folder.ActualPath, "03-document-" + Guid.NewGuid().ToString("N") + ".txt");
@@ -55,6 +57,7 @@ internal static class ContentInputChecks
                 await workspace.ToggleFolderAsync(folder.Folder.Id);
                 await workspace.ToggleFolderAsync(workspace.Snapshot.Folders.Last().Folder.Id);
                 await workspace.RefreshAsync(displays);
+                if (menuLatencyOnly) SetCursorPos(0, 0);
                 runtime = new Runtime(workspace);
                 var header = runtime.Headers[folder.Folder.Id];
                 Require(header.Host != IntPtr.Zero, "真实 Explorer 宿主可见");
@@ -88,34 +91,45 @@ internal static class ContentInputChecks
                 if (menuLatencyOnly)
                 {
                     var point = Center(Item(link));
-                    SetCursorPos((int)point.X, (int)point.Y);
-                    await Task.Delay(5500);
                     var watch = Stopwatch.StartNew();
                     await FolderRight(Item(link));
-                    File.AppendAllText(log, $"鼠标停留后右键到原生菜单可见：{watch.ElapsedMilliseconds} ms。\n");
-                    Require(watch.ElapsedMilliseconds < 750, "图标停留后原生完整菜单在 750 ms 内出现");
+                    File.AppendAllText(log, $"首次右键到原生菜单可见：{watch.ElapsedMilliseconds} ms。\n");
+                    ShellContextMenu.CancelPending(); await WaitUntil(() => !contents.InputActive);
+                    await Task.Delay(350); header.UpdateLayout();
+                    watch.Restart();
+                    await FolderRight(Item(link));
+                    File.AppendAllText(log, $"取消后重复右键到原生菜单可见：{watch.ElapsedMilliseconds} ms。\n");
+                    Require(watch.ElapsedMilliseconds < 750, "取消后重复右键的原生完整菜单在 750 ms 内出现");
                     var preparedLabels = MenuLabels();
                     Require(preparedLabels.Any(label => label.Contains("属性", StringComparison.Ordinal))
-                        && preparedLabels.Any(label => label.Contains("删除", StringComparison.Ordinal)), "提前构建保留真实系统属性和删除命令");
+                        && preparedLabels.Any(label => label.Contains("删除", StringComparison.Ordinal)), "重复右键保留真实系统属性和删除命令");
                     ShellContextMenu.CancelPending();
                     await WaitUntil(() => !contents.InputActive);
                     // 用真实文件变化验证不能沿用此前的命令状态。
                     var outside = header.HeaderInput.PointToScreen(new Point(60, 20));
-                    SetCursorPos((int)outside.X, (int)outside.Y); await Task.Delay(150);
-                    SetCursorPos((int)Center(Item(link)).X, (int)Center(Item(link)).Y);
-                    await Task.Delay(5500);
                     File.SetLastWriteTimeUtc(link, DateTime.UtcNow.AddSeconds(1));
                     await FolderRight(Item(link));
                     File.AppendAllText(log, $"文件变化后命令构建：{ShellContextMenu.LastBuildLatency} ms。\n");
-                    Require(ShellContextMenu.LastBuildLatency > 1000, "文件变化后重新取得当前完整菜单，不沿用提前构建结果");
+                    Require(ShellContextMenu.LastBuildLatency > 1000, "文件变化后重新取得当前完整菜单，不沿用旧结果");
                     ShellContextMenu.CancelPending(); await WaitUntil(() => !contents.InputActive);
+                    keybd_event(0x10, 0, 0, UIntPtr.Zero);
+                    await FolderRight(Item(link));
+                    Require(ShellContextMenu.LastBuildLatency > 1000, "真实 Shift 状态变化后重新构建扩展菜单");
+                    ShellContextMenu.CancelPending(); await WaitUntil(() => !contents.InputActive);
+                    keybd_event(0x10, 0, 2, UIntPtr.Zero);
                     // 过期资源释放之后，长时间停留仍要重新计算动态命令。
-                    SetCursorPos((int)outside.X, (int)outside.Y); await Task.Delay(150);
-                    SetCursorPos((int)Center(Item(link)).X, (int)Center(Item(link)).Y);
-                    await Task.Delay(11000);
+                    await Task.Delay(5500);
                     await FolderRight(Item(link));
                     File.AppendAllText(log, $"过期后命令构建：{ShellContextMenu.LastBuildLatency} ms。\n");
                     Require(ShellContextMenu.LastBuildLatency > 1000, "准备结果过期后重新构建系统命令状态");
+                    ShellContextMenu.CancelPending(); await WaitUntil(() => !contents.InputActive);
+                    SetCursorPos((int)outside.X, (int)outside.Y); await Task.Delay(150);
+                    SetCursorPos((int)Center(Item(link)).X, (int)Center(Item(link)).Y); await Task.Delay(600);
+                    SetCursorPos((int)Center(Item(queuedLink)).X, (int)Center(Item(queuedLink)).Y); await Task.Delay(500);
+                    watch.Restart();
+                    await FolderRight(Item(queuedLink));
+                    File.AppendAllText(log, $"移动到另一图标后右键：{watch.ElapsedMilliseconds} ms。\n");
+                    Require(watch.ElapsedMilliseconds < 5000, "直接右键另一图标不叠加主动预构建等待");
                     ShellContextMenu.CancelPending(); await WaitUntil(() => !contents.InputActive);
                     exit = 0; return;
                 }

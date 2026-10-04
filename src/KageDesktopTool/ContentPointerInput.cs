@@ -18,10 +18,6 @@ internal sealed class ContentPointerInput : IDisposable
     private readonly FolderContents contents;
     private readonly ListBox items;
     private readonly DispatcherTimer scrollTimer;
-    private readonly DispatcherTimer warmTimer;
-    private string[] warmPaths = [];
-    private bool warmShift;
-    private bool changingSelection;
     private Point? origin;
     private ListBoxItem? pressed;
     private string? anchor;
@@ -39,18 +35,8 @@ internal sealed class ContentPointerInput : IDisposable
         items = contents.Items;
         scrollTimer = new DispatcherTimer { Interval = TimeSpan.FromMilliseconds(45) };
         scrollTimer.Tick += (_, _) => { if (boxing) Box(Mouse.GetPosition(contents.Viewport), true); };
-        warmTimer = new DispatcherTimer { Interval = TimeSpan.FromMilliseconds(350) };
-        warmTimer.Tick += (_, _) =>
-        {
-            warmTimer.Stop();
-            if (!disposed && !menuOpen && !Runtime.Current.Moving && !Runtime.Current.Interacting)
-                ShellContextMenu.Warm(warmPaths, warmShift);
-        };
         contents.Viewport.PreviewMouseLeftButtonDown += Down;
         contents.Viewport.PreviewMouseMove += Move;
-        contents.Viewport.PreviewMouseMove += Hover;
-        contents.Viewport.MouseLeave += (_, _) => ResetWarm();
-        items.SelectionChanged += (_, _) => { if (!changingSelection) ScheduleWarm(contents.SelectedPaths()); };
         contents.Viewport.PreviewMouseLeftButtonUp += Up;
         contents.Viewport.LostMouseCapture += (_, _) => { if (origin != null) Finish(); };
         items.PreviewMouseRightButtonDown += RightDown;
@@ -68,29 +54,6 @@ internal sealed class ContentPointerInput : IDisposable
             Finish();
             e.Handled = true;
         };
-    }
-
-    private void Hover(object sender, MouseEventArgs e)
-    {
-        if (origin != null || menuOpen || e.LeftButton != MouseButtonState.Released || e.RightButton != MouseButtonState.Released) return;
-        var item = FolderHeader.FindParent<ListBoxItem>(e.OriginalSource as DependencyObject);
-        ScheduleWarm(item?.Tag is string path ? item.IsSelected ? contents.SelectedPaths() : [path] : []);
-    }
-
-    private void ScheduleWarm(string[] paths)
-    {
-        if (disposed || menuOpen) return;
-        var shift = (Keyboard.Modifiers & ModifierKeys.Shift) != 0;
-        if (warmShift == shift && warmPaths.SequenceEqual(paths, StringComparer.OrdinalIgnoreCase)) return;
-        ResetWarm();
-        warmPaths = paths; warmShift = shift;
-        if (paths.Length != 0) warmTimer.Start();
-    }
-
-    private void ResetWarm()
-    {
-        warmTimer.Stop(); warmPaths = [];
-        ShellContextMenu.InvalidateWarm();
     }
 
     private bool OnScrollBar(DependencyObject? source) => FolderHeader.FindParent<ScrollBar>(source) != null;
@@ -199,10 +162,7 @@ internal sealed class ContentPointerInput : IDisposable
         var item = FolderHeader.FindParent<ListBoxItem>(e.OriginalSource as DependencyObject);
         if (item == null) return;
         items.Focus();
-        changingSelection = true;
-        try { if (!item.IsSelected) { items.SelectedItems.Clear(); item.IsSelected = true; } }
-        finally { changingSelection = false; }
-        ScheduleWarm(contents.SelectedPaths());
+        if (!item.IsSelected) { items.SelectedItems.Clear(); item.IsSelected = true; }
         e.Handled = true;
     }
 
@@ -218,7 +178,6 @@ internal sealed class ContentPointerInput : IDisposable
     {
         if (menuOpen || Runtime.Current.Moving || Runtime.Current.Interacting) return;
         menuOpen = true;
-        warmTimer.Stop();
         try
         {
             var rename = await ShellContextMenu.ShowAsync(contents.SelectedPaths(), screen,
@@ -260,5 +219,5 @@ internal sealed class ContentPointerInput : IDisposable
         }
         return null;
     }
-    public void Dispose() { disposed = true; ResetWarm(); Finish(); }
+    public void Dispose() { disposed = true; Finish(); }
 }

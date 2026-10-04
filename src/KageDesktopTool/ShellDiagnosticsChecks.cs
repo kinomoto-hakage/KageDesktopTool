@@ -93,15 +93,10 @@ internal static class ShellDiagnosticsChecks
                 timer.Start();
                 for (var sample = 0; sample < 2; sample++)
                 {
-                    if (sample == 1)
-                    {
-                        ShellContextMenu.Warm([target], false);
-                        await Task.Delay(5500);
-                    }
                     menuSeen = false;
                     try { await ShellContextMenu.ShowAsync([target]); }
                     catch (OperationCanceledException) when (menuSeen) { }
-                    File.AppendAllText(log, $"第 {sample + 1} 次（{(sample == 0 ? "直接右键" : "提前准备后")}）：菜单准备 {ShellContextMenu.LastMenuLatency} ms；取得对象 {ShellContextMenu.LastObjectLatency} ms；构建命令 {ShellContextMenu.LastBuildLatency} ms；原生窗口 {menuSeen}。\n");
+                    File.AppendAllText(log, $"第 {sample + 1} 次（{(sample == 0 ? "直接右键" : "取消后重复右键")}）：菜单准备 {ShellContextMenu.LastMenuLatency} ms；取得对象 {ShellContextMenu.LastObjectLatency} ms；构建命令 {ShellContextMenu.LastBuildLatency} ms；原生窗口 {menuSeen}。\n");
                     if (!menuSeen) break;
                 }
                 timer.Stop(); owner.Close();
@@ -109,7 +104,7 @@ internal static class ShellDiagnosticsChecks
                 exit = !menuSeen || helperSeen || longestTick > 250 ? 1 : 0;
             }
             catch (Exception e) { File.AppendAllText(log, "失败：" + e + "\n"); }
-            finally { ShellContextMenu.InvalidateWarm(); app.Shutdown(); }
+            finally { ShellContextMenu.InvalidatePrepared(); app.Shutdown(); }
         };
         app.Run();
         return exit;

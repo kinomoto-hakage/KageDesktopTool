@@ -16,9 +16,6 @@ namespace Kage.Desktop;
 internal static class ShellContextMenu
 {
     private static readonly Lazy<MenuWorker> worker = new(() => new MenuWorker());
-    private static readonly Lazy<MenuWorker> warmingWorker = new(() => new MenuWorker());
-    private static readonly object warmGate = new();
-    private static WarmRequest? warmRequest;
     private static CancellationTokenSource? currentRequest;
     private static int showing;
     private static int cancellationRequestId;
@@ -32,35 +29,9 @@ internal static class ShellContextMenu
     internal static string LastMenuClass { get; private set; } = "";
     internal static IntPtr ActiveMenuWindow => Volatile.Read(ref activeMenu) == IntPtr.Zero ? IntPtr.Zero : FindMenu(OwnerWindow);
 
-    private sealed record WarmRequest(string[] Paths, bool Shift, CancellationTokenSource Cancellation, Task Prepared);
-
-    // 只准备当前停留／选择的一份菜单；不提前执行命令，也不保留已经显示的菜单。
-    internal static void Warm(string[] paths, bool shift)
+    internal static void InvalidatePrepared()
     {
-        if (paths.Length == 0 || Volatile.Read(ref showing) != 0) return;
-        lock (warmGate)
-        {
-            if (warmRequest is { } pending && pending.Shift == shift
-                && pending.Paths.SequenceEqual(paths, StringComparer.OrdinalIgnoreCase)) return;
-            RetireWarm();
-            var cancellation = new CancellationTokenSource();
-            var copy = paths.ToArray();
-            warmRequest = new(copy, shift, cancellation, warmingWorker.Value.PrepareAsync(copy, shift, cancellation.Token));
-        }
-    }
-
-    internal static void InvalidateWarm()
-    {
-        lock (warmGate) RetireWarm();
-    }
-
-    private static void RetireWarm()
-    {
-        if (warmRequest is not { } old) return;
-        warmRequest = null;
-        old.Cancellation.Cancel();
-        _ = old.Prepared.ContinueWith(task => { _ = task.Exception; old.Cancellation.Dispose(); }, TaskScheduler.Default);
-        _ = warmingWorker.Value.ClearPreparedAsync();
+        if (worker.IsValueCreated) _ = worker.Value.ClearPreparedAsync();
     }
 
     internal static void CancelPending()
@@ -86,21 +57,8 @@ internal static class ShellContextMenu
         var watch = Stopwatch.StartNew();
         try
         {
-            WarmRequest? candidate;
-            lock (warmGate) candidate = warmRequest;
-            var selectedWorker = worker;
-            if (candidate is { } pending && pending.Shift == shift
-                && pending.Paths.SequenceEqual(paths, StringComparer.OrdinalIgnoreCase))
-            {
-                try
-                {
-                    await pending.Prepared.WaitAsync(cancellation.Token);
-                    if (!pending.Cancellation.IsCancellationRequested) selectedWorker = warmingWorker;
-                }
-                catch (Exception) when (!cancellation.IsCancellationRequested) { }
-            }
             cancellation.Token.ThrowIfCancellationRequested();
-            return await selectedWorker.Value.ShowAsync(paths.ToArray(), screen, shift, control, watch, cancellation.Token);
+            return await worker.Value.ShowAsync(paths.ToArray(), screen, shift, control, watch, cancellation.Token);
         }
         finally { Volatile.Write(ref currentRequest, null); Interlocked.Exchange(ref showing, 0); }
     }
@@ -139,23 +97,6 @@ internal static class ShellContextMenu
             }) { IsBackground = true, Name = "Kage 原生文件菜单" };
             thread.SetApartmentState(ApartmentState.STA);
             thread.Start();
-        }
-
-        internal async Task PrepareAsync(string[] paths, bool shift, CancellationToken cancellation)
-        {
-            var dispatcher = await ready.Task.WaitAsync(cancellation);
-            await dispatcher.InvokeAsync(() =>
-            {
-                cancellation.ThrowIfCancellationRequested();
-                Clear();
-                var menu = Build(paths, shift);
-                if (cancellation.IsCancellationRequested) { menu.Dispose(); cancellation.ThrowIfCancellationRequested(); }
-                prepared = menu;
-                expiry ??= new DispatcherTimer { Interval = TimeSpan.FromSeconds(5) };
-                expiry.Tick -= Expire;
-                expiry.Tick += Expire;
-                expiry.Start();
-            }).Task;
         }
 
         private void Expire(object? sender, EventArgs e) => Clear();
@@ -232,6 +173,14 @@ internal static class ShellContextMenu
                 Volatile.Write(ref activeMenu, menu);
                 var command = TrackPopupMenuEx(menu, 0x100 | 0x2, (int)screen.X, (int)screen.Y, handle, IntPtr.Zero);
                 Volatile.Write(ref activeMenu, IntPtr.Zero);
+                if (command == 0 && native.Matches(paths, shift))
+                {
+                    // 仅取消的完整菜单短期复用；不额外发起可能阻塞其他图标的后台 Shell 查询。
+                    prepared = native; native = null;
+                    expiry ??= new DispatcherTimer { Interval = TimeSpan.FromSeconds(5) };
+                    expiry.Interval = TimeSpan.FromSeconds(Math.Max(0.01, 5 - Stopwatch.GetElapsedTime(prepared.Completed).TotalSeconds));
+                    expiry.Tick -= Expire; expiry.Tick += Expire; expiry.Start();
+                }
                 cancellation.ThrowIfCancellationRequested();
                 if (command == 0) return null;
                 var verb = new StringBuilder(256);

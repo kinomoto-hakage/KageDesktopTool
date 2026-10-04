@@ -443,6 +443,7 @@ internal sealed class Runtime : IDisposable
         if (disposed) return;
         disposed = true;
         ShellContextMenu.CancelPending();
+        ShellContextMenu.InvalidatePrepared();
         refresh.Stop();
         source.RemoveHook(hook);
         SystemEvents.DisplaySettingsChanged -= SystemDisplayChanged;
