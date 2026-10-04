@@ -33,6 +33,8 @@
 
 工具：`tools/windows/Fix-PcAppStoreMenu.ps1`。执行前校验包名／family、非 framework、可移除状态，备份原安装包与组件设置，验证安装包哈希；不操作任意用户指定包。当前修复状态为 Apply。
 
+复审加强：撤销前核对 MSIX 清单身份、发布者、版本、架构与当前注册，恢复前复核。持久组件数据逐文件记录哈希；缺失或损坏时在安装前停止，实际损坏校验值的检查准确拒绝且组件保持停用。恢复使用持久 `DataPending` 阶段，若注册成功但设置恢复失败可继续恢复，不再以“已经注册”冒充完整成功。正常 Restore／Apply 循环已实际通过。
+
 ```powershell
 rtk proxy powershell -NoProfile -File tools/windows/Fix-PcAppStoreMenu.ps1 -Mode Status
 rtk proxy powershell -NoProfile -File tools/windows/Fix-PcAppStoreMenu.ps1 -Mode Restore
