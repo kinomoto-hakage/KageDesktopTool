@@ -16,6 +16,9 @@ namespace Kage.Desktop;
 internal static class ShellContextMenu
 {
     private static readonly Lazy<MenuWorker> worker = new(() => new MenuWorker());
+    private static readonly Lazy<MenuWorker> warmingWorker = new(() => new MenuWorker());
+    private static readonly object warmGate = new();
+    private static WarmRequest? warmRequest;
     private static CancellationTokenSource? currentRequest;
     private static int showing;
     private static int cancellationRequestId;
@@ -28,6 +31,37 @@ internal static class ShellContextMenu
     internal static long LastBuildLatency { get; private set; }
     internal static string LastMenuClass { get; private set; } = "";
     internal static IntPtr ActiveMenuWindow => Volatile.Read(ref activeMenu) == IntPtr.Zero ? IntPtr.Zero : FindMenu(OwnerWindow);
+
+    private sealed record WarmRequest(string[] Paths, bool Shift, CancellationTokenSource Cancellation, Task Prepared);
+
+    // 只准备当前停留／选择的一份菜单；不提前执行命令，也不保留已经显示的菜单。
+    internal static void Warm(string[] paths, bool shift)
+    {
+        if (paths.Length == 0 || Volatile.Read(ref showing) != 0) return;
+        lock (warmGate)
+        {
+            if (warmRequest is { } pending && pending.Shift == shift
+                && pending.Paths.SequenceEqual(paths, StringComparer.OrdinalIgnoreCase)) return;
+            RetireWarm();
+            var cancellation = new CancellationTokenSource();
+            var copy = paths.ToArray();
+            warmRequest = new(copy, shift, cancellation, warmingWorker.Value.PrepareAsync(copy, shift, cancellation.Token));
+        }
+    }
+
+    internal static void InvalidateWarm()
+    {
+        lock (warmGate) RetireWarm();
+    }
+
+    private static void RetireWarm()
+    {
+        if (warmRequest is not { } old) return;
+        warmRequest = null;
+        old.Cancellation.Cancel();
+        _ = old.Prepared.ContinueWith(task => { _ = task.Exception; old.Cancellation.Dispose(); }, TaskScheduler.Default);
+        _ = warmingWorker.Value.ClearPreparedAsync();
+    }
 
     internal static void CancelPending()
     {
@@ -50,7 +84,24 @@ internal static class ShellContextMenu
         Volatile.Write(ref currentRequest, cancellation);
         LastMenuLatency = LastObjectLatency = LastBuildLatency = 0; LastMenuClass = "";
         var watch = Stopwatch.StartNew();
-        try { return await worker.Value.ShowAsync(paths.ToArray(), screen, shift, control, watch, cancellation.Token); }
+        try
+        {
+            WarmRequest? candidate;
+            lock (warmGate) candidate = warmRequest;
+            var selectedWorker = worker;
+            if (candidate is { } pending && pending.Shift == shift
+                && pending.Paths.SequenceEqual(paths, StringComparer.OrdinalIgnoreCase))
+            {
+                try
+                {
+                    await pending.Prepared.WaitAsync(cancellation.Token);
+                    if (!pending.Cancellation.IsCancellationRequested) selectedWorker = warmingWorker;
+                }
+                catch (Exception) when (!cancellation.IsCancellationRequested) { }
+            }
+            cancellation.Token.ThrowIfCancellationRequested();
+            return await selectedWorker.Value.ShowAsync(paths.ToArray(), screen, shift, control, watch, cancellation.Token);
+        }
         finally { Volatile.Write(ref currentRequest, null); Interlocked.Exchange(ref showing, 0); }
     }
 
@@ -58,6 +109,8 @@ internal static class ShellContextMenu
     {
         private readonly TaskCompletionSource<Dispatcher> ready = new(TaskCreationOptions.RunContinuationsAsynchronously);
         private HwndSource? source;
+        private PreparedMenu? prepared;
+        private DispatcherTimer? expiry;
 
         internal MenuWorker()
         {
@@ -73,20 +126,54 @@ internal static class ShellContextMenu
                         Width = 0, Height = 0, WindowStyle = unchecked((int)0x80000000),
                         ExtendedWindowStyle = 0x80
                     });
-                    Volatile.Write(ref ownerWindow, source.Handle);
                     ready.SetResult(Dispatcher.CurrentDispatcher);
                     Dispatcher.Run();
                 }
                 catch (Exception e) { ready.TrySetException(e); }
                 finally
                 {
-                    Volatile.Write(ref ownerWindow, IntPtr.Zero);
+                    prepared?.Dispose();
                     source?.Dispose();
                     if (initialized) CoUninitialize();
                 }
             }) { IsBackground = true, Name = "Kage 原生文件菜单" };
             thread.SetApartmentState(ApartmentState.STA);
             thread.Start();
+        }
+
+        internal async Task PrepareAsync(string[] paths, bool shift, CancellationToken cancellation)
+        {
+            var dispatcher = await ready.Task.WaitAsync(cancellation);
+            await dispatcher.InvokeAsync(() =>
+            {
+                cancellation.ThrowIfCancellationRequested();
+                Clear();
+                var menu = Build(paths, shift);
+                if (cancellation.IsCancellationRequested) { menu.Dispose(); cancellation.ThrowIfCancellationRequested(); }
+                prepared = menu;
+                expiry ??= new DispatcherTimer { Interval = TimeSpan.FromSeconds(5) };
+                expiry.Tick -= Expire;
+                expiry.Tick += Expire;
+                expiry.Start();
+            }).Task;
+        }
+
+        private void Expire(object? sender, EventArgs e) => Clear();
+
+        internal async Task ClearPreparedAsync()
+        {
+            try
+            {
+                var dispatcher = await ready.Task;
+                await dispatcher.InvokeAsync(Clear).Task;
+            }
+            catch (Exception) { /* 后台准备失败不会改变实际右键的失败处理。 */ }
+        }
+
+        private void Clear()
+        {
+            expiry?.Stop();
+            prepared?.Dispose(); prepared = null;
         }
 
         internal async Task<string?> ShowAsync(string[] paths, Point screen, bool shift, bool control, Stopwatch watch, CancellationToken cancellation)
@@ -98,36 +185,30 @@ internal static class ShellContextMenu
         private string? Show(string[] paths, Point screen, bool shift, bool control, Stopwatch watch, CancellationToken cancellation)
         {
             cancellation.ThrowIfCancellationRequested();
-            if (paths.Any(path => !string.Equals(Path.GetDirectoryName(path), Path.GetDirectoryName(paths[0]), StringComparison.OrdinalIgnoreCase)))
-                throw new IOException("原生菜单要求同一内容文件夹中的选择集合。");
             var handle = source!.Handle;
-            var pidls = new IntPtr[paths.Length];
-            IShellFolder? folder = null;
-            object? context = null;
-            var menu = IntPtr.Zero;
+            Volatile.Write(ref ownerWindow, handle);
+            PreparedMenu? native = null;
             HwndSourceHook? hook = null;
             var requestId = Interlocked.Increment(ref cancellationRequestId);
             using var registration = cancellation.Register(() => PostMessage(handle, CancelMenuMessage, new IntPtr(requestId), IntPtr.Zero));
             try
             {
-                var children = new IntPtr[paths.Length];
-                for (var i = 0; i < paths.Length; i++)
+                if (prepared != null)
                 {
-                    Marshal.ThrowExceptionForHR(SHParseDisplayName(paths[i], IntPtr.Zero, out pidls[i], 0, out _));
-                    var iid = typeof(IShellFolder).GUID;
-                    Marshal.ThrowExceptionForHR(SHBindToParent(pidls[i], ref iid, out var parent, out children[i]));
-                    if (i == 0) folder = parent; else Marshal.ReleaseComObject(parent);
+                    expiry?.Stop();
+                    if (prepared.Matches(paths, shift)) native = prepared;
+                    else prepared.Dispose();
+                    prepared = null;
                 }
-                var contextId = typeof(IContextMenu).GUID;
-                Marshal.ThrowExceptionForHR(folder!.GetUIObjectOf(handle, (uint)children.Length, children, ref contextId, IntPtr.Zero, out context));
-                LastObjectLatency = watch.ElapsedMilliseconds;
-                var commands = (IContextMenu)context;
-                menu = CreatePopupMenu();
-                if (menu == IntPtr.Zero) throw new IOException("Windows 未能创建文件菜单。");
-                // 异步评估适用命令状态；完整系统及第三方菜单仍由 Shell 提供。
-                Marshal.ThrowExceptionForHR(commands.QueryContextMenu(menu, 0, 1, 0x7fff,
-                    0x400u | (paths.Length == 1 ? 0x10u : 0u) | (shift ? 0x100u : 0u)));
-                LastBuildLatency = watch.ElapsedMilliseconds - LastObjectLatency;
+                if (native == null)
+                {
+                    native = Build(paths, shift);
+                    LastObjectLatency = native.ObjectLatency;
+                    LastBuildLatency = native.BuildLatency;
+                }
+                var context = native.Context;
+                var commands = (IContextMenu)context!;
+                var menu = native.Menu;
                 cancellation.ThrowIfCancellationRequested();
                 hook = (IntPtr hwnd, int message, IntPtr wp, IntPtr lp, ref bool handled) =>
                 {
@@ -171,11 +252,88 @@ internal static class ShellContextMenu
                 Volatile.Write(ref activeMenu, IntPtr.Zero);
                 if (hook != null) source.RemoveHook(hook);
                 ShowWindow(handle, 0);
-                if (menu != IntPtr.Zero) DestroyMenu(menu);
-                if (context != null) Marshal.ReleaseComObject(context);
-                if (folder != null) Marshal.ReleaseComObject(folder);
-                foreach (var pidl in pidls) if (pidl != IntPtr.Zero) Marshal.FreeCoTaskMem(pidl);
+                native?.Dispose();
             }
+        }
+
+        private PreparedMenu Build(string[] paths, bool shift)
+        {
+            if (paths.Any(path => !string.Equals(Path.GetDirectoryName(path), Path.GetDirectoryName(paths[0]), StringComparison.OrdinalIgnoreCase)))
+                throw new IOException("原生菜单要求同一内容文件夹中的选择集合。");
+            var native = new PreparedMenu(paths, shift);
+            var watch = Stopwatch.StartNew();
+            try
+            {
+                var children = new IntPtr[paths.Length];
+                for (var i = 0; i < paths.Length; i++)
+                {
+                    Marshal.ThrowExceptionForHR(SHParseDisplayName(paths[i], IntPtr.Zero, out native.Pidls[i], 0, out _));
+                    var iid = typeof(IShellFolder).GUID;
+                    Marshal.ThrowExceptionForHR(SHBindToParent(native.Pidls[i], ref iid, out var parent, out children[i]));
+                    if (i == 0) native.Folder = parent; else Marshal.ReleaseComObject(parent);
+                }
+                var contextId = typeof(IContextMenu).GUID;
+                Marshal.ThrowExceptionForHR(native.Folder!.GetUIObjectOf(source!.Handle, (uint)children.Length, children, ref contextId, IntPtr.Zero, out native.Context));
+                native.ObjectLatency = watch.ElapsedMilliseconds;
+                native.Menu = CreatePopupMenu();
+                if (native.Menu == IntPtr.Zero) throw new IOException("Windows 未能创建文件菜单。");
+                // 完整系统及第三方菜单仍由 Shell 提供，提前构建不裁剪命令。
+                Marshal.ThrowExceptionForHR(((IContextMenu)native.Context!).QueryContextMenu(native.Menu, 0, 1, 0x7fff,
+                    0x400u | (paths.Length == 1 ? 0x10u : 0u) | (shift ? 0x100u : 0u)));
+                native.BuildLatency = watch.ElapsedMilliseconds - native.ObjectLatency;
+                native.Completed = Stopwatch.GetTimestamp();
+                return native;
+            }
+            catch { native.Dispose(); throw; }
+        }
+    }
+
+    private sealed class PreparedMenu : IDisposable
+    {
+        private readonly string[] paths;
+        private readonly bool shift;
+        private readonly uint clipboard;
+        private readonly FileStamp[] stamps;
+        internal readonly IntPtr[] Pidls;
+        internal IShellFolder? Folder;
+        internal object? Context;
+        internal IntPtr Menu;
+        internal long Completed, ObjectLatency, BuildLatency;
+
+        internal PreparedMenu(string[] paths, bool shift)
+        {
+            this.paths = paths; this.shift = shift;
+            clipboard = GetClipboardSequenceNumber();
+            stamps = paths.Select(FileStamp.Read).ToArray();
+            Pidls = new IntPtr[paths.Length];
+        }
+
+        internal bool Matches(string[] current, bool extended)
+        {
+            if (extended != shift || !paths.SequenceEqual(current, StringComparer.OrdinalIgnoreCase)
+                || clipboard != GetClipboardSequenceNumber() || Stopwatch.GetElapsedTime(Completed).TotalSeconds > 5) return false;
+            try { return stamps.SequenceEqual(current.Select(FileStamp.Read)); }
+            catch (Exception e) when (e is IOException or UnauthorizedAccessException) { return false; }
+        }
+
+        public void Dispose()
+        {
+            if (Menu != IntPtr.Zero) { DestroyMenu(Menu); Menu = IntPtr.Zero; }
+            if (Context != null) { Marshal.ReleaseComObject(Context); Context = null; }
+            if (Folder != null) { Marshal.ReleaseComObject(Folder); Folder = null; }
+            for (var i = 0; i < Pidls.Length; i++)
+                if (Pidls[i] != IntPtr.Zero) { Marshal.FreeCoTaskMem(Pidls[i]); Pidls[i] = IntPtr.Zero; }
+        }
+    }
+
+    private sealed record FileStamp(long Created, long Modified, long Length, FileAttributes Attributes)
+    {
+        internal static FileStamp Read(string path)
+        {
+            var attributes = File.GetAttributes(path);
+            var info = new FileInfo(path);
+            return new(info.CreationTimeUtc.Ticks, info.LastWriteTimeUtc.Ticks,
+                (attributes & FileAttributes.Directory) != 0 ? 0 : info.Length, attributes);
         }
     }
 
@@ -236,6 +394,7 @@ internal static class ShellContextMenu
     [DllImport("ole32.dll")] private static extern int CoInitializeEx(IntPtr reserved, uint flags);
     [DllImport("ole32.dll")] private static extern void CoUninitialize();
     [DllImport("user32.dll")] private static extern bool GetCursorPos(out NativePoint point);
+    [DllImport("user32.dll")] private static extern uint GetClipboardSequenceNumber();
     [DllImport("user32.dll")] private static extern IntPtr CreatePopupMenu();
     [DllImport("user32.dll")] private static extern bool DestroyMenu(IntPtr menu);
     [DllImport("user32.dll")] private static extern bool SetForegroundWindow(IntPtr window);

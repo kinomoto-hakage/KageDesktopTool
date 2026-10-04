@@ -1,8 +1,8 @@
 # 01: Folder 内容展示与文件交互
 
 Type: implementation
-Status: resolved
-Labels: resolved
+Status: claimed
+Labels: in-progress
 Approved: 2026-10-03
 Spec: ../spec.md
 Plan: ../ticket-plan.md
@@ -43,6 +43,8 @@ User stories: 1-24, 38, 47, 49, 51-53
 先复现并修复双击／菜单，再完成选择和快捷方式显示，随后接入图标尺寸、排序、重排与滚动条。每步保留可运行检查，最后验证这些交互配合。
 
 ## Comments
+
+- 2026-10-04：继续优化原地传统菜单的 3–4 秒准备等待。实测耗时集中在 QueryContextMenu 的命令状态构建；参数调整与复用 IContextMenu 无明显改善，隔离复用完整 HMENU 后实际可见时间为 41／22 ms。正式接入有界提前构建，核对选择、文件、剪贴板和 Shift，失效后重新构建；完整命令、原地位置、取消与无红叉要求保持。首次直接右键尚未准备的项目仍可能等待，不标记为瞬时完成。
 
 - 2026-10-04：用户澄清图标菜单必须在 Folder 点击位置直接出现，与桌面右键图标一致；不得先打开资源管理器再弹出菜单。空白区域已有 Folder 管理菜单符合要求，保持不变。此要求取代上一轮对 Explorer 展示方式的理解。重新认领本票；现代／传统按系统设置切换尚未满足，不再将上一轮 Explorer 方案作为最终验收结果。
 

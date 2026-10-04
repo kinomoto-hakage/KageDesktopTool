@@ -17,7 +17,7 @@ public static class Program
         if (args.Contains("--desktop-recovery-check")) return DesktopRecoveryChecks.Run();
         if (args.Contains("--manual-desktop-check")) return ManualDesktopChecks.Run();
         if (args.Contains("--content-layout-check")) return ContentLayoutChecks.Run();
-        if (args.Contains("--content-input-check")) return ContentInputChecks.Run(args.Contains("--identity-only"), args.Contains("--refresh-only"), args.Contains("--menu-placement-only"));
+        if (args.Contains("--content-input-check")) return ContentInputChecks.Run(args.Contains("--identity-only"), args.Contains("--refresh-only"), args.Contains("--menu-placement-only"), args.Contains("--menu-latency-only"));
         if (args.Contains("--shell-diagnostics-check")) return ShellDiagnosticsChecks.Run(args.Contains("--icons-only"), args.Contains("--cancel-only"));
         if (args.Contains("--shell-image-check")) return ShellImageChecks.Run();
         if (args.Contains("--display-dpi-check")) return DisplayDpiChecks.Run();

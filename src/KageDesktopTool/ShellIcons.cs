@@ -15,7 +15,7 @@ internal static class ShellIcons
     private readonly record struct IconKey(string Path, long Modified, long Length, FileAttributes Attributes, bool Small, int Pixels, bool HideArrow);
     private sealed record CachedIcon(ImageSource Image, long Loaded);
     private static readonly ConcurrentDictionary<IconKey, CachedIcon> Cache = new();
-    internal static void Invalidate() => Cache.Clear();
+    internal static void Invalidate() { Cache.Clear(); ShellContextMenu.InvalidateWarm(); }
     internal static ImageSource? ForFile(string path, bool small, int physicalSize = 0, bool hideShortcutArrow = true)
     {
         IconKey? key = null;

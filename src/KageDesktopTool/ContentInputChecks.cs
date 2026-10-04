@@ -19,13 +19,13 @@ namespace Kage.Desktop;
 // 不注入 WPF 事件：经过系统鼠标输入、命中与 Preview 路由验收正式窗口。
 internal static class ContentInputChecks
 {
-    internal static int Run(bool identityOnly = false, bool refreshOnly = false, bool menuPlacementOnly = false)
+    internal static int Run(bool identityOnly = false, bool refreshOnly = false, bool menuPlacementOnly = false, bool menuLatencyOnly = false)
     {
         var fixture = Path.Combine(Path.GetTempPath(), "Kage-input-" + Guid.NewGuid().ToString("N"));
         var evidence = Path.Combine(Environment.CurrentDirectory, ".scratch", "desktop-folder", "verification");
         Directory.CreateDirectory(fixture);
         Directory.CreateDirectory(evidence);
-        var log = Path.Combine(evidence, menuPlacementOnly ? "content-menu-placement-session.txt" : refreshOnly ? "content-refresh-session.txt" : identityOnly ? "content-identity-session.txt" : "content-input-session.txt");
+        var log = Path.Combine(evidence, menuLatencyOnly ? "content-menu-latency-session.txt" : menuPlacementOnly ? "content-menu-placement-session.txt" : refreshOnly ? "content-refresh-session.txt" : identityOnly ? "content-identity-session.txt" : "content-input-session.txt");
         File.WriteAllText(log, "真实 Windows 内容输入验收\n");
         var app = new Application { ShutdownMode = ShutdownMode.OnExplicitShutdown };
         Runtime? runtime = null;
@@ -84,6 +84,40 @@ internal static class ContentInputChecks
                     if (hit != header.Handle) { Desktop(); await Task.Delay(350); }
                     await MouseAt(point, false, 8);
                     await WaitUntil(() => ShellContextMenu.ActiveMenuWindow != IntPtr.Zero);
+                }
+                if (menuLatencyOnly)
+                {
+                    var point = Center(Item(link));
+                    SetCursorPos((int)point.X, (int)point.Y);
+                    await Task.Delay(5500);
+                    var watch = Stopwatch.StartNew();
+                    await FolderRight(Item(link));
+                    File.AppendAllText(log, $"鼠标停留后右键到原生菜单可见：{watch.ElapsedMilliseconds} ms。\n");
+                    Require(watch.ElapsedMilliseconds < 750, "图标停留后原生完整菜单在 750 ms 内出现");
+                    var preparedLabels = MenuLabels();
+                    Require(preparedLabels.Any(label => label.Contains("属性", StringComparison.Ordinal))
+                        && preparedLabels.Any(label => label.Contains("删除", StringComparison.Ordinal)), "提前构建保留真实系统属性和删除命令");
+                    ShellContextMenu.CancelPending();
+                    await WaitUntil(() => !contents.InputActive);
+                    // 用真实文件变化验证不能沿用此前的命令状态。
+                    var outside = header.HeaderInput.PointToScreen(new Point(60, 20));
+                    SetCursorPos((int)outside.X, (int)outside.Y); await Task.Delay(150);
+                    SetCursorPos((int)Center(Item(link)).X, (int)Center(Item(link)).Y);
+                    await Task.Delay(5500);
+                    File.SetLastWriteTimeUtc(link, DateTime.UtcNow.AddSeconds(1));
+                    await FolderRight(Item(link));
+                    File.AppendAllText(log, $"文件变化后命令构建：{ShellContextMenu.LastBuildLatency} ms。\n");
+                    Require(ShellContextMenu.LastBuildLatency > 1000, "文件变化后重新取得当前完整菜单，不沿用提前构建结果");
+                    ShellContextMenu.CancelPending(); await WaitUntil(() => !contents.InputActive);
+                    // 过期资源释放之后，长时间停留仍要重新计算动态命令。
+                    SetCursorPos((int)outside.X, (int)outside.Y); await Task.Delay(150);
+                    SetCursorPos((int)Center(Item(link)).X, (int)Center(Item(link)).Y);
+                    await Task.Delay(11000);
+                    await FolderRight(Item(link));
+                    File.AppendAllText(log, $"过期后命令构建：{ShellContextMenu.LastBuildLatency} ms。\n");
+                    Require(ShellContextMenu.LastBuildLatency > 1000, "准备结果过期后重新构建系统命令状态");
+                    ShellContextMenu.CancelPending(); await WaitUntil(() => !contents.InputActive);
+                    exit = 0; return;
                 }
                 if (menuPlacementOnly)
                 {
