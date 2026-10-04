@@ -164,16 +164,18 @@ internal sealed class ContentPointerInput : IDisposable
         var item = FolderHeader.FindParent<ListBoxItem>(e.OriginalSource as DependencyObject);
         if (item == null) return;
         e.Handled = true;
-        await ShowMenuAsync();
+        await ShowMenuAsync(items.PointToScreen(e.GetPosition(items)), Keyboard.Modifiers);
     }
 
-    private async Task ShowMenuAsync()
+    private async Task ShowMenuAsync(Point screen, ModifierKeys modifiers)
     {
         if (menuOpen || Runtime.Current.Moving || Runtime.Current.Interacting) return;
         menuOpen = true;
         try
         {
-            await ShellContextMenu.ShowAsync(contents.SelectedPaths());
+            var rename = await ShellContextMenu.ShowAsync(contents.SelectedPaths(), screen,
+                (modifiers & ModifierKeys.Shift) != 0, (modifiers & ModifierKeys.Control) != 0);
+            if (rename != null && !disposed) new ContentRenameDialog(contents.FolderId, rename).ShowDialog();
         }
         catch (OperationCanceledException) { }
         catch (Exception e) { Runtime.Current.Balloon("文件菜单无法完成：" + e.Message); }

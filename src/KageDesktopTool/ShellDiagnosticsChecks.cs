@@ -73,6 +73,7 @@ internal static class ShellDiagnosticsChecks
                 var elapsed = Stopwatch.StartNew();
                 long longestTick = 0, previousTick = 0;
                 var helperSeen = false;
+                var menuSeen = false;
                 var timer = new DispatcherTimer { Interval = TimeSpan.FromMilliseconds(20) };
                 timer.Tick += (_, _) =>
                 {
@@ -84,14 +85,23 @@ internal static class ShellDiagnosticsChecks
                         var handle = new WindowInteropHelper(window).Handle;
                         helperSeen |= (GetWindowLong(handle, -16) & 0x00C00000) != 0;
                     }
+                    if (ShellContextMenu.OwnerWindow != IntPtr.Zero)
+                        helperSeen |= (GetWindowLong(ShellContextMenu.OwnerWindow, -16) & 0x00C00000) != 0;
                     if (ShellContextMenu.ActiveMenuWindow != IntPtr.Zero)
-                    { keybd_event(0x1B, 0, 0, UIntPtr.Zero); keybd_event(0x1B, 0, 2, UIntPtr.Zero); }
+                    { menuSeen = true; ShellContextMenu.CancelPending(); }
                 };
                 timer.Start();
-                await ShellContextMenu.ShowAsync([target]);
+                for (var sample = 0; sample < 2; sample++)
+                {
+                    menuSeen = false;
+                    try { await ShellContextMenu.ShowAsync([target]); }
+                    catch (OperationCanceledException) when (menuSeen) { }
+                    File.AppendAllText(log, $"第 {sample + 1} 次：菜单准备 {ShellContextMenu.LastMenuLatency} ms；取得对象 {ShellContextMenu.LastObjectLatency} ms；构建命令 {ShellContextMenu.LastBuildLatency} ms；原生窗口 {menuSeen}。\n");
+                    if (!menuSeen) break;
+                }
                 timer.Stop(); owner.Close();
                 File.AppendAllText(log, $"实际对象：{target}\n菜单准备 {ShellContextMenu.LastMenuLatency} ms，到关闭 {elapsed.ElapsedMilliseconds} ms；UI 最大停顿 {longestTick} ms；带标题栏辅助窗口 {helperSeen}；系统菜单窗口 {ShellContextMenu.LastMenuClass}。\n");
-                exit = helperSeen || longestTick > 250 ? 1 : 0;
+                exit = !menuSeen || helperSeen || longestTick > 250 ? 1 : 0;
             }
             catch (Exception e) { File.AppendAllText(log, "失败：" + e + "\n"); }
             finally { app.Shutdown(); }

@@ -93,6 +93,10 @@ internal static class ContentInputChecks
                         await FolderRight(Item(link));
                         Require(ShellContextMenu.ActiveMenuWindow != IntPtr.Zero, "真实鼠标右键图标后出现系统菜单");
                         Require(WindowsDesktop.GetWindowRect(ShellContextMenu.ActiveMenuWindow, out var bounds), "读取实际系统菜单位置");
+                        Require((GetWindowLong(ShellContextMenu.OwnerWindow, -16) & 0x00c00000) == 0
+                            && WindowsDesktop.GetWindowRect(ShellContextMenu.OwnerWindow, out var ownerBounds)
+                            && ownerBounds.Left == ownerBounds.Right && ownerBounds.Top == ownerBounds.Bottom,
+                            "菜单宿主没有标题栏且无可见窗口面积，不产生红叉");
                         var nearest = new Point(Math.Clamp(click.X, bounds.Left, bounds.Right), Math.Clamp(click.Y, bounds.Top, bounds.Bottom));
                         File.AppendAllText(log, $"右键位置：{click}；菜单位置：{bounds.Left},{bounds.Top},{bounds.Right},{bounds.Bottom}。\n");
                         // 只查询随机夹具的实际目录；不能把打开该目录后的菜单当作原地菜单。
@@ -189,7 +193,7 @@ internal static class ContentInputChecks
                 var right = Center(Item(link));
                 await FolderRight(Item(link));
                 await Task.Delay(600);
-                Require(ShellContextMenu.ActiveMenuWindow != IntPtr.Zero, "图标右键在 Explorer 呈现系统默认原生菜单");
+                Require(ShellContextMenu.ActiveMenuWindow != IntPtr.Zero, "图标右键在 Folder 原地呈现 Windows 原生传统菜单");
                 Key(0x1B); await Task.Delay(500);
                 Require(ShellContextMenu.ActiveMenuWindow == IntPtr.Zero, "Esc 真实输入取消原生菜单");
                 Desktop(); await Task.Delay(350);
@@ -406,7 +410,7 @@ internal static class ContentInputChecks
         mouse_event(4, 0, 0, 0, UIntPtr.Zero); await Task.Delay(500);
     }
     private static async Task WaitUntil(Func<bool> ready)
-    { for (var i = 0; i < 30 && !ready(); i++) await Task.Delay(100); }
+    { for (var i = 0; i < 80 && !ready(); i++) await Task.Delay(100); }
     private static void Key(byte key) { keybd_event(key, 0, 0, UIntPtr.Zero); keybd_event(key, 0, 2, UIntPtr.Zero); }
     private static AutomationElement[] MenuItems() => AutomationElement.FromHandle(ShellContextMenu.ActiveMenuWindow).FindAll(TreeScope.Descendants,
         new OrCondition(new PropertyCondition(AutomationElement.ControlTypeProperty, ControlType.MenuItem), new PropertyCondition(AutomationElement.ControlTypeProperty, ControlType.Button)))
@@ -469,6 +473,7 @@ internal static class ContentInputChecks
     private sealed class NoStartup : IStartupRegistration
     { public string LaunchCommand => "隔离输入验收不注册自启"; public string? ReadCommand() => null; public void WriteCommand(string? command) => throw new InvalidOperationException(); }
     [DllImport("user32.dll")] private static extern bool SetCursorPos(int x, int y);
+    [DllImport("user32.dll")] private static extern int GetWindowLong(IntPtr window, int index);
     [DllImport("user32.dll")] private static extern bool ReleaseCapture();
     [DllImport("kernel32.dll", CharSet = CharSet.Unicode, EntryPoint = "CreateHardLinkW")]
     private static extern bool CreateHardLink(string path, string target, IntPtr security);
