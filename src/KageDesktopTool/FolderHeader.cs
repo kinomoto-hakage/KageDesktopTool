@@ -32,6 +32,7 @@ internal sealed class FolderHeader : Window
     private double displayScale = 1;
     private FolderSnapshot? geometry;
     private bool positioning;
+    private bool previewingGeometry;
     private Point? resizePoint;
 
     internal FolderHeader(FolderSnapshot folder)
@@ -124,7 +125,7 @@ internal sealed class FolderHeader : Window
         SourceInitialized += (_, _) => Attach();
         DpiChanged += (_, _) => Dispatcher.BeginInvoke(() =>
         {
-            if (!closed && !positioning && geometry != null) ApplyGeometry(geometry);
+            if (!closed && !positioning && geometry != null) ApplyGeometry(geometry, previewingGeometry);
         });
         Closed += async (_, _) => { closed = true; Contents.Dispose(); await EndInteractionAsync(); };
         Update(folder);
@@ -235,10 +236,11 @@ internal sealed class FolderHeader : Window
         Contents.Update(folder, displayScale);
     }
 
-    internal void ApplyGeometry(FolderSnapshot folder)
+    internal void ApplyGeometry(FolderSnapshot folder, bool preview = false)
     {
         if (closed) return;
         geometry = folder;
+        previewingGeometry = preview;
         var scaleChanged = displayScale != folder.DisplayScale;
         displayScale = folder.DisplayScale;
         Record = folder.Folder;
@@ -265,7 +267,8 @@ internal sealed class FolderHeader : Window
             { Host = IntPtr.Zero; Hide(); }
         }
         finally { positioning = false; }
-        if (scaleChanged) Contents.Update(folder, displayScale);
+        // 预览复用已有内容和图标，只补偿窗口变换；结束会话后 Update 再读取目标 DPI 图标。
+        if (scaleChanged && !preview) Contents.Update(folder, displayScale);
     }
 
     internal void ApplyStyle(string value, double opacity)

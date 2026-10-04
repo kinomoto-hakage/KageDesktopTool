@@ -326,7 +326,7 @@ internal sealed class Runtime : IDisposable
     internal void Preview(LayoutInteraction interaction)
     {
         foreach (var folder in interaction.Folders)
-            if (Headers.TryGetValue(folder.Folder.Id, out var header) && header.Record != folder.Folder) header.ApplyGeometry(folder);
+            if (Headers.TryGetValue(folder.Folder.Id, out var header) && header.Record != folder.Folder) header.ApplyGeometry(folder, preview: true);
     }
 
     internal async Task CommitInteractionAsync(LayoutInteraction interaction)

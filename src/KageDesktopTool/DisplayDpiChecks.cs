@@ -96,6 +96,23 @@ internal static class DisplayDpiChecks
                     await workspace.SetViewAsync(target.FolderId, false);
                     runtime.Render();
                 }
+                // 在实际宿主中注入两个逻辑工作区，只核对跨 DPI 预览路径，不改变系统配置。
+                var actualArea = displays[0];
+                DisplayArea[] previewAreas = [actualArea with { Width = actualArea.Width / 3, Scale = 1.25 },
+                    actualArea with { X = actualArea.X + actualArea.Width / 3, Width = actualArea.Width - actualArea.Width / 3, Scale = 2 }];
+                Check((await workspace.RefreshAsync(previewAreas)).Succeeded, "跨 DPI 预览夹具初始化");
+                runtime.Render();
+                var previewRow = target.Contents.Items.Items[0];
+                var previewIcons = target.Contents.IconsLoaded;
+                var preview = runtime.BeginInteraction(target.FolderId)!;
+                preview.BeginDrag(0, 0);
+                preview.DragTo(actualArea.Width / 2, 0);
+                runtime.Preview(preview);
+                Check(target.Record.X >= previewAreas[1].X, "注入轨迹进入不同 DPI 工作区");
+                Check(ReferenceEquals(previewRow, target.Contents.Items.Items[0]) && ReferenceEquals(previewIcons, target.Contents.IconsLoaded),
+                    "跨 DPI 鼠标预览保留内容项目及图标任务，不读取 Shell 图标");
+                await runtime.CommitInteractionAsync(preview);
+                Check(!ReferenceEquals(previewRow, target.Contents.Items.Items[0]), "跨 DPI 会话结束后更新内容度量");
                 await runtime.RefreshDisplayEnvironmentAsync();
                 target.BeginHeaderDrag(new Point(0, 0));
                 target.DragHeaderTo(new Point(20, 10));
@@ -174,7 +191,9 @@ internal static class DisplayDpiChecks
             await header.Contents.IconsLoaded.WaitAsync(TimeSpan.FromSeconds(15));
             header.UpdateLayout();
             var folder = runtime!.Workspace.Snapshot.Folders.Single(f => f.Folder.Id == header.FolderId);
-            Check(folder.Visible && WindowsDesktop.GetWindowRect(header.Handle, out var rectangle)
+            WindowsDesktop.GetWindowRect(header.Handle, out var rectangle);
+            File.AppendAllText(log, $"{label}：窗口={rectangle.Left},{rectangle.Top},{rectangle.Right - rectangle.Left},{rectangle.Bottom - rectangle.Top}，记录={folder.Folder.X},{folder.Folder.Y}，尺寸={folder.Folder.HeaderWidth},{folder.Folder.HeaderHeight + folder.Folder.BodyHeight}，缩放={folder.DisplayScale}\n");
+            Check(folder.Visible && WindowsDesktop.IsWindow(header.Handle)
                 && rectangle.Left == folder.Folder.X && rectangle.Top == folder.Folder.Y
                 && rectangle.Right - rectangle.Left == Math.Ceiling(folder.Folder.HeaderWidth * folder.DisplayScale)
                 && rectangle.Bottom - rectangle.Top == Math.Ceiling((folder.Folder.HeaderHeight + folder.Folder.BodyHeight) * folder.DisplayScale), label + "：实际 HWND 边界与业务物理边界一致");

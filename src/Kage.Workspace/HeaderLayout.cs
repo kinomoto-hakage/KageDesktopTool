@@ -6,6 +6,10 @@ internal static class HeaderLayout
     internal static int Width(FolderRecord folder, DisplayArea area) => (int)Math.Ceiling(folder.HeaderWidth * area.Scale);
     internal static int Height(FolderRecord folder, DisplayArea area) => (int)Math.Ceiling((folder.HeaderHeight + (folder.Expanded ? folder.BodyHeight : 0)) * area.Scale);
 
+    internal static (FolderRecord Folder, DisplayArea Area)[] Occupied(IEnumerable<FolderSnapshot> folders, Guid target, IReadOnlyList<DisplayArea> displays)
+        => folders.Where(folder => folder.Visible && folder.Folder.Id != target)
+            .Select(folder => (folder.Folder, Available(folder.Folder, displays, [])!)).ToArray();
+
     internal static DisplayArea? Available(FolderRecord folder, IReadOnlyList<DisplayArea> displays, IReadOnlyList<(FolderRecord Folder, DisplayArea Area)> occupied)
     {
         var area = DisplayFor(folder, displays);

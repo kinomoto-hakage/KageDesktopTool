@@ -83,19 +83,15 @@ public sealed class LayoutInteraction
             HeaderHeight = current.Expanded ? current.HeaderHeight : Math.Clamp(current.HeaderHeight + heightDelta, 42, 82),
             BodyHeight = current.Expanded ? Math.Clamp(current.BodyHeight + heightDelta, 160, 720) : current.BodyHeight
         };
-        return Replace(changed, Occupied());
+        return Replace(changed, HeaderLayout.Occupied(folders, target, displays));
     }
 
     public bool ResizeHeaderBy(double heightDelta)
     {
         if (!double.IsFinite(heightDelta)) return false;
         var current = folders.Single(folder => folder.Folder.Id == target).Folder;
-        return Replace(current with { HeaderHeight = Math.Clamp(current.HeaderHeight + heightDelta, 42, 82) }, Occupied());
+        return Replace(current with { HeaderHeight = Math.Clamp(current.HeaderHeight + heightDelta, 42, 82) }, HeaderLayout.Occupied(folders, target, displays));
     }
-
-    private List<(FolderRecord Folder, DisplayArea Area)> Occupied() => folders
-        .Where(folder => folder.Visible && folder.Folder.Id != target)
-        .Select(folder => (folder.Folder, HeaderLayout.Available(folder.Folder, displays, [])!)).ToList();
 
     private bool Replace(FolderRecord changed, IReadOnlyList<(FolderRecord Folder, DisplayArea Area)> occupied)
     {

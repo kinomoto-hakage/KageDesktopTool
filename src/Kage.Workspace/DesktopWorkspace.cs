@@ -307,8 +307,7 @@ public sealed partial class DesktopWorkspace(IWorkspaceStore store, IStartupRegi
         var changed = target.Folder with { Expanded = !target.Folder.Expanded };
         if (changed.Expanded)
         {
-            var occupied = snapshot.Folders.Where(folder => folder.Visible && folder.Folder.Id != id)
-                .Select(folder => (folder.Folder, HeaderLayout.Available(folder.Folder, displays, [])!)).ToArray();
+            var occupied = HeaderLayout.Occupied(snapshot.Folders, id, displays);
             var placed = NearestPlacement.Find(changed, displays, occupied);
             if (placed == null) return new(Outcome.Failed, "桌面工作区没有可容纳头部与展示部分的空位，已保持折叠；请缩小或折叠 Folder。");
             changed = placed;
@@ -340,8 +339,7 @@ public sealed partial class DesktopWorkspace(IWorkspaceStore store, IStartupRegi
             if (interaction.Dragged)
             {
                 var target = proposed.Single(folder => folder.Folder.Id == interaction.Target);
-                var others = proposed.Where(folder => folder.Visible && folder.Folder.Id != interaction.Target)
-                    .Select(folder => (folder.Folder, HeaderLayout.Available(folder.Folder, displays, [])!)).ToArray();
+                var others = HeaderLayout.Occupied(proposed, interaction.Target, displays);
                 var placed = NearestPlacement.Find(target.Folder, displays, others);
                 if (placed == null) return new(Outcome.Failed, "桌面工作区没有可容纳位置，已恢复原布局。");
                 proposed = proposed.Select(folder => folder.Folder.Id == interaction.Target ? folder with { Folder = placed } : folder).ToArray();
