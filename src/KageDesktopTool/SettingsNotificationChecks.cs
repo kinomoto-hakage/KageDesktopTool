@@ -93,6 +93,18 @@ internal static class SettingsNotificationChecks
                 Button(settings, "保存消息提示选择").RaiseEvent(new RoutedEventArgs(System.Windows.Controls.Button.ClickEvent));
                 await WaitUntil(() => !workspace.Snapshot.NotificationsEnabled);
                 Check(runtime.Feedback.Entries[0].Delivery.Contains("已关闭"), "关闭操作也不投递完成提示");
+                var reading = runtime.Feedback.Record("长详情阅读", new(Outcome.Success, string.Join("\n", Enumerable.Repeat("实际路径与结果详情的阅读夹具", 120))), false);
+                runtime.ShowResults(reading.Id);
+                await Task.Delay(150);
+                settings.UpdateLayout();
+                var resultScroll = Descendants<ScrollViewer>(settings).Single(viewer => viewer.ScrollableHeight > 0);
+                resultScroll.ScrollToVerticalOffset(350);
+                await Task.Delay(100);
+                var readingOffset = resultScroll.VerticalOffset;
+                await runtime.RefreshDisplayEnvironmentAsync();
+                await Task.Delay(150);
+                Check(readingOffset > 100 && Math.Abs(resultScroll.VerticalOffset - readingOffset) < 1,
+                    "通知定位后后台刷新保留长详情阅读位置");
                 var style = runtime.CreateAppearance(folder.Folder.Id)!;
                 style.Show(); style.UpdateLayout();
                 Check(style.Title == "Folder 样式", "样式统一标题");

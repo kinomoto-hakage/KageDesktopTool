@@ -126,7 +126,7 @@ internal sealed class Runtime : IDisposable
         refresh.Start();
         Render();
         _ = RefreshDesktopSessionAsync();
-        if (!HotkeyRegistered) Balloon("Ctrl+Alt+K 注册失败，可能被其他程序占用；仍可从托盘创建 Folder。");
+        if (!HotkeyRegistered) ReportStatus("Ctrl+Alt+K 注册失败，可能被其他程序占用；仍可从托盘创建 Folder。");
     }
 
     internal void Dispatch(Action action)
@@ -168,13 +168,13 @@ internal sealed class Runtime : IDisposable
             Render();
             if (report || !result.Succeeded) Complete("刷新展示", result);
             else if (Workspace.Snapshot.Folders.Count(f => !f.Visible) > hidden)
-                Balloon("当前显示区域容纳不下部分 Folder，内容和记录保留；可在设置打开内容文件夹，释放空间后刷新展示。");
+                ReportStatus("当前显示区域容纳不下部分 Folder，内容和记录保留；可在设置打开内容文件夹，释放空间后刷新展示。");
             return result;
         }
         finally { refreshing = false; }
     }
 
-    internal void Balloon(string message)
+    internal void ReportStatus(string message)
     {
         if (disposed) return;
         Complete("状态", new OperationResult(Outcome.Success, message));
@@ -190,6 +190,13 @@ internal sealed class Runtime : IDisposable
     internal void Complete(BatchMoveResult result, string? targetNotice = null)
     {
         Feedback.Record(result, Workspace.Snapshot.NotificationsEnabled, targetNotice);
+        settings?.Refresh();
+    }
+
+    internal void Complete(ShellCommandResult command, OperationResult refreshResult)
+    {
+        if (disposed) return;
+        Feedback.Record(command, refreshResult, Workspace.Snapshot.NotificationsEnabled);
         settings?.Refresh();
     }
 
@@ -253,7 +260,7 @@ internal sealed class Runtime : IDisposable
             if (Exiting) return;
             reportedAvailability = available;
             settings?.Refresh();
-            if (!available || previous == false) Balloon(result.Message);
+            if (!available || previous == false) ReportStatus(result.Message);
         }
         finally { sessionRefreshing = false; }
     }
@@ -306,7 +313,7 @@ internal sealed class Runtime : IDisposable
         if (Exiting || Interacting || Moving || ChangingFolder) return null;
         if (appearance != null) return appearance;
         var interaction = Workspace.BeginAppearance(id);
-        if (interaction == null) { Balloon("工作区正在恢复或 Folder 不存在，暂不能修改外观。"); return null; }
+        if (interaction == null) { ReportStatus("工作区正在恢复或 Folder 不存在，暂不能修改外观。"); return null; }
         var name = Workspace.Snapshot.Folders.Single(folder => folder.Folder.Id == id).Folder.Name;
         appearance = new StyleDialog(this, interaction, name);
         return appearance;
@@ -422,9 +429,9 @@ internal sealed class Runtime : IDisposable
 
     internal async Task ExitAsync()
     {
-        if (Migrating) { rootMigration?.Cancel(); Balloon("正在停止根目录迁移并恢复，请等待结果后再退出。"); return; }
-        if (ChangingFolder) { Balloon("请先完成或关闭 Folder 操作窗口再退出。"); folderAction?.Activate(); return; }
-        if (Moving) { moveDialog?.Cancel(); Balloon("正在结束文件移动，请等待逐项结果后再退出。"); return; }
+        if (Migrating) { rootMigration?.Cancel(); ReportStatus("正在停止根目录迁移并恢复，请等待结果后再退出。"); return; }
+        if (ChangingFolder) { ReportStatus("请先完成或关闭 Folder 操作窗口再退出。"); folderAction?.Activate(); return; }
+        if (Moving) { moveDialog?.Cancel(); ReportStatus("正在结束文件移动，请等待逐项结果后再退出。"); return; }
         if (exiting) return;
         exiting = true;
         refresh.Stop();
@@ -445,7 +452,7 @@ internal sealed class Runtime : IDisposable
     {
         if (Exiting || Moving || ChangingFolder || Interacting || creating || appearance != null)
         {
-            Balloon("请先结束当前操作，再迁移或恢复存储根目录。");
+            ReportStatus("请先结束当前操作，再迁移或恢复存储根目录。");
             return null;
         }
         var dialog = rootMigration = new RootMigrationDialog(recovering: target == null);

@@ -343,6 +343,10 @@ internal static class ContentInputChecks
                 File.AppendAllText(log, $"删除结果协调：菜单活动 {contents.InputActive}，系统窗口 {ShellContextMenu.ActiveMenuWindow}，文件计数 {workspace.Snapshot.Folders.First().FileCount}\n");
                 Require(!contents.SelectedPaths().Contains(renamedPath) && workspace.Snapshot.Folders.First().FileCount == 47,
                     "菜单结束刷新项目、文件计数并清理删除选择");
+                var deleteFeedback = runtime.Feedback.Entries.FirstOrDefault(entry => entry.Title.StartsWith("文件菜单", StringComparison.Ordinal)
+                    && entry.Details.Contains(renamedPath, StringComparison.Ordinal));
+                Require(deleteFeedback != null && deleteFeedback.Summary.Contains("成功确认移除 1", StringComparison.Ordinal),
+                    "原生删除仅提交一条结果，保留可核对路径和确认移除计数");
                 ContentPointerInput.Descendant<ScrollViewer>(contents.Items)?.ScrollToTop(); contents.Items.UpdateLayout();
 
                 // 同 Folder 的多选重排与真实跨 Folder 移动使用不同落点。
@@ -354,10 +358,13 @@ internal static class ContentInputChecks
                 await Click(((Grid)Item(command).Content).Children[0] as FrameworkElement ?? throw new Exception());
                 keybd_event(0x11, 0, 2, UIntPtr.Zero);
                 var selectedBeforeMenu = contents.SelectedPaths();
+                var feedbackBeforeCancel = runtime.Feedback.Entries.Count(entry => entry.Title.StartsWith("文件菜单", StringComparison.Ordinal));
                 await FolderRight(Item(link)); await Task.Delay(400);
                 Require(contents.SelectedPaths().SequenceEqual(selectedBeforeMenu) && ShellContextMenu.ActiveMenuWindow != IntPtr.Zero,
                     "右键已选项目保留多项集合并取得原生集合菜单");
                 Key(0x1B); await Task.Delay(350); Desktop(); await Task.Delay(350);
+                Require(runtime.Feedback.Entries.Count(entry => entry.Title.StartsWith("文件菜单", StringComparison.Ordinal)) == feedbackBeforeCancel,
+                    "取消原生菜单不伪造已执行命令或结果通知");
                 var beforeOrder = workspace.Snapshot.Folders.First().Entries.Select(entry => entry.Name).ToArray();
                 var origin = Center((Image)((Grid)Item(link).Content).Children[0]);
                 await Drag(origin, new Point(origin.X + 1, origin.Y));
@@ -423,6 +430,25 @@ internal static class ContentInputChecks
                 Require(!Pixels(native).SequenceEqual(Pixels(clean)), "仅在本工具内移除快捷方式箭头，Shell 原生图像保留箭头");
                 var label = (TextBlock)((Grid)target.Contents.Items.Items.Cast<ListBoxItem>().Single(item => (string)item.Tag == movedLink).Content).Children[1];
                 Require(label.Text == "01-shortcut" && File.Exists(movedLink), "显示标签隐藏后缀但实际路径保留");
+                var batchPaths = new[] { Path.Combine(folder.ActualPath, "00-通知批次-甲.txt"), Path.Combine(folder.ActualPath, "00-通知批次-乙.txt") };
+                foreach (var path in batchPaths) File.WriteAllText(path, "原生批次结果隔离夹具");
+                await workspace.RefreshAsync(displays);
+                await workspace.SetContentViewAsync(folder.Folder.Id, false, 16, ContentSortKey.Name, false);
+                runtime.Render(); await contents.IconsLoaded; header.UpdateLayout();
+                Desktop(); await Task.Delay(350);
+                contents.Items.ScrollIntoView(Item(batchPaths[0])); contents.Items.UpdateLayout();
+                await Click(((Grid)Item(batchPaths[0]).Content).Children[0] as FrameworkElement ?? throw new Exception());
+                keybd_event(0x11, 0, 0, UIntPtr.Zero);
+                await Click(((Grid)Item(batchPaths[1]).Content).Children[0] as FrameworkElement ?? throw new Exception());
+                keybd_event(0x11, 0, 2, UIntPtr.Zero);
+                var batchFeedbackBefore = runtime.Feedback.Entries.Count(entry => entry.Title.StartsWith("文件菜单", StringComparison.Ordinal));
+                await FolderRight(Item(batchPaths[0])); await Task.Delay(350);
+                await ClickMenu("删除");
+                await WaitUntil(() => batchPaths.All(path => !File.Exists(path)) && !contents.InputActive);
+                var nativeBatch = runtime.Feedback.Entries.First(entry => entry.Title.StartsWith("文件菜单", StringComparison.Ordinal));
+                Require(runtime.Feedback.Entries.Count(entry => entry.Title.StartsWith("文件菜单", StringComparison.Ordinal)) == batchFeedbackBefore + 1
+                    && nativeBatch.Summary.Contains("成功确认移除 2", StringComparison.Ordinal) && batchPaths.All(path => nativeBatch.Details.Contains(path, StringComparison.Ordinal)),
+                    "真实多选原生删除仅汇总一次，保留两条实际路径及确认计数");
                 exit = 0;
             }
             catch (Exception e) { File.AppendAllText(log, "失败：" + e + "\n"); }

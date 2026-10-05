@@ -12,6 +12,10 @@ using System.Windows.Threading;
 
 namespace Kage.Desktop;
 
+internal enum ShellPathPresence { Present, Missing, Unavailable }
+internal sealed record ShellObservedPath(string Path, ShellPathPresence Presence);
+internal sealed record ShellCommandResult(string? RenamePath, string Command, string Verb, ShellObservedPath[] Paths, bool Cancelled = false);
+
 // 真正的传统对象菜单在独立 STA 线程构建与跟踪，Folder 界面继续响应。
 internal static class ShellContextMenu
 {
@@ -43,13 +47,13 @@ internal static class ShellContextMenu
         catch (ObjectDisposedException) { }
     }
 
-    internal static Task<string?> ShowAsync(string[] paths)
+    internal static Task<ShellCommandResult?> ShowAsync(string[] paths)
     {
         GetCursorPos(out var point);
         return ShowAsync(paths, new Point(point.X, point.Y));
     }
 
-    internal static async Task<string?> ShowAsync(string[] paths, Point screen, bool shift = false, bool control = false)
+    internal static async Task<ShellCommandResult?> ShowAsync(string[] paths, Point screen, bool shift = false, bool control = false)
     {
         if (paths.Length == 0) return null;
         if (Interlocked.CompareExchange(ref showing, 1, 0) != 0)
@@ -120,13 +124,13 @@ internal static class ShellContextMenu
             prepared?.Dispose(); prepared = null;
         }
 
-        internal async Task<string?> ShowAsync(string[] paths, Point screen, bool shift, bool control, Stopwatch watch, CancellationToken cancellation)
+        internal async Task<ShellCommandResult?> ShowAsync(string[] paths, Point screen, bool shift, bool control, Stopwatch watch, CancellationToken cancellation)
         {
             var dispatcher = await ready.Task.WaitAsync(cancellation);
             return await dispatcher.InvokeAsync(() => Show(paths, screen, shift, control, watch, cancellation)).Task;
         }
 
-        private string? Show(string[] paths, Point screen, bool shift, bool control, Stopwatch watch, CancellationToken cancellation)
+        private ShellCommandResult? Show(string[] paths, Point screen, bool shift, bool control, Stopwatch watch, CancellationToken cancellation)
         {
             cancellation.ThrowIfCancellationRequested();
             var handle = source!.Handle;
@@ -188,8 +192,12 @@ internal static class ShellContextMenu
                 cancellation.ThrowIfCancellationRequested();
                 if (command == 0) return null;
                 var verb = new StringBuilder(256);
-                if (paths.Length == 1 && commands.GetCommandString(new UIntPtr(command - 1), 4, IntPtr.Zero, verb, (uint)verb.Capacity) >= 0
-                    && verb.ToString().Equals("rename", StringComparison.OrdinalIgnoreCase)) return paths[0];
+                _ = commands.GetCommandString(new UIntPtr(command - 1), 4, IntPtr.Zero, verb, (uint)verb.Capacity);
+                var label = new StringBuilder(256);
+                GetMenuString(menu, command, label, label.Capacity, 0);
+                var commandName = label.Length == 0 ? (verb.Length == 0 ? "所选命令" : verb.ToString()) : label.ToString().Replace("&", "").Split('\t')[0];
+                if (paths.Length == 1 && verb.ToString().Equals("rename", StringComparison.OrdinalIgnoreCase))
+                    return new(paths[0], commandName, verb.ToString(), []);
                 var info = new InvokeInfo
                 {
                     Size = Marshal.SizeOf<InvokeInfo>(), Mask = 0x4000 | 0x20000000
@@ -197,8 +205,11 @@ internal static class ShellContextMenu
                     Window = handle, Verb = new IntPtr(command - 1), VerbUnicode = new IntPtr(command - 1), Show = 1,
                     Point = new NativePoint { X = (int)screen.X, Y = (int)screen.Y }
                 };
-                Marshal.ThrowExceptionForHR(commands.InvokeCommand(ref info));
-                return null;
+                var outcome = commands.InvokeCommand(ref info);
+                if (outcome is unchecked((int)0x800704C7) or unchecked((int)0x80004004))
+                    return new(null, commandName, verb.ToString(), paths.Select(ObservePath).ToArray(), Cancelled: true);
+                Marshal.ThrowExceptionForHR(outcome);
+                return new(null, commandName, verb.ToString(), paths.Select(ObservePath).ToArray());
             }
             finally
             {
@@ -242,6 +253,16 @@ internal static class ShellContextMenu
             catch { native.Dispose(); throw; }
         }
     }
+
+    private static ShellObservedPath ObservePath(string path)
+    {
+        try { _ = File.GetAttributes(path); return new(path, ShellPathPresence.Present); }
+        catch (Exception e) when (e is FileNotFoundException or DirectoryNotFoundException) { return new(path, ShellPathPresence.Missing); }
+        catch (Exception) { return new(path, ShellPathPresence.Unavailable); }
+    }
+
+    [DllImport("user32.dll", CharSet = CharSet.Unicode)]
+    private static extern int GetMenuString(IntPtr menu, uint command, StringBuilder text, int maximum, uint flags);
 
     private sealed class PreparedMenu : IDisposable
     {

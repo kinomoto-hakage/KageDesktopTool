@@ -9,6 +9,7 @@ using System.Windows.Input;
 using System.Windows.Media;
 using System.Windows.Shapes;
 using System.Windows.Threading;
+using Kage.Workspace;
 
 namespace Kage.Desktop;
 
@@ -178,14 +179,16 @@ internal sealed class ContentPointerInput : IDisposable
     {
         if (menuOpen || Runtime.Current.Moving || Runtime.Current.Interacting) return;
         menuOpen = true;
+        ShellCommandResult? command = null;
+        var paths = contents.SelectedPaths();
         try
         {
-            var rename = await ShellContextMenu.ShowAsync(contents.SelectedPaths(), screen,
+            command = await ShellContextMenu.ShowAsync(paths, screen,
                 (modifiers & ModifierKeys.Shift) != 0, (modifiers & ModifierKeys.Control) != 0);
-            if (rename != null && !disposed) new ContentRenameDialog(contents.FolderId, rename).ShowDialog();
+            if (command?.RenamePath is { } rename && !disposed) new ContentRenameDialog(contents.FolderId, rename).ShowDialog();
         }
         catch (OperationCanceledException) { }
-        catch (Exception e) { Runtime.Current.Balloon("文件菜单无法完成：" + e.Message); }
+        catch (Exception e) { Runtime.Current.Complete("文件菜单", new OperationResult(Outcome.Failed, "Windows 菜单未正常返回：" + e.Message + "\n所选实际路径：\n" + string.Join("\n", paths))); }
         finally
         {
             menuOpen = false;
@@ -193,7 +196,8 @@ internal sealed class ContentPointerInput : IDisposable
             {
                 var result = await Runtime.Current.Workspace.RefreshAsync(WindowsDesktop.Displays());
                 Runtime.Current.Render();
-                if (!result.Succeeded) Runtime.Current.Balloon(result.Message);
+                if (command is { RenamePath: null }) Runtime.Current.Complete(command, result);
+                else if (!result.Succeeded) Runtime.Current.Complete("菜单后刷新", result);
             }
         }
     }

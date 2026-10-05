@@ -24,6 +24,10 @@ internal sealed class SettingsWindow : Window
     private readonly StackPanel results = new();
     private readonly TextBlock notificationStatus = new() { TextWrapping = TextWrapping.Wrap, Margin = new Thickness(0, 0, 0, 12) };
     private Guid? selectedResult;
+    private OperationDetails[] renderedResults = [];
+    private string? renderedNotice;
+    private Guid? renderedSelection;
+    private bool resultsRendered;
     private bool rootEdited;
     private bool startupEdited;
     private bool notificationsEdited;
@@ -222,18 +226,26 @@ internal sealed class SettingsWindow : Window
 
     private void RefreshResults()
     {
+        var entries = runtime.Feedback.Entries;
+        if (resultsRendered && renderedResults.SequenceEqual(entries) && renderedNotice == runtime.Feedback.StorageNotice
+            && renderedSelection == selectedResult) return;
+        var selectionChanged = !resultsRendered || renderedSelection != selectedResult;
+        renderedResults = entries.ToArray();
+        renderedNotice = runtime.Feedback.StorageNotice;
+        renderedSelection = selectedResult;
+        resultsRendered = true;
         notificationStatus.Text = runtime.Feedback.StorageNotice ?? (selectedResult != null && !runtime.Feedback.Entries.Any(entry => entry.Id == selectedResult)
             ? "该通知的结果已超过历史保留范围。可在恢复与状态查看当前状态。" : "操作结果详情");
         var expanded = results.Children.OfType<Expander>().Where(row => row.IsExpanded).Select(row => row.Tag).ToArray();
         results.Children.Clear();
         foreach (var entry in runtime.Feedback.Entries)
         {
-            var text = new TextBox { Text = entry.Details + "\n\n" + entry.Delivery, IsReadOnly = true, TextWrapping = TextWrapping.Wrap,
+            var text = new TextBox { Text = entry.Summary + "\n\n" + entry.Details + "\n\n" + entry.Delivery, IsReadOnly = true, TextWrapping = TextWrapping.Wrap,
                 BorderThickness = new Thickness(0), Background = Brushes.Transparent, Margin = new Thickness(0, 8, 0, 8) };
             var row = new Expander { Header = $"{entry.Time:MM-dd HH:mm:ss} · {entry.Title}", Content = text,
                 Tag = entry.Id, IsExpanded = selectedResult == entry.Id || expanded.Contains(entry.Id), Margin = new Thickness(0, 0, 0, 10) };
             results.Children.Add(row);
-            if (selectedResult == entry.Id) Dispatcher.BeginInvoke(new Action(() => row.BringIntoView()));
+            if (selectionChanged && selectedResult == entry.Id) Dispatcher.BeginInvoke(new Action(() => row.BringIntoView()));
         }
     }
 

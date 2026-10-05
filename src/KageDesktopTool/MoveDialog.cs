@@ -20,7 +20,7 @@ internal sealed class MoveDialog : Window
 
     internal MoveDialog()
     {
-        Title = "文件移动结果";
+        Title = "文件移动进度";
         Width = 650;
         Height = 390;
         WindowStartupLocation = WindowStartupLocation.CenterScreen;
@@ -54,8 +54,6 @@ internal sealed class MoveDialog : Window
         {
             Result = await Runtime.Current.Workspace.MoveAsync(paths, target, conflict =>
                 Dispatcher.InvokeAsync(() => AskConflict(conflict)).Task.Unwrap(), progress, cancellation.Token);
-            results.Text = string.Join("\n\n", Result.Items.Select(Describe));
-            status.Text = (targetNotice == null ? "" : targetNotice + "\n") + $"成功 {Result.Items.Count(item => item.Outcome == Outcome.Success)}，跳过 {Result.Items.Count(item => item.Outcome == Outcome.Skipped)}，取消 {Result.Items.Count(item => item.Outcome == Outcome.Cancelled)}，失败／待选择 {Result.Items.Count(item => item.Outcome is Outcome.Failed or Outcome.Conflict)}。\n{Result.StateCommit.Message}";
             Runtime.Current.Complete(Result, targetNotice);
             return Result;
         }
@@ -78,11 +76,6 @@ internal sealed class MoveDialog : Window
 
     private void Append(MoveItemResult item)
     {
-        if (!finished) { results.AppendText(Describe(item) + "\n\n"); results.ScrollToEnd(); }
-    }
-    private static string Describe(MoveItemResult item)
-    {
-        var label = item.Outcome switch { Outcome.Success => "成功", Outcome.Skipped => "跳过", Outcome.Cancelled => "取消", Outcome.Conflict => "待选择", _ => "失败" };
-        return $"{label}：{item.SourcePath}\n{item.Message}" + (item.ActualPath == null ? "" : $"\n实际位置：{item.ActualPath}");
+        if (!finished) { results.AppendText(OperationFeedback.Describe(item) + "\n\n"); results.ScrollToEnd(); }
     }
 }

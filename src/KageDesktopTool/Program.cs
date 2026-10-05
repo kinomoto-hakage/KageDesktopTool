@@ -14,7 +14,7 @@ public static class Program
     {
         if (args.Contains("--publish-check")) return PublishChecks.Run();
         if (args.Contains("--release-workflow-check")) return ReleaseWorkflowChecks.Run().GetAwaiter().GetResult();
-        if (args.Contains("--session-check")) return SessionChecks.Run();
+        if (args.Contains("--session-check")) return SessionChecks.Run(args.Contains("--instance-only"));
         if (args.Contains("--desktop-recovery-check")) return DesktopRecoveryChecks.Run();
         if (args.Contains("--manual-desktop-check")) return ManualDesktopChecks.Run();
         if (args.Contains("--content-layout-check")) return ContentLayoutChecks.Run();
@@ -93,7 +93,7 @@ public static class Program
             runtime = new Runtime(workspace, stateDirectory);
             if (notificationRegistrationError != null)
                 runtime.Complete("通知注册", new OperationResult(Outcome.Failed, "系统通知注册不可用；操作结果仍会保存：" + notificationRegistrationError));
-            instance.Listen(() => runtime.Dispatch(runtime.ShowSettings), message => runtime.Dispatch(() => runtime.Balloon(message)), id => runtime.Dispatch(() => runtime.ShowResults(id)));
+            instance.Listen(() => runtime.Dispatch(runtime.ShowSettings), message => runtime.Dispatch(() => runtime.ReportStatus(message)), id => runtime.Dispatch(() => runtime.ShowResults(id)));
             if (activation.Task.IsCompletedSuccessfully) runtime.ShowResults(activation.Task.Result);
             else if (!toastLaunch && (workspace.Snapshot.Notices.Count != 0 || workspace.Snapshot.RecoveryRequired)) runtime.ShowSettings();
         };

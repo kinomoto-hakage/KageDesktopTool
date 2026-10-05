@@ -18,7 +18,7 @@ namespace Kage.Desktop;
 // 使用真实会话和随机隔离目录／启动项，不读取正式工作区或个人内容。
 internal static class SessionChecks
 {
-    internal static int Run()
+    internal static int Run(bool instanceOnly = false)
     {
         var fixture = Path.Combine(Path.GetTempPath(), "Kage-session-" + Guid.NewGuid().ToString("N"));
         Directory.CreateDirectory(fixture);
@@ -96,6 +96,12 @@ internal static class SessionChecks
                 await Task.Delay(100);
                 Check(runtime.Feedback.Entries.Count == countBeforeResult, "查看通知结果不产生新通知或重复操作");
                 app.Windows.OfType<SettingsWindow>().Single().Close();
+                if (instanceOnly)
+                {
+                    exit = 0;
+                    File.AppendAllText(log, "单实例及通知路由检查通过；未运行释放后的全局热键注册与输入。\n");
+                    return;
+                }
 
                 runtime.Dispose();
                 if (occupied) { WindowsDesktop.UnregisterHotKey(occupiedHandle, 99); occupied = false; }
