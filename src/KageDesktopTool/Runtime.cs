@@ -421,7 +421,6 @@ internal sealed class Runtime : IDisposable
         if (Exiting || Moving || ChangingFolder) return null;
         moveDialog = new MoveDialog();
         var dialog = moveDialog;
-        dialog.Show();
         if (cancelled) dialog.Cancel();
         try { return LastMoveResult = await dialog.MoveAsync(paths, target, targetError); }
         finally { moveDialog = null; Render(); }

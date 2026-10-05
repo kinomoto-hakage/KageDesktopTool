@@ -4,6 +4,7 @@ using System.Threading;
 using System.Threading.Tasks;
 using System.Windows;
 using System.Windows.Controls;
+using System.Windows.Threading;
 using Kage.Workspace;
 
 namespace Kage.Desktop;
@@ -15,6 +16,7 @@ internal sealed class MoveDialog : Window
     private readonly TextBox results;
     private readonly TextBlock status;
     private readonly Button cancel;
+    private readonly DispatcherTimer showProgress = new(DispatcherPriority.Background) { Interval = TimeSpan.FromMilliseconds(500) };
     private bool finished;
     internal BatchMoveResult? Result { get; private set; }
 
@@ -36,6 +38,7 @@ internal sealed class MoveDialog : Window
         results = new TextBox { IsReadOnly = true, TextWrapping = TextWrapping.Wrap, VerticalScrollBarVisibility = ScrollBarVisibility.Auto };
         body.Children.Add(results);
         Content = body;
+        showProgress.Tick += (_, _) => ShowProgress();
         Closing += (_, e) => { if (!finished) { Cancel(); e.Cancel = true; } };
         Closed += (_, _) => cancellation.Dispose();
     }
@@ -49,6 +52,8 @@ internal sealed class MoveDialog : Window
 
     internal async Task<BatchMoveResult> MoveAsync(string[] paths, MoveTarget target, string? targetNotice = null)
     {
+        // 快速完成的移动只发送结果通知；后台优先级让已排队的完成回调先结束窗口。
+        showProgress.Start();
         var progress = new Progress<MoveItemResult>(Append);
         try
         {
@@ -60,6 +65,7 @@ internal sealed class MoveDialog : Window
         finally
         {
             finished = true;
+            showProgress.Stop();
             cancel.IsEnabled = true;
             cancel.Content = "关闭";
             Runtime.Current.Render();
@@ -70,8 +76,15 @@ internal sealed class MoveDialog : Window
     private Task<ConflictChoice> AskConflict(MoveConflict conflict)
     {
         if (cancellation.IsCancellationRequested) return Task.FromResult(ConflictChoice.Cancel);
+        ShowProgress();
         var answer = MessageBox.Show(this, $"目标已存在：\n{conflict.DestinationPath}\n\n是：保留两份并自动编号\n否：跳过此项目\n取消：停止后续项目（已完成的移动保留）", "同名冲突", MessageBoxButton.YesNoCancel);
         return Task.FromResult(answer switch { MessageBoxResult.Yes => ConflictChoice.KeepBoth, MessageBoxResult.No => ConflictChoice.Skip, _ => ConflictChoice.Cancel });
+    }
+
+    private void ShowProgress()
+    {
+        showProgress.Stop();
+        if (!finished && !IsVisible) Show();
     }
 
     private void Append(MoveItemResult item)
