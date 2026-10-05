@@ -28,6 +28,7 @@ internal sealed class SettingsWindow : Window
     private string? renderedNotice;
     private Guid? renderedSelection;
     private bool resultsRendered;
+    private bool resultsRequested;
     private bool rootEdited;
     private bool startupEdited;
     private bool notificationsEdited;
@@ -220,6 +221,7 @@ internal sealed class SettingsWindow : Window
     internal void SelectResults(Guid? id)
     {
         selectedResult = id;
+        resultsRequested = true;
         navigation.SelectedIndex = 3;
         RefreshResults();
     }
@@ -227,9 +229,10 @@ internal sealed class SettingsWindow : Window
     private void RefreshResults()
     {
         var entries = runtime.Feedback.Entries;
-        if (resultsRendered && renderedResults.SequenceEqual(entries) && renderedNotice == runtime.Feedback.StorageNotice
+        if (!resultsRequested && resultsRendered && renderedResults.SequenceEqual(entries) && renderedNotice == runtime.Feedback.StorageNotice
             && renderedSelection == selectedResult) return;
-        var selectionChanged = !resultsRendered || renderedSelection != selectedResult;
+        var selectionChanged = resultsRequested || !resultsRendered || renderedSelection != selectedResult;
+        resultsRequested = false;
         renderedResults = entries.ToArray();
         renderedNotice = runtime.Feedback.StorageNotice;
         renderedSelection = selectedResult;
@@ -243,10 +246,12 @@ internal sealed class SettingsWindow : Window
             var text = new TextBox { Text = entry.Summary + "\n\n" + entry.Details + "\n\n" + entry.Delivery, IsReadOnly = true, TextWrapping = TextWrapping.Wrap,
                 BorderThickness = new Thickness(0), Background = Brushes.Transparent, Margin = new Thickness(0, 8, 0, 8) };
             var row = new Expander { Header = $"{entry.Time:MM-dd HH:mm:ss} · {entry.Title}", Content = text,
-                Tag = entry.Id, IsExpanded = selectedResult == entry.Id || expanded.Contains(entry.Id), Margin = new Thickness(0, 0, 0, 10) };
+                Tag = entry.Id, IsExpanded = selectionChanged && selectedResult == entry.Id || expanded.Contains(entry.Id), Margin = new Thickness(0, 0, 0, 10) };
             results.Children.Add(row);
             if (selectionChanged && selectedResult == entry.Id) Dispatcher.BeginInvoke(new Action(() => row.BringIntoView()));
         }
+        if (selectionChanged && selectedResult != null && !entries.Any(entry => entry.Id == selectedResult))
+            Dispatcher.BeginInvoke(new Action(() => notificationStatus.BringIntoView()));
     }
 
     private static string PathStatus(MigrationPathStatus status) => status switch

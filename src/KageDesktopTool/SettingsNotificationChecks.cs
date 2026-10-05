@@ -35,6 +35,7 @@ internal static class SettingsNotificationChecks
             activated.TrySetResult(id);
             runtime?.Dispatch(() => runtime.ShowResults(id));
         });
+        _ = WindowsNotifications.WasActivated;
         app.Startup += async (_, _) =>
         {
             try
@@ -105,6 +106,11 @@ internal static class SettingsNotificationChecks
                 await Task.Delay(150);
                 Check(readingOffset > 100 && Math.Abs(resultScroll.VerticalOffset - readingOffset) < 1,
                     "通知定位后后台刷新保留长详情阅读位置");
+                Descendants<Expander>(settings).Single(row => Equals(row.Tag, reading.Id)).IsExpanded = false;
+                settings.SelectResults(reading.Id);
+                await Task.Delay(150);
+                Check(Descendants<Expander>(settings).Single(row => Equals(row.Tag, reading.Id)).IsExpanded,
+                    "再次查看同一通知重新展开对应详情，普通刷新仍保留阅读位置");
                 var style = runtime.CreateAppearance(folder.Folder.Id)!;
                 style.Show(); style.UpdateLayout();
                 Check(style.Title == "Folder 样式", "样式统一标题");
