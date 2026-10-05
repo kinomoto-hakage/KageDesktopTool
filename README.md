@@ -53,13 +53,14 @@ rtk proxy dotnet run --project src/KageDesktopTool/KageDesktopTool.csproj --no-r
 ```powershell
 rtk proxy dotnet restore tests/Kage.Workspace.Checks/Kage.Workspace.Checks.csproj --configfile NuGet.Config
 rtk proxy dotnet run --project tests/Kage.Workspace.Checks --no-restore
-rtk proxy dotnet build src/KageDesktopTool/KageDesktopTool.csproj --no-restore
-rtk proxy dotnet src/KageDesktopTool/bin/Debug/net10.0-windows/KageDesktopTool.dll --session-check
-rtk proxy dotnet src/KageDesktopTool/bin/Debug/net10.0-windows/KageDesktopTool.dll --content-layout-check
-rtk proxy dotnet src/KageDesktopTool/bin/Debug/net10.0-windows/KageDesktopTool.dll --appearance-check
-rtk proxy dotnet src/KageDesktopTool/bin/Debug/net10.0-windows/KageDesktopTool.dll --file-move-check
-rtk proxy dotnet src/KageDesktopTool/bin/Debug/net10.0-windows/KageDesktopTool.dll --folder-action-check
-rtk proxy dotnet src/KageDesktopTool/bin/Debug/net10.0-windows/KageDesktopTool.dll --root-migration-check
+rtk proxy dotnet build src/KageDesktopTool/KageDesktopTool.csproj
+rtk proxy src/KageDesktopTool/bin/Debug/net10.0-windows10.0.19041.0/KageDesktopTool.exe --session-check
+rtk proxy src/KageDesktopTool/bin/Debug/net10.0-windows10.0.19041.0/KageDesktopTool.exe --content-layout-check
+rtk proxy src/KageDesktopTool/bin/Debug/net10.0-windows10.0.19041.0/KageDesktopTool.exe --appearance-check
+rtk proxy src/KageDesktopTool/bin/Debug/net10.0-windows10.0.19041.0/KageDesktopTool.exe --file-move-check
+rtk proxy src/KageDesktopTool/bin/Debug/net10.0-windows10.0.19041.0/KageDesktopTool.exe --folder-action-check
+rtk proxy src/KageDesktopTool/bin/Debug/net10.0-windows10.0.19041.0/KageDesktopTool.exe --root-migration-check
+rtk proxy src/KageDesktopTool/bin/Debug/net10.0-windows10.0.19041.0/KageDesktopTool.exe --settings-notification-check
 ```
 
 最后五项需在当前用户的交互式 Windows 会话中运行。`--session-check` 使用随机隔离目录及随机临时自启项，短暂显示测试头部、模拟输入 `Ctrl+Alt+K` 并恢复占用状态；`--content-layout-check` 核对实际 WPF 网格／列表、真实窗口边界、捕获释放、双击打开及外部变化；`--appearance-check` 检查真实外观输入、透明背景、调色盘焦点、图标切换及重启恢复；`--file-move-check` 使用真实鼠标/OLE、实际桌面随机命名夹具、隔离 Explorer 目录和真实冲突对话框，核对字节、源消失、取消及权限失败，短暂显露桌面后恢复窗口。结束后释放资源、关闭夹具 Explorer 并恢复 ACL，不读写正式工作区或以个人内容作夹具。日志和预览写到 `.scratch/desktop-folder/verification/`；构建及检查产物不纳入 Git。详见 [05 验收记录](docs/verification/05-content-and-layout.md)、[06 验收记录](docs/verification/06-appearance-and-icons.md) 和 [07 验收记录](docs/verification/07-file-moves-and-conflicts.md)。

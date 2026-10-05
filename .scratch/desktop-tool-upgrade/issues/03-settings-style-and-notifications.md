@@ -1,8 +1,8 @@
 # 03: 应用设置、Folder 样式与消息通知
 
 Type: implementation
-Status: ready-for-agent
-Labels: ready-for-agent
+Status: claimed
+Labels: in-progress
 Approved: 2026-10-03
 Spec: ../spec.md
 Plan: ../ticket-plan.md
@@ -43,3 +43,4 @@ User stories: 25-35, 47, 50
 ## Comments
 
 - 2026-10-03：用户已确认合并范围与前置关系，并调用 `to-tickets` 发布本票；尚未启动实现。
+- 2026-10-05：已实现通知偏好、结果详情、六分区设置、样式标签和完成进度自动关闭；完整 63 项业务检查及相应真实窗口回归通过。原生通知 API 接收成功，但用户可见显示与点击仍未通过，尚未确定原因；票据继续保持 claimed，详见 [验收记录](../../../docs/verification/upgrade-03-settings-style-and-notifications.md)。

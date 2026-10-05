@@ -28,6 +28,7 @@ internal sealed class ContentRenameDialog : Window
             try
             {
                 var outcome = await Runtime.Current.Workspace.RenameContentAsync(folderId, path, input.Text);
+                Runtime.Current.Complete("重命名项目", outcome);
                 if (outcome.Succeeded) { busy = false; Close(); return; }
                 result.Text = outcome.Message;
             }

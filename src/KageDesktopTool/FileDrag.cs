@@ -84,7 +84,7 @@ internal static class FileDrag
         {
             var result = await Runtime.Current.Workspace.ReorderContentsAsync(contents!.FolderId, paths, before);
             Runtime.Current.Render();
-            if (!result.Succeeded) Runtime.Current.Balloon(result.Message);
+            Runtime.Current.Complete("自定义排序", result);
             return;
         }
         if (!escaped && target?.FolderId == contents?.FolderId && contents != null) return;

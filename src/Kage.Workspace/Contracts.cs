@@ -38,6 +38,7 @@ public sealed record WorkspaceSnapshot(string Root, bool StartupEnabled, string 
     IReadOnlyList<FolderSnapshot> Folders, bool RecoveryRequired, IReadOnlyList<string> Notices)
 {
     public bool DesktopAvailable { get; init; }
+    public bool NotificationsEnabled { get; init; } = true;
     public PendingRootMigration? RootMigration { get; init; }
     public IReadOnlyList<MigrationRecoveryItem> MigrationRecovery { get; init; } = [];
 }
@@ -53,6 +54,7 @@ public interface IDesktopWorkspace
     Task<OperationResult> RenameFolderAsync(Guid id, string name, ConflictChoice conflict = ConflictChoice.Ask, CancellationToken cancellation = default);
     Task<OperationResult> DeleteFolderAsync(Guid id, FolderDeleteChoice choice, ConflictChoice conflict = ConflictChoice.Ask, CancellationToken cancellation = default);
     Task<OperationResult> SetStartupAsync(bool enabled);
+    Task<OperationResult> SetNotificationsAsync(bool enabled);
     Task<OperationResult> RestoreBackupAsync();
     Task<OperationResult> ConfirmPendingCreateAsync();
     Task<OperationResult> RefreshAsync(IReadOnlyList<DisplayArea> displays);
@@ -111,6 +113,7 @@ public sealed record WorkspaceState
     public PendingFolderChange? PendingFolderChange { get; init; }
     public PendingContentRename? PendingContentRename { get; init; }
     public RetainedFolder[] RetainedFolders { get; init; } = [];
+    public bool NotificationsEnabled { get; init; } = true;
     public PendingRootMigration? PendingRootMigration { get; init; }
 }
 

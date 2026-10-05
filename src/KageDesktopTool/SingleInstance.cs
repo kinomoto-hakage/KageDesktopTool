@@ -26,16 +26,19 @@ internal sealed class SingleInstance : IDisposable
         catch (AbandonedMutexException) { IsOwner = true; }
     }
 
-    internal async Task SendSettingsAsync()
+    internal Task SendSettingsAsync() => SendAsync("settings");
+    internal Task SendResultAsync(Guid? id) => SendAsync("result:" + id?.ToString("N"));
+
+    private async Task SendAsync(string request)
     {
         using var client = new NamedPipeClientStream(".", pipe, PipeDirection.Out, PipeOptions.Asynchronous | PipeOptions.CurrentUserOnly);
         await client.ConnectAsync(5000);
         using var writer = new StreamWriter(client);
-        await writer.WriteLineAsync("settings");
+        await writer.WriteLineAsync(request);
         await writer.FlushAsync();
     }
 
-    internal void Listen(Action showSettings, Action<string> report)
+    internal void Listen(Action showSettings, Action<string> report, Action<Guid?>? showResult = null)
     {
         listener = Task.Run(async () =>
         {
@@ -47,7 +50,10 @@ internal sealed class SingleInstance : IDisposable
                         PipeOptions.Asynchronous | PipeOptions.CurrentUserOnly);
                     await server.WaitForConnectionAsync(shutdown.Token);
                     using var reader = new StreamReader(server);
-                    if (await reader.ReadLineAsync(shutdown.Token) == "settings") showSettings();
+                    var request = await reader.ReadLineAsync(shutdown.Token);
+                    if (request == "settings") showSettings();
+                    else if (request?.StartsWith("result:", StringComparison.Ordinal) == true)
+                        (showResult ?? (_ => showSettings()))(Guid.TryParse(request[7..], out var id) ? id : null);
                 }
                 catch (OperationCanceledException) { break; }
                 catch (Exception e)

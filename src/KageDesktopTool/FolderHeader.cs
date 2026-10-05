@@ -119,7 +119,7 @@ internal sealed class FolderHeader : Window
         });
         Menu(menu, "重命名…", () => Runtime.Current.ShowFolderAction(FolderId, true));
         Menu(menu, "删除…", () => Runtime.Current.ShowFolderAction(FolderId, false));
-        Menu(menu, "外观…", () => Runtime.Current.ShowAppearance(FolderId));
+        Menu(menu, "样式…", () => Runtime.Current.ShowAppearance(FolderId));
         Menu(menu, "设置", () => Runtime.Current.ShowSettings());
         ContextMenu = menu;
         SourceInitialized += (_, _) => Attach();
@@ -153,7 +153,7 @@ internal sealed class FolderHeader : Window
         if (Runtime.Current.Interacting || Runtime.Current.ChangingFolder || Runtime.Current.Migrating) return;
         var result = await Runtime.Current.Workspace.ToggleFolderAsync(FolderId);
         Runtime.Current.Render();
-        if (!result.Succeeded) Runtime.Current.Balloon(result.Message);
+        Runtime.Current.Complete("展开／折叠 Folder", result);
     }
 
     // 会话轨迹检查与真实鼠标事件使用同一个入口。

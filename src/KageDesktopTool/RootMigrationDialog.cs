@@ -90,6 +90,7 @@ internal sealed class RootMigrationDialog : Window
             finished = true;
             CancelButton.Content = "关闭";
             CancelButton.IsEnabled = true;
+            Close();
         }
     }
 }

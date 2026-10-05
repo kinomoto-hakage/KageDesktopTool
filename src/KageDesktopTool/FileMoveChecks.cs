@@ -162,17 +162,18 @@ internal static class FileMoveChecks
                 {
                     // 当前可见顺序是批量操作次序，先完成项须先于冲突项。
                     await DragFolderItems(first, conflictNames, HeaderCenter(second));
-                    await WaitUntil(() => runtime.ActiveMove == null && app.Windows.OfType<MoveDialog>().Any(window => window.Result?.Items.Count == 5));
+                    await WaitUntil(() => runtime.ActiveMove == null && runtime.LastMoveResult?.Items.Count == 5);
                 }
                 finally { timer.Stop(); }
-                var conflictResult = app.Windows.OfType<MoveDialog>().Single().Result!;
+                var conflictResult = runtime.LastMoveResult!;
+                Check(!app.Windows.OfType<MoveDialog>().Any(), "批次完成后进度自动关闭，详情在设置保留");
                 Check(clicked == 3 && conflictResult.Items.Select(item => item.Outcome).SequenceEqual(new[] { Outcome.Success, Outcome.Success, Outcome.Skipped, Outcome.Cancelled, Outcome.Cancelled }), "真实冲突对话框保留两份跳过取消及逐项结果");
                 Check(File.ReadAllText(Path.Combine(secondPath, "保留两份.txt")) == "目标原内容" && File.ReadAllText(Path.Combine(secondPath, "保留两份 (2).txt")) == "源内容", "真实拖放编号不覆盖原内容");
                 Check(File.Exists(Path.Combine(firstPath, "跳过.lnk")) && File.Exists(Path.Combine(firstPath, "后续.txt")) && !File.Exists(Path.Combine(firstPath, "先完成.txt")), "取消保留已完成及后续未移动项目");
                 CloseResults();
                 await DragFolderItems(first, ["后续.txt"], HeaderCenter(second), escape: true);
-                await WaitUntil(() => runtime.ActiveMove == null && app.Windows.OfType<MoveDialog>().Any(window => window.Result != null));
-                Check(app.Windows.OfType<MoveDialog>().Single().Result!.Items.Single().Outcome == Outcome.Cancelled && File.Exists(Path.Combine(firstPath, "后续.txt")), "原生拖出 Esc 取消不凭效果标志删除源");
+                await WaitUntil(() => runtime.ActiveMove == null && runtime.LastMoveResult?.Items.Count == 1);
+                Check(runtime.LastMoveResult!.Items.Single().Outcome == Outcome.Cancelled && File.Exists(Path.Combine(firstPath, "后续.txt")), "原生拖出 Esc 取消不凭效果标志删除源");
                 CloseResults();
 
                 var denied = new DirectoryInfo(Path.Combine(fixture, "拒绝写入"));

@@ -15,7 +15,8 @@ internal static class PublishChecks
         try
         {
             foreach (var file in new[] { "KageDesktopTool.exe", "coreclr.dll", "hostfxr.dll", "hostpolicy.dll",
-                "System.Private.CoreLib.dll", "PresentationFramework.dll", "使用说明.md", "Assets/app-d.ico" })
+                "System.Private.CoreLib.dll", "PresentationFramework.dll", "使用说明.md", "Assets/app-d.ico",
+                "Microsoft.WindowsAppRuntime.dll", "Microsoft.Windows.AppNotifications.Projection.dll" })
                 if (!File.Exists(Path.Combine(AppContext.BaseDirectory, file))) throw new IOException("发布包缺少：" + file);
             using var config = JsonDocument.Parse(File.ReadAllText(Path.Combine(AppContext.BaseDirectory, "KageDesktopTool.runtimeconfig.json")));
             var options = config.RootElement.GetProperty("runtimeOptions");

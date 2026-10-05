@@ -184,7 +184,7 @@ internal sealed class FolderContents : DockPanel
             {
                 var result = await Runtime.Current.Workspace.SetContentViewAsync(id, grid, size, sort, descending);
                 Runtime.Current.Render();
-                if (!result.Succeeded) Runtime.Current.Balloon(result.Message);
+                Runtime.Current.Complete("查看与排序", result);
             };
             parent.Items.Add(item);
         }

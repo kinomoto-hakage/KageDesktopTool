@@ -8,7 +8,7 @@ using Kage.Workspace;
 
 namespace Kage.Desktop;
 
-// 操作前打开结果窗口；取消停止后续项目，已完成内容继续列出。
+// 操作期间保留取消与冲突询问；结束后详情进入设置并自动关闭进度。
 internal sealed class MoveDialog : Window
 {
     private readonly CancellationTokenSource cancellation = new();
@@ -56,6 +56,7 @@ internal sealed class MoveDialog : Window
                 Dispatcher.InvokeAsync(() => AskConflict(conflict)).Task.Unwrap(), progress, cancellation.Token);
             results.Text = string.Join("\n\n", Result.Items.Select(Describe));
             status.Text = (targetNotice == null ? "" : targetNotice + "\n") + $"成功 {Result.Items.Count(item => item.Outcome == Outcome.Success)}，跳过 {Result.Items.Count(item => item.Outcome == Outcome.Skipped)}，取消 {Result.Items.Count(item => item.Outcome == Outcome.Cancelled)}，失败／待选择 {Result.Items.Count(item => item.Outcome is Outcome.Failed or Outcome.Conflict)}。\n{Result.StateCommit.Message}";
+            Runtime.Current.Complete(Result, targetNotice);
             return Result;
         }
         finally
@@ -64,6 +65,7 @@ internal sealed class MoveDialog : Window
             cancel.IsEnabled = true;
             cancel.Content = "关闭";
             Runtime.Current.Render();
+            Close();
         }
     }
 

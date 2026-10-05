@@ -29,7 +29,7 @@ internal sealed class StyleDialog : Window
     {
         this.runtime = runtime;
         Interaction = interaction;
-        Title = name + " · 外观";
+        Title = "Folder 样式";
         Width = 430;
         SizeToContent = SizeToContent.Height;
         ResizeMode = ResizeMode.NoResize;
@@ -38,6 +38,7 @@ internal sealed class StyleDialog : Window
         Background = new SolidColorBrush(Color.FromRgb(30, 33, 39));
         Foreground = Brushes.White;
         Content = root;
+        root.Children.Add(new TextBlock { Text = name, TextWrapping = TextWrapping.Wrap, Margin = new Thickness(0, 0, 0, 12) });
         root.Children.Add(new TextBlock { Text = "背景颜色", FontSize = 20, FontWeight = FontWeights.SemiBold, Margin = new Thickness(0, 0, 0, 16) });
         root.Children.Add(swatch);
         var palette = new WrapPanel();
@@ -71,11 +72,19 @@ internal sealed class StyleDialog : Window
         };
         root.Children.Add(input);
         root.Children.Add(Error);
-        root.Children.Add(opacityLabel);
+        root.Children.Add(new TextBlock { Text = "背景透明度", Margin = new Thickness(0, 0, 0, 8) });
         Transparency = new Slider { Minimum = 0, Maximum = 100, Value = (1 - Interaction.Opacity) * 100, TickFrequency = 10, SmallChange = 1, LargeChange = 10 };
         Transparency.ValueChanged += (_, _) => { Interaction.SetOpacity(1 - Transparency.Value / 100); UpdatePreview(); };
-        root.Children.Add(Transparency);
-        root.Children.Add(new TextBlock { Text = "不透明                                      完全透明", Foreground = Brushes.LightGray, FontSize = 11, Margin = new Thickness(0, 7, 0, 22) });
+        var opacityRow = new Grid { Margin = new Thickness(0, 0, 0, 22) };
+        opacityRow.ColumnDefinitions.Add(new ColumnDefinition());
+        opacityRow.ColumnDefinitions.Add(new ColumnDefinition { Width = GridLength.Auto });
+        opacityRow.Children.Add(Transparency);
+        var labels = new StackPanel { Margin = new Thickness(14, 0, 0, 0), MinWidth = 70 };
+        labels.Children.Add(opacityLabel);
+        labels.Children.Add(new TextBlock { Text = "完全透明", Foreground = Brushes.LightGray, FontSize = 11 });
+        Grid.SetColumn(labels, 1);
+        opacityRow.Children.Add(labels);
+        root.Children.Add(opacityRow);
         var actions = new StackPanel { Orientation = Orientation.Horizontal, HorizontalAlignment = HorizontalAlignment.Right };
         var cancel = new Button { Content = "取消", IsCancel = true, Width = 86, Padding = new Thickness(8), Margin = new Thickness(0, 0, 10, 0) };
         cancel.Click += (_, _) => Close();
@@ -103,6 +112,7 @@ internal sealed class StyleDialog : Window
         try
         {
             var result = await runtime.Workspace.ApplyAppearanceAsync(Interaction);
+            runtime.Complete("Folder 样式", result);
             if (runtime.Exiting) return;
             if (result.Succeeded) { saving = false; Close(); }
             else Error.Text = result.Message;
@@ -150,7 +160,7 @@ internal sealed class StyleDialog : Window
     {
         Error.Text = Interaction.Error;
         ApplyButton.IsEnabled = Interaction.Error.Length == 0;
-        opacityLabel.Text = $"背景透明度   {Transparency.Value:0}% · 实时预览";
+        opacityLabel.Text = $"{Transparency.Value:0}%";
         runtime.PreviewAppearance(Interaction);
     }
 

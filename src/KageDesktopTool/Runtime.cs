@@ -21,6 +21,7 @@ internal sealed class Runtime : IDisposable
     internal static Runtime Current { get; private set; } = null!;
     internal static BitmapImage ApplicationIcon => Current?.applicationIcon ?? IconChoices.Image("d");
     internal IDesktopWorkspace Workspace { get; }
+    internal OperationFeedback Feedback { get; }
     internal Dictionary<Guid, FolderHeader> Headers { get; } = new();
     internal bool DesktopAvailable => WindowsDesktop.Host() != IntPtr.Zero
         && Headers.Values.All(h => WindowsDesktop.Attached(h.Handle, h.Host));
@@ -62,8 +63,9 @@ internal sealed class Runtime : IDisposable
     internal FolderActionDialog? ActiveFolderAction => folderAction;
     internal bool ChangingFolder => folderAction != null;
     internal MoveDialog? ActiveMove => moveDialog;
+    internal BatchMoveResult? LastMoveResult { get; private set; }
 
-    internal Runtime(IDesktopWorkspace workspace)
+    internal Runtime(IDesktopWorkspace workspace, string? resultDirectory = null)
     {
         Current = this;
         layoutInput.Tick += (_, _) =>
@@ -78,6 +80,7 @@ internal sealed class Runtime : IDisposable
             }
         };
         Workspace = workspace;
+        Feedback = new OperationFeedback(resultDirectory, resultDirectory == null ? null : WindowsNotifications.Send);
         Controller = new Window { Width = 1, Height = 1, ShowInTaskbar = false, WindowStyle = WindowStyle.ToolWindow, Title = "Kage 桌面整理控制器" };
         var handle = new WindowInteropHelper(Controller).EnsureHandle();
         source = HwndSource.FromHwnd(handle);
@@ -142,14 +145,14 @@ internal sealed class Runtime : IDisposable
     private void SystemDisplayChanged(object? sender, EventArgs args) => Dispatch(RequestDisplayRefresh);
     private void SystemPreferenceChanged(object sender, UserPreferenceChangedEventArgs args) => Dispatch(RequestDisplayRefresh);
 
-    internal async Task RefreshDisplayEnvironmentAsync()
+    internal async Task<OperationResult?> RefreshDisplayEnvironmentAsync(bool report = false)
     {
-        if (refreshing || Exiting || Moving || ChangingFolder || ContentInputActive) return;
+        if (refreshing || Exiting || Moving || ChangingFolder || ContentInputActive) return null;
         var displays = WindowsDesktop.Displays();
         var changed = displayRefreshPending || !displayEnvironment.SequenceEqual(displays);
         if (Interacting)
         {
-            if (!changed) return;
+            if (!changed) return null;
             foreach (var header in Headers.Values) header.CancelInteraction();
             activeInteraction = null;
             layoutInput.Stop();
@@ -163,9 +166,10 @@ internal sealed class Runtime : IDisposable
             displayEnvironment = displays;
             displayRefreshPending = false;
             Render();
-            if (!result.Succeeded) Balloon(result.Message);
+            if (report || !result.Succeeded) Complete("刷新展示", result);
             else if (Workspace.Snapshot.Folders.Count(f => !f.Visible) > hidden)
                 Balloon("当前显示区域容纳不下部分 Folder，内容和记录保留；可在设置打开内容文件夹，释放空间后刷新展示。");
+            return result;
         }
         finally { refreshing = false; }
     }
@@ -173,9 +177,26 @@ internal sealed class Runtime : IDisposable
     internal void Balloon(string message)
     {
         if (disposed) return;
-        Tray.BalloonTipTitle = "Kage 桌面整理";
-        Tray.BalloonTipText = message.Length > 240 ? message[..240] : message;
-        Tray.ShowBalloonTip(5000);
+        Complete("状态", new OperationResult(Outcome.Success, message));
+    }
+
+    internal void Complete(string title, OperationResult result)
+    {
+        if (disposed) return;
+        Feedback.Record(title, result, Workspace.Snapshot.NotificationsEnabled);
+        settings?.Refresh();
+    }
+
+    internal void Complete(BatchMoveResult result, string? targetNotice = null)
+    {
+        Feedback.Record(result, Workspace.Snapshot.NotificationsEnabled, targetNotice);
+        settings?.Refresh();
+    }
+
+    internal void ShowResults(Guid? id = null)
+    {
+        ShowSettingsCore();
+        settings?.SelectResults(id);
     }
 
     internal void Render()
@@ -261,13 +282,13 @@ internal sealed class Runtime : IDisposable
             using var available = new Icon(Path.Combine(AppContext.BaseDirectory, "Assets", $"tray-{key}.ico"));
             var result = await Workspace.SetIconAsync(key);
             Render();
-            if (!result.Succeeded) Balloon(result.Message);
+            Complete("图标方案", result);
             return result;
         }
         catch (Exception e)
         {
             var result = new OperationResult(Outcome.Failed, $"图标无法加载，原方案保留：{e.Message}");
-            Balloon(result.Message);
+            Complete("图标方案", result);
             return result;
         }
     }
@@ -304,6 +325,12 @@ internal sealed class Runtime : IDisposable
 
     internal void ShowSettings()
     {
+        ShowSettingsCore();
+        Complete("查看设置", new OperationResult(Outcome.Success, "设置已打开。"));
+    }
+
+    private void ShowSettingsCore()
+    {
         if (exiting || disposed) return;
         if (settings == null)
         {
@@ -335,7 +362,7 @@ internal sealed class Runtime : IDisposable
         try
         {
             var result = await Workspace.CommitLayoutAsync(interaction);
-            if (!result.Succeeded) Balloon(result.Message);
+            Complete("Folder 布局", result);
         }
         finally { activeInteraction = null; layoutInput.Stop(); Render(); }
     }
@@ -361,8 +388,7 @@ internal sealed class Runtime : IDisposable
             }
             Render();
             if (Exiting) return;
-            if (result.Outcome is Outcome.Failed or Outcome.RecoveryRequired) { MessageBox.Show(result.Message, "创建 Folder"); ShowSettings(); }
-            else if (result.Outcome == Outcome.Success) Balloon(result.Message);
+            Complete("新建 Folder", result);
         }
         finally { creating = false; }
     }
@@ -390,8 +416,7 @@ internal sealed class Runtime : IDisposable
         var dialog = moveDialog;
         dialog.Show();
         if (cancelled) dialog.Cancel();
-        if (targetError != null) Balloon(targetError);
-        try { return await dialog.MoveAsync(paths, target, targetError); }
+        try { return LastMoveResult = await dialog.MoveAsync(paths, target, targetError); }
         finally { moveDialog = null; Render(); }
     }
 
@@ -405,7 +430,7 @@ internal sealed class Runtime : IDisposable
         refresh.Stop();
         if (activeInteraction != null) await CommitInteractionAsync(activeInteraction);
         var result = await Workspace.RefreshAsync(WindowsDesktop.Displays());
-        if (result.Outcome == Outcome.Failed) MessageBox.Show($"退出前状态提交失败：{result.Message}。原记录及内容均保留。", "退出 Kage");
+        if (result.Outcome == Outcome.Failed) Complete("退出前保存", result);
         Dispose();
         Application.Current.Shutdown();
     }
@@ -425,7 +450,12 @@ internal sealed class Runtime : IDisposable
         }
         var dialog = rootMigration = new RootMigrationDialog(recovering: target == null);
         dialog.Show();
-        try { return target == null ? await dialog.StartRecoveryAsync(Workspace) : await dialog.StartAsync(Workspace, target); }
+        try
+        {
+            var result = target == null ? await dialog.StartRecoveryAsync(Workspace) : await dialog.StartAsync(Workspace, target);
+            Complete(target == null ? "恢复根目录" : "迁移根目录", result);
+            return result;
+        }
         finally { rootMigration = null; Render(); }
     }
 
@@ -438,7 +468,8 @@ internal sealed class Runtime : IDisposable
                 : new ProcessStartInfo(path) { UseShellExecute = true };
             Process.Start(start);
         }
-        catch (Exception e) { MessageBox.Show($"无法打开 {path}\n{e.Message}", "Kage 桌面整理"); }
+        catch (Exception e) { Current.Complete("打开项目", new OperationResult(Outcome.Failed, e.Message, path)); return; }
+        Current.Complete("打开项目", new OperationResult(Outcome.Success, "已交给 Windows 打开。", path));
     }
 
     internal void ShowFolderAction(Guid id, bool rename)

@@ -72,7 +72,9 @@ internal static class SessionChecks
                 Check(runtime.Tray.Visible && runtime.Headers.Values.All(h => WindowsDesktop.IsWindowVisible(h.Handle)), "关闭设置保留托盘和头部");
 
                 var request = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
-                instance.Listen(() => { runtime.Dispatch(runtime.ShowSettings); request.TrySetResult(); }, error => request.TrySetException(new Exception(error)));
+                var resultRequest = new TaskCompletionSource<Guid?>();
+                instance.Listen(() => { runtime.Dispatch(runtime.ShowSettings); request.TrySetResult(); }, error => request.TrySetException(new Exception(error)),
+                    id => { runtime.Dispatch(() => runtime.ShowResults(id)); resultRequest.TrySetResult(id); });
                 using (var child = Process.Start(new ProcessStartInfo(startupExecutable()) { UseShellExecute = false, CreateNoWindow = true,
                     ArgumentList = { "--instance-check", fixture } })!)
                 {
@@ -82,6 +84,17 @@ internal static class SessionChecks
                 await request.Task.WaitAsync(TimeSpan.FromSeconds(5));
                 await Task.Delay(100);
                 Check(app.Windows.OfType<SettingsWindow>().Count() == 1 && runtime.Headers.Count == 3, "重复启动只打开现有设置，不创建重复头部");
+                var expectedResult = Guid.NewGuid();
+                var countBeforeResult = runtime.Feedback.Entries.Count;
+                using (var child = Process.Start(new ProcessStartInfo(startupExecutable()) { UseShellExecute = false, CreateNoWindow = true,
+                    ArgumentList = { "--instance-result-check", fixture, expectedResult.ToString("N") } })!)
+                {
+                    await child.WaitForExitAsync().WaitAsync(TimeSpan.FromSeconds(8));
+                    Check(child.ExitCode == 0, "通知第二进程转交对应结果标识后结束");
+                }
+                Check(await resultRequest.Task.WaitAsync(TimeSpan.FromSeconds(5)) == expectedResult, "真实单实例管道保留对应通知标识");
+                await Task.Delay(100);
+                Check(runtime.Feedback.Entries.Count == countBeforeResult, "查看通知结果不产生新通知或重复操作");
                 app.Windows.OfType<SettingsWindow>().Single().Close();
 
                 runtime.Dispose();

@@ -5,6 +5,7 @@ if (args.Length == 3 && args[0] == "--interrupt-migration")
 
 var tests = new (string Name, Func<Task> Run)[]
 {
+    ("通知偏好旧状态默认保存故障与重启", NotificationChecks.Preference),
     ("升级布局自由穿越与最近释放", UpgradeLayoutChecks.FreeDrag),
     ("升级布局底部展开与头部独立调高", UpgradeLayoutChecks.ExpansionAndHeader),
     ("升级布局显示器优先负坐标空洞与容量不足", UpgradeLayoutChecks.DisplayPriorityAndCapacity),

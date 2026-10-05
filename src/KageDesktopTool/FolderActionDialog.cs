@@ -94,12 +94,18 @@ internal sealed class FolderActionDialog : Window
             ResultText.Text = result.Message + (result.ActualPath == null ? "" : $"\n实际位置：{result.ActualPath}");
             completed = result.Succeeded || result.Outcome == Outcome.RecoveryRequired;
             if (completed) CancelButton.Content = "关闭";
+            runtime.Complete(rename ? "重命名 Folder" : "删除 Folder", result);
+            busy = false;
+            if (result.Outcome is not (Outcome.Failed or Outcome.Conflict)) Close();
             return result;
         }
         catch (Exception e)
         {
             ResultText.Text = $"操作失败：{e.Message}。请核对实际路径后重试。";
-            return new(Outcome.Failed, ResultText.Text);
+            var result = new OperationResult(Outcome.Failed, ResultText.Text);
+            runtime.Complete(rename ? "重命名 Folder" : "删除 Folder", result);
+            busy = false;
+            return result;
         }
         finally { busy = false; Enable(true); runtime.Render(); }
     }

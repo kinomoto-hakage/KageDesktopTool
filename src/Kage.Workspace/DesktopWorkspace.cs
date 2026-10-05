@@ -15,6 +15,16 @@ public sealed partial class DesktopWorkspace(IWorkspaceStore store, IStartupRegi
     private volatile WorkspaceSnapshot snapshot = new(@"D:\KageFiles\", false, "d", [], true, []);
     public WorkspaceSnapshot Snapshot => snapshot;
 
+    public Task<OperationResult> SetNotificationsAsync(bool enabled) => Run(() =>
+    {
+        if (blocked) return Locked();
+        var next = state with { NotificationsEnabled = enabled };
+        store.Save(next);
+        state = next;
+        Publish();
+        return new(Outcome.Success, enabled ? "消息提示已开启。" : "消息提示已关闭，结果详情仍可在设置查看。");
+    });
+
     // 会话展示状态不写入配置，也不触发文件恢复；重启须重新核对宿主。
     public Task<OperationResult> ReportDesktopAvailabilityAsync(bool available) => Run(() =>
     {
@@ -528,6 +538,7 @@ public sealed partial class DesktopWorkspace(IWorkspaceStore store, IStartupRegi
         if (state.PendingRootMigration != null)
             messages.Add($"迁移清单已按实际位置核对：{recovery.Count(item => !item.Restored)} 项尚未恢复。查看下方原位置、迁移位置和实际快捷方式目标。");
         snapshot = new(state.Root, state.StartupEnabled, state.IconChoice, rendered.AsReadOnly(), blocked, messages.AsReadOnly())
-            { DesktopAvailable = desktopAvailable, RootMigration = state.PendingRootMigration, MigrationRecovery = Array.AsReadOnly(recovery) };
+            { DesktopAvailable = desktopAvailable, NotificationsEnabled = state.NotificationsEnabled,
+                RootMigration = state.PendingRootMigration, MigrationRecovery = Array.AsReadOnly(recovery) };
     }
 }
