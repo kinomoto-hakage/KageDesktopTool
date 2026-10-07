@@ -13,17 +13,17 @@
     <WindowsPackageType>None</WindowsPackageType>
     <WindowsAppSDKSelfContained>true</WindowsAppSDKSelfContained>
     <RuntimeIdentifier>win-x64</RuntimeIdentifier>
-    <ApplicationIcon>../../prototypes/DesktopFolderPrototype/Assets/app-d.ico</ApplicationIcon>
+    <ApplicationIcon>Assets/app-d.ico</ApplicationIcon>
   </PropertyGroup>
   <ItemGroup>
     <PackageReference Include="Microsoft.WindowsAppSDK" Version="1.8.260921001" />
     <Content Include="../../docs/使用说明.md" Link="使用说明.md" CopyToPublishDirectory="PreserveNewest" />
     <ProjectReference Include="../Kage.Workspace/Kage.Workspace.csproj" />
-    <!-- 已验收图标直接作为构建资源，发布后无需访问原型目录。 -->
-    <Content Include="../../prototypes/DesktopFolderPrototype/Assets/*.ico" Link="Assets/%(Filename)%(Extension)" CopyToOutputDirectory="PreserveNewest" CopyToPublishDirectory="PreserveNewest" />
-    <Resource Include="../../prototypes/DesktopFolderPrototype/Assets/app-a.png" Link="Assets/app-a.png" />
-    <Resource Include="../../prototypes/DesktopFolderPrototype/Assets/app-b.png" Link="Assets/app-b.png" />
-    <Resource Include="../../prototypes/DesktopFolderPrototype/Assets/app-c.png" Link="Assets/app-c.png" />
-    <Resource Include="../../prototypes/DesktopFolderPrototype/Assets/app-d.png" Link="Assets/app-d.png" />
+    <!-- 正式图标随源码维护，构建与发布均不依赖原型目录。 -->
+    <Content Include="Assets/*.ico" CopyToOutputDirectory="PreserveNewest" CopyToPublishDirectory="PreserveNewest" />
+    <Resource Include="Assets/app-a.png" />
+    <Resource Include="Assets/app-b.png" />
+    <Resource Include="Assets/app-c.png" />
+    <Resource Include="Assets/app-d.png" />
   </ItemGroup>
 </Project>

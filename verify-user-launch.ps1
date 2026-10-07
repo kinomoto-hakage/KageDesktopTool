@@ -33,10 +33,6 @@ function Read-FileHash([string]$Path) {
 function Read-ProtectedFiles {
     # 普通打开设置会追加操作历史；只把工作区配置及备份视为必须不变的受保护状态。
     $files = @(Get-ChildItem -LiteralPath $stateDirectory -File -Force | Where-Object { $_.Name -like 'workspace.json*' })
-    $prototype = Join-Path $PSScriptRoot 'prototypes/DesktopFolderPrototype'
-    $files += @(Get-ChildItem -LiteralPath $prototype -File -Filter 'PROTOTYPE-*')
-    $data = Join-Path $prototype 'PROTOTYPE-data'
-    if (Test-Path -LiteralPath $data) { $files += @(Get-ChildItem -LiteralPath $data -Recurse -File -Force) }
     $files | Sort-Object FullName | ForEach-Object { $_.FullName + ' ' + (Read-FileHash $_.FullName) }
 }
 

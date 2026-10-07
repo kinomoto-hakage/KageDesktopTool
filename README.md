@@ -69,7 +69,9 @@ rtk proxy src/KageDesktopTool/bin/Debug/net10.0-windows10.0.19041.0/win-x64/Kage
 
 `--root-migration-check` 需在当前用户交互式 Windows 会话运行，检查真实设置按钮、迁移进度、工具快捷方式目标及当场取消恢复，使用随机隔离夹具。根迁移逐项保存旧／新路径、执行／恢复阶段及关联快捷方式目标变化。恢复不完整保留可定位的实际内容和日志；中断后重启暂停修改，启动恢复由任务 10 接入。详见 [09 验收记录](docs/verification/09-change-root-and-rollback.md)。
 
-结构：`src/Kage.Workspace/` 提供共用业务 interface 和真实状态／目录处理；`src/KageDesktopTool/` 提供 WPF、桌面宿主、托盘、热键、单实例及注册表适配器。`prototypes/` 保留已验收的原型。
+结构：`src/Kage.Workspace/` 提供共用业务 interface 和真实状态／目录处理；`src/KageDesktopTool/` 提供 WPF、桌面宿主、托盘、热键、单实例及注册表适配器，正式图标位于其 `Assets/`。`tests/` 保留业务回归，`tools/` 保留图标生成器、发布共用函数及系统菜单修复工具。
+
+仓库已清理原型代码、一次性诊断探针、构建缓存、临时验收产物及旧版／候选发布包。`releases/` 只保留 1.1.0 正式目录、ZIP 及 SHA256。`.scratch/` 中的规格、票据和 `docs/verification/` 中的验收结论作为维护依据保留；其中提及的历史临时日志、截图或旧包可能已清理。`local-backups/` 中的历史配置快照和原型示例经核对后已清除，当前正式配置及 `.bak` 不受影响。系统菜单修复仅保留 `.scratch/windows-shell-latency/final-backup-v2/` 中经清单校验的完整还原资料，供原修复脚本使用；重复安装包、解压副本及旧诊断恢复记录已清除。
 
 ## 维护者发布与整体验收
 

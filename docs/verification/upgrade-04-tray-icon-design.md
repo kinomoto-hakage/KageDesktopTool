@@ -59,7 +59,7 @@ rtk proxy '.scratch/desktop-folder/verification/upgrade-04 审查后资源/KageD
 生成器命令如下；对照预览的第一个参数须指向基线 `271b94d` 的原始托盘 PNG／ICO，避免把更新后的图标当作原图。
 
 ```powershell
-rtk proxy dotnet run --project tools/TrayIconGenerator -- .scratch/desktop-folder/verification/tray-original prototypes/DesktopFolderPrototype/Assets docs/verification/assets/upgrade-04-tray-icons.png
+rtk proxy dotnet run --project tools/TrayIconGenerator -- src/KageDesktopTool/Assets src/KageDesktopTool/Assets docs/verification/assets/upgrade-04-tray-icons.png
 ```
 
 ## Standards

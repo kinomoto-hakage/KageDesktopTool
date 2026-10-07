@@ -43,6 +43,8 @@ rtk proxy powershell -NoProfile -File tools/windows/Fix-PcAppStoreMenu.ps1 -Mode
 
 备份在 `.scratch/windows-shell-latency/final-backup-v2/`，不提交 Git；诊断／截图／原始包副本在同 effort 的忽略目录。将来供应商重新注册此插件时，需重新验证组件是否已修复，不能假定此隔离设置永久阻止供应商安装。
 
+仓库清理说明（2026-10-07）：经逐文件 SHA256 核对，`final-backup/`、`package-backup/` 中的安装包与保留包相同，旧组件设置也与 `final-backup-v2/` 中的设置相同。已清除这两处重复备份、解压副本及旧诊断恢复记录，仅保留 `final-backup-v2/` 和本机问题票据。修复脚本不再合并已清除的旧诊断数据；首次 Apply 备份当时实际组件设置，已有完整备份继续沿用。此次只做文件清理与校验，未执行 Apply／Restore 或更改系统设置。
+
 ## 项目检查
 
 Kage 产品菜单逻辑没有因这个系统修复而裁剪命令。既有菜单失效检查原先要求重新构建必须大于 1000 ms，在系统修复后不成立；改为使用实际 QueryContextMenu 的高精度计时，确认确实重新构建，不以系统保持缓慢作为成功条件。正式 Runtime 原地／无红叉／准备取消和缓存失效检查通过，文件、系统失效和过期后实际重建为 64–67 ms。实际 MSI 快捷方式首次准备 **651 ms**，重复 **8 ms**，WPF 最大停顿 **46 ms**。

@@ -93,8 +93,6 @@ if ($Mode -eq 'Apply') {
         Copy-Item -LiteralPath $sourceInstaller -Destination $installerPath
         if ((FileDigest $sourceInstaller) -ne (FileDigest $installerPath)) { throw '安装包副本不一致' }
         if (Test-Path -LiteralPath $packageData) { CopySettings $packageData $dataBackup }
-        $originalDataBackup = Join-Path $repoRoot '.scratch/windows-shell-latency/package-backup/user-data'
-        if (Test-Path -LiteralPath $originalDataBackup) { CopySettings $originalDataBackup $dataBackup }
         $identity = InstallerIdentity
         if ($identity.Name -ne $currentPackage.Name -or $identity.Version -ne [string]$currentPackage.Version -or
             $identity.Architecture -ne ([string]$currentPackage.Architecture).ToLowerInvariant() -or $identity.Publisher -ne $currentPackage.Publisher) {
