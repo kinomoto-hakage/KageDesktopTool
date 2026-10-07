@@ -176,4 +176,5 @@ Test-seam-review: approved
 
 ### 发布记录
 
+- 2026-10-07：01—05 全部完成，交付 1.1.0 完整包，1.0.0 基线保留。组合检查修复根迁移后的手动顺序；66 项业务检查、适用 Windows／普通启动及完整包校验通过。通知自动点击失败及既有人工通过、硬件未覆盖范围分别记录，详见 [05 验收记录](../../docs/verification/upgrade-05-upgrade-and-release.md)。
 - 2026-10-03：用户回复“确认”并调用 `to-spec`；正式发布到仓库本地 Markdown tracker，状态与标签为 `ready-for-agent`。业务测试边界沿用已认可的 `IDesktopWorkspace`，Windows 行为仍需真实会话验收。
