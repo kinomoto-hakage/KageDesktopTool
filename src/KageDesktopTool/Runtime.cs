@@ -416,13 +416,14 @@ internal sealed class Runtime : IDisposable
         return dialog.ShowDialog() == true ? name.Text : null;
     }
 
-    internal async Task<BatchMoveResult?> MoveFilesAsync(string[] paths, MoveTarget target, bool cancelled = false, string? targetError = null)
+    internal async Task<BatchMoveResult?> MoveFilesAsync(string[] paths, MoveTarget target, bool cancelled = false, string? targetError = null,
+        WindowsDesktop.POINT? desktopPosition = null)
     {
         if (Exiting || Moving || ChangingFolder) return null;
         moveDialog = new MoveDialog();
         var dialog = moveDialog;
         if (cancelled) dialog.Cancel();
-        try { return LastMoveResult = await dialog.MoveAsync(paths, target, targetError); }
+        try { return LastMoveResult = await dialog.MoveAsync(paths, target, targetError, desktopPosition); }
         finally { moveDialog = null; Render(); }
     }
 

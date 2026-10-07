@@ -50,7 +50,8 @@ internal sealed class MoveDialog : Window
         cancel.IsEnabled = false;
     }
 
-    internal async Task<BatchMoveResult> MoveAsync(string[] paths, MoveTarget target, string? targetNotice = null)
+    internal async Task<BatchMoveResult> MoveAsync(string[] paths, MoveTarget target, string? targetNotice = null,
+        WindowsDesktop.POINT? desktopPosition = null)
     {
         // 快速完成的移动只发送结果通知；后台优先级让已排队的完成回调先结束窗口。
         showProgress.Start();
@@ -59,6 +60,15 @@ internal sealed class MoveDialog : Window
         {
             Result = await Runtime.Current.Workspace.MoveAsync(paths, target, conflict =>
                 Dispatcher.InvokeAsync(() => AskConflict(conflict)).Task.Unwrap(), progress, cancellation.Token);
+            if (target.IsDesktop && desktopPosition is { } point)
+            {
+                // 文件移动已结束，不因 Shell 位置更新迟到而闪出一个不可再取消的进度窗口。
+                showProgress.Stop();
+                status.Text = "文件移动已结束，正在安排桌面图标…";
+                cancel.IsEnabled = false;
+                var notice = await DesktopIconPlacement.PlaceAsync(Result, point);
+                if (notice != null) targetNotice = string.Join("\n", new[] { targetNotice, notice }.Where(text => !string.IsNullOrEmpty(text)));
+            }
             Runtime.Current.Complete(Result, targetNotice);
             return Result;
         }

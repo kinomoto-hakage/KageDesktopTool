@@ -133,6 +133,27 @@ internal static class FileMoveChecks
                 Check(File.ReadAllBytes(Path.Combine(desktop, desktopNames[0])).SequenceEqual(new byte[] { 7, 0, 255 }) && File.ReadAllText(Path.Combine(desktop, desktopNames[2], "内容.txt")) == "桌面子目录", "多选拖出至 Windows 实际桌面，字节一致");
                 Check(workspace.Snapshot.Folders.First().Entries.Count == 0, "桌面移出同步源展示与计数");
                 Check(desktop == Environment.GetFolderPath(Environment.SpecialFolder.DesktopDirectory), "桌面目录由 Windows 获取，兼容重定向");
+                await Task.Delay(1000);
+                var firstMovedName = Path.GetFileName(runtime.LastMoveResult!.Items.First(item => item.Outcome == Outcome.Success).ActualPath!);
+                var placed = FindItem(desktopView, firstMovedName, Path.GetFileNameWithoutExtension(firstMovedName));
+                File.AppendAllText(log, $"落点检查：鼠标 {blank}；首个图标 {placed?.Current.BoundingRectangle}\n");
+                Check(placed != null && Math.Abs(Center(placed.Current.BoundingRectangle).X - blank.X) < 180
+                    && Math.Abs(Center(placed.Current.BoundingRectangle).Y - blank.Y) < 180,
+                    "移出后的首个桌面图标位于鼠标释放位置附近，而不是最左空位");
+                var bounds = desktopNames.Select(name => FindItem(desktopView, name, Path.GetFileNameWithoutExtension(name))!.Current.BoundingRectangle).ToArray();
+                Check(bounds.All(rectangle => Math.Abs(Center(rectangle).X - blank.X) < 250 && Math.Abs(Center(rectangle).Y - blank.Y) < 500)
+                    && bounds.Select(Center).Distinct().Count() == desktopNames.Length, "多选移出在落点附近分开放置，不重叠、不留在左侧");
+                Check((await workspace.MoveAsync([Path.Combine(desktop, desktopNames[0])], MoveTarget.Folder(first.FolderId))).Items.Single().Outcome == Outcome.Success,
+                    "建立单项落点夹具，真实文件重新移入");
+                runtime.Render();
+                var singlePoint = DesktopBackground(blank);
+                await DragFolderItems(first, [desktopNames[0]], singlePoint);
+                await WaitUntil(() => runtime.ActiveMove == null && File.Exists(Path.Combine(desktop, desktopNames[0])));
+                await Task.Delay(750);
+                var single = FindItem(desktopView, desktopNames[0], Path.GetFileNameWithoutExtension(desktopNames[0]))!;
+                File.AppendAllText(log, $"单项落点检查：鼠标 {singlePoint}；图标 {single.Current.BoundingRectangle}\n");
+                Check(Math.Abs(Center(single.Current.BoundingRectangle).X - singlePoint.X) < 180
+                    && Math.Abs(Center(single.Current.BoundingRectangle).Y - singlePoint.Y) < 180, "单项移出跟随新的鼠标落点");
 
                 var conflictNames = new[] { "先完成.txt", "保留两份.txt", "跳过.lnk", "取消目录", "后续.txt" };
                 foreach (var name in conflictNames.Where(name => name != "取消目录")) File.WriteAllText(Path.Combine(firstPath, name), "源内容");
@@ -264,17 +285,23 @@ internal static class FileMoveChecks
         var rectangle = list.Current.BoundingRectangle;
         return new(rectangle.Right - 40, rectangle.Bottom - 40);
     }
-    private static Point DesktopBackground()
+    private static Point DesktopBackground(Point? previous = null)
     {
         var area = WindowsDesktop.Displays().First();
         for (var y = area.Y + area.Height / 2; y < area.Y + area.Height - 150; y += 100)
         for (var x = area.X + area.Width / 2; x < area.X + area.Width - 300; x += 100)
         {
+            if (previous is { } old && Math.Abs(old.X - x) < 250 && Math.Abs(old.Y - y) < 250) continue;
+            var hit = WindowsDesktop.WindowFromPoint(new WindowsDesktop.POINT { X = x, Y = y });
+            var className = new System.Text.StringBuilder(128);
+            GetClassName(hit, className, className.Capacity);
+            if (className.ToString() != "SysListView32") continue;
             SetCursorPos(x, y);
             if (FileDrag.TargetAtCursor()?.IsDesktop == true) return new(x, y);
         }
         throw new Exception("未找到桌面空白位置。");
     }
+    [DllImport("user32.dll", CharSet = CharSet.Unicode)] private static extern int GetClassName(IntPtr window, System.Text.StringBuilder name, int count);
     internal static async Task PhysicalDrag(Point source, Point destination, bool escape = false)
     {
         SetCursorPos((int)source.X, (int)source.Y);

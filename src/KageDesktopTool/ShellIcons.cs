@@ -55,7 +55,8 @@ internal static class ShellIcons
         try
         {
             var image = resource ?? Imaging.CreateBitmapSourceFromHIcon(info.Icon, Int32Rect.Empty, BitmapSizeOptions.FromEmptyOptions());
-            var shortcut = hideShortcutArrow && path.EndsWith(".lnk", StringComparison.OrdinalIgnoreCase);
+            var shortcut = hideShortcutArrow && (path.EndsWith(".lnk", StringComparison.OrdinalIgnoreCase)
+                || path.EndsWith(".url", StringComparison.OrdinalIgnoreCase));
             if (image.PixelWidth < physicalSize || shortcut || resource != null)
             {
                 // 从 Shell 系统图像列表取足够大的原生图像，保留实际路径的关联及覆盖。

@@ -39,6 +39,7 @@ internal static class FileDrag
         var escaped = false;
         string? before = null;
         var reorder = false;
+        WindowsDesktop.POINT? desktopPosition = null;
         void Feedback(object sender, GiveFeedbackEventArgs e)
         {
             if (contents == null) return;
@@ -54,8 +55,9 @@ internal static class FileDrag
             released = true;
             try
             {
-                target = TargetAtCursor();
                 GetCursorPos(out var cursor);
+                target = TargetAt(cursor);
+                if (target?.IsDesktop == true) desktopPosition = cursor;
                 var screen = new Point(cursor.X, cursor.Y);
                 reorder = contents != null && target?.FolderId == contents.FolderId && contents.ContainsScreenPoint(screen);
                 if (reorder) before = contents!.InsertionAt(screen, false);
@@ -89,13 +91,18 @@ internal static class FileDrag
         }
         if (!escaped && target?.FolderId == contents?.FolderId && contents != null) return;
         if (escaped || !released) await Runtime.Current.MoveFilesAsync(paths, MoveTarget.Directory(""), cancelled: true);
-        else if (target != null) await Runtime.Current.MoveFilesAsync(paths, target);
+        else if (target != null) await Runtime.Current.MoveFilesAsync(paths, target, desktopPosition: desktopPosition);
         else await Runtime.Current.MoveFilesAsync(paths, MoveTarget.Directory(""), targetError: error ?? "请选择桌面空白处、Folder 或资源管理器中的实际目录内容区。");
     }
 
     internal static MoveTarget? TargetAtCursor()
     {
         GetCursorPos(out var point);
+        return TargetAt(point);
+    }
+
+    private static MoveTarget? TargetAt(WindowsDesktop.POINT point)
+    {
         var window = WindowsDesktop.WindowFromPoint(point);
         foreach (var header in Runtime.Current.Headers.Values)
             if (window == header.Handle || WindowsDesktop.IsChild(header.Handle, window)) return MoveTarget.Folder(header.FolderId);

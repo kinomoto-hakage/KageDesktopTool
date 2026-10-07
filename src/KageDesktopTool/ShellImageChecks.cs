@@ -22,6 +22,25 @@ internal static class ShellImageChecks
             var url = Path.Combine(fixture, "图标.url");
             void SetIcon(string name) => File.WriteAllText(url, "[InternetShortcut]\nURL=https://example.invalid/\nIconIndex=0\nIconFile=" + Path.Combine(AppContext.BaseDirectory, "Assets", name) + "\n");
             SetIcon("app-d.ico");
+            var iconFile = Path.Combine(AppContext.BaseDirectory, "Assets", "app-d.ico");
+            var linkFile = Path.Combine(fixture, "实际快捷方式.lnk");
+            dynamic shell = Activator.CreateInstance(Type.GetTypeFromProgID("WScript.Shell")!)!;
+            dynamic link = shell.CreateShortcut(linkFile);
+            try { link.TargetPath = AppContext.BaseDirectory; link.IconLocation = iconFile; link.Save(); }
+            finally { Marshal.FinalReleaseComObject(link); Marshal.FinalReleaseComObject(shell); }
+            using (var iconStream = File.OpenRead(iconFile))
+            {
+                var frames = BitmapDecoder.Create(iconStream, BitmapCreateOptions.PreservePixelFormat, BitmapCacheOption.OnLoad).Frames;
+                foreach (var size in new[] { 16, 32, 48, 96 })
+                {
+                    var expected = frames.Where(frame => frame.PixelWidth >= size).OrderBy(frame => frame.PixelWidth).First();
+                    foreach (var path in new[] { url, linkFile })
+                    {
+                        var withoutArrow = (BitmapSource)ShellIcons.ForFile(path, size == 16, size)!;
+                        Check(Fingerprint(withoutArrow).SequenceEqual(Fingerprint(expected)), $"{Path.GetExtension(path)} {size} 像素显式图标不叠加快捷方式箭头");
+                    }
+                }
+            }
             var first = (BitmapSource)ShellIcons.ForFile(url, false, 72)!;
             Check(ShellDiagnosticsChecks.VisiblePixels(first) > first.PixelWidth * first.PixelHeight / 8, "URL 显式资源拥有有效实际图案");
             var cached = ShellIcons.ForFile(url, false, 72);

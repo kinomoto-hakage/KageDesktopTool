@@ -1,8 +1,8 @@
 # 01: Folder 内容展示与文件交互
 
 Type: implementation
-Status: resolved
-Labels: resolved
+Status: claimed
+Labels: in-progress
 Approved: 2026-10-03
 Spec: ../spec.md
 Plan: ../ticket-plan.md
@@ -43,6 +43,8 @@ User stories: 1-24, 38, 47, 49, 51-53
 先复现并修复双击／菜单，再完成选择和快捷方式显示，随后接入图标尺寸、排序、重排与滚动条。每步保留可运行检查，最后验证这些交互配合。
 
 ## Comments
+
+- 2026-10-07：用户反馈移出到桌面后图标跑到最左空位，要求放在鼠标释放位置；部分内容图标仍有右下角快捷方式箭头。重新认领本票，补充真实桌面落点与 `.lnk`／`.url` 去箭头回归，保持一批一次实际移动及其他状态覆盖。
 
 - 2026-10-04：用户确认“OK，问题已解决，检查更新对应票据”。已完成系统级慢菜单组件定位与可恢复隔离，桌面、Explorer 和 Folder 菜单实际响应通过；本票及 [系统菜单故障票据](../../windows-shell-latency/issues/01-lnk-context-menu.md) 均保持 `resolved`。以下首次数秒等待的记录属于系统修复前的历史阶段，最终结果见“系统菜单根因修复与用户验收”。
 
