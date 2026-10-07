@@ -25,9 +25,9 @@ public sealed partial class DesktopWorkspace
                     Path.Combine(target, Path.GetFileName(folder.ContentPath)), folder.ShortcutPath))).ToArray();
             try { ValidateMigration(target, items); }
             catch (MigrationConflict error) { return new(Outcome.Conflict, error.Message, target); }
-            var original = state;
+            var original = ReconcileMigrationOrder(state, identitiesChanged: false);
             var pending = new PendingRootMigration(Guid.NewGuid(), state.Root, target, items);
-            SaveMigration(pending);
+            SaveMigration(pending, original);
             try
             {
                 Publish();
@@ -50,9 +50,9 @@ public sealed partial class DesktopWorkspace
                     ReportMigration(progress, "内容目录及关联快捷方式已完成。", item);
                 }
                 cancellation.ThrowIfCancellationRequested();
-                var complete = RebindMigratedOrder(original with { Root = target,
+                var complete = ReconcileMigrationOrder(original with { Root = target,
                     Folders = original.Folders.Select(folder => folder with { ContentRoot = null }).ToArray(),
-                    RetainedFolders = original.RetainedFolders.Select(folder => folder with { ContentPath = items.Single(item => item.FolderId == folder.FolderId).DestinationPath }).ToArray() });
+                    RetainedFolders = original.RetainedFolders.Select(folder => folder with { ContentPath = items.Single(item => item.FolderId == folder.FolderId).DestinationPath }).ToArray() }, identitiesChanged: true);
                 store.Save(complete);
                 state = complete;
                 Publish();
@@ -136,7 +136,7 @@ public sealed partial class DesktopWorkspace
         {
             try
             {
-                var restored = RebindMigratedOrder(original);
+                var restored = ReconcileMigrationOrder(original, identitiesChanged: true);
                 store.Save(restored); state = restored; blocked = false; notices.Clear();
             }
             catch (Exception saveError) { failures.Add($"原配置恢复提交失败：{saveError.Message}"); }
@@ -177,28 +177,29 @@ public sealed partial class DesktopWorkspace
         CheckAncestors(target);
     }
 
-    private static WorkspaceState RebindMigratedOrder(WorkspaceState configuration)
+    private static WorkspaceState ReconcileMigrationOrder(WorkspaceState configuration, bool identitiesChanged)
         => configuration with { Folders = configuration.Folders.Select(folder =>
         {
             if (folder.CustomOrder == null) return folder;
             var path = Path.Combine(folder.ContentRoot ?? configuration.Root, folder.Name);
             if (!WindowsPaths.HasIdentity(path, folder.Id)) throw new IOException("迁移顺序对应的内容归属尚未确认：" + path);
-            // 复制／恢复会改变 NTFS 文件身份。目录与字节核对完成后，按已保存名称顺序重新绑定身份。
-            var names = folder.CustomOrder.Select(item => item with { Identity = null }).ToArray();
-            var rebound = ContentOrdering.Reconcile(ContentFiles.Read(path), names)
+            // 副作用前按源身份协调外部改名／替换，并随 intent 持久化名称顺序。
+            // 复制／恢复改变身份后，仅在目录与字节核对完成时按这些名称重新绑定。
+            var order = identitiesChanged ? folder.CustomOrder.Select(item => item with { Identity = null }).ToArray() : folder.CustomOrder;
+            var rebound = ContentOrdering.Reconcile(ContentFiles.Read(path), order)
                 .Select(entry => new ContentOrderItem(entry.Name, entry.Identity)).ToArray();
             return folder.CustomOrder.SequenceEqual(rebound) ? folder : folder with { CustomOrder = rebound };
         }).ToArray() };
 
-    private void SaveMigration(PendingRootMigration pending)
+    private void SaveMigration(PendingRootMigration pending, WorkspaceState configuration)
     {
-        var next = state with { PendingRootMigration = pending };
+        var next = configuration with { PendingRootMigration = pending };
         store.Save(next);
         state = next;
     }
 
     private void SaveMigrationItem(RootMigrationItem item)
-        => SaveMigration(state.PendingRootMigration! with { Items = state.PendingRootMigration!.Items.Select(entry => entry.FolderId == item.FolderId ? item : entry).ToArray() });
+        => SaveMigration(state.PendingRootMigration! with { Items = state.PendingRootMigration!.Items.Select(entry => entry.FolderId == item.FolderId ? item : entry).ToArray() }, state);
 
     private sealed class MigrationConflict(string message) : IOException(message);
 }

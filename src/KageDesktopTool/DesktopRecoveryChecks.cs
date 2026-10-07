@@ -284,12 +284,14 @@ internal static class DesktopRecoveryChecks
         foreach (AutomationElement window in AutomationElement.RootElement.FindAll(TreeScope.Children, System.Windows.Automation.Condition.TrueCondition))
         {
             if (window.Current.ProcessId != shellId) continue;
+            // 任务栏会投影其他应用的下载进度；只核对独立 Explorer 操作窗口。
+            if (window.Current.ClassName is "Shell_TrayWnd" or "Shell_SecondaryTrayWnd" or "Progman" or "WorkerW") continue;
             var name = window.Current.Name;
             if (window.Current.ClassName == "#32770" || window.FindFirst(TreeScope.Descendants,
                 new PropertyCondition(AutomationElement.ControlTypeProperty, ControlType.ProgressBar)) != null
                 || name.Contains("复制", StringComparison.Ordinal) || name.Contains("移动", StringComparison.Ordinal)
                 || name.Contains("删除", StringComparison.Ordinal))
-                throw new InvalidOperationException("检测到 Explorer 对话框或未完成文件操作，请结束后重试会话验收。");
+                throw new InvalidOperationException($"检测到 Explorer 对话框或未完成文件操作：{name}（{window.Current.ClassName}），请结束后重试会话验收。");
         }
     }
 

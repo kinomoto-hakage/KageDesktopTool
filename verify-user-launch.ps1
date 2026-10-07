@@ -31,7 +31,8 @@ function Read-FileHash([string]$Path) {
     try { [BitConverter]::ToString($hash.ComputeHash($stream)) } finally { $stream.Dispose(); $hash.Dispose() }
 }
 function Read-ProtectedFiles {
-    $files = @(Get-ChildItem -LiteralPath $stateDirectory -File -Force)
+    # 普通打开设置会追加操作历史；只把工作区配置及备份视为必须不变的受保护状态。
+    $files = @(Get-ChildItem -LiteralPath $stateDirectory -File -Force | Where-Object { $_.Name -like 'workspace.json*' })
     $prototype = Join-Path $PSScriptRoot 'prototypes/DesktopFolderPrototype'
     $files += @(Get-ChildItem -LiteralPath $prototype -File -Filter 'PROTOTYPE-*')
     $data = Join-Path $prototype 'PROTOTYPE-data'
@@ -62,7 +63,9 @@ try {
     if (-not $repeat.WaitForExit(8000) -or $repeat.ExitCode -ne 0) { throw '普通重复启动未正常结束。' }
     $settings = Wait-For {
         [System.Windows.Automation.AutomationElement]::RootElement.FindFirst([System.Windows.Automation.TreeScope]::Children,
-            [System.Windows.Automation.PropertyCondition]::new([System.Windows.Automation.AutomationElement]::ProcessIdProperty, $process.Id))
+            [System.Windows.Automation.AndCondition]::new(
+                [System.Windows.Automation.PropertyCondition]::new([System.Windows.Automation.AutomationElement]::ProcessIdProperty, $process.Id),
+                [System.Windows.Automation.PropertyCondition]::new([System.Windows.Automation.AutomationElement]::NameProperty, 'Kage 桌面工具 · 设置')))
     }
     if ($settings.Current.Name -ne 'Kage 桌面工具 · 设置') { throw '普通重复启动未显示现有实例的设置。' }
     $navigation = $settings.FindFirst([System.Windows.Automation.TreeScope]::Descendants,

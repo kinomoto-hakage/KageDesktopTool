@@ -169,6 +169,18 @@ internal static class UpgradeChecks
             && (await workspace.SetContentViewAsync(ActiveId, true, 48, ContentSortKey.Custom, false)).Succeeded
             && workspace.Snapshot.Folders.Single().Entries.Select(entry => entry.Name).SequenceEqual(new[] { "10.txt", "2.bin" }), "自动模式迁移后切回自定义仍恢复最近顺序");
         Require(File.ReadAllBytes(Path.Combine(fixture.Content, "旧版内容", "2.bin")).SequenceEqual(new byte[] { 0, 13, 255, 72 }), "多次复制和恢复字节不变");
+        // 不经刷新直接迁移，仍需先按源身份识别外部改名；新同名文件应追加。
+        var latest = workspace.Snapshot.Folders.Single().ActualPath;
+        File.Move(Path.Combine(latest, "10.txt"), Path.Combine(latest, "20.txt"));
+        Require((await workspace.MigrateRootAsync(target)).Succeeded
+            && workspace.Snapshot.Folders.Single().Entries.Select(entry => entry.Name).SequenceEqual(new[] { "20.txt", "2.bin" }),
+            "外部可靠改名后立即迁移保留原位置");
+        latest = workspace.Snapshot.Folders.Single().ActualPath;
+        File.Move(Path.Combine(latest, "20.txt"), Path.Combine(fixture.Home, "移出旧文件.txt"));
+        File.WriteAllText(Path.Combine(latest, "20.txt"), "同名新项目");
+        Require((await workspace.MigrateRootAsync(fixture.Content)).Succeeded
+            && workspace.Snapshot.Folders.Single().Entries.Select(entry => entry.Name).SequenceEqual(new[] { "2.bin", "20.txt" }),
+            "同名替换后立即迁移按新增追加，不能继承旧身份的位置");
     }
 
     private sealed class CancelAfterCopy(CancellationTokenSource cancellation) : IProgress<RootMigrationProgress>
