@@ -82,7 +82,7 @@ rtk proxy powershell -NoProfile -ExecutionPolicy Bypass -File verify-user-launch
 
 ## 独立审查
 
-按 `code-review` 分别由独立只读代理执行 Standards 与 Spec 两轴审查，最终代码累计范围为基点至 `18bf37f`：`git diff 6ee9ee53afc34f24bb96422f6284a52f937010d5...18bf37fd11bef4735f5ccb8321caf653ec3b269a`。
+按 `code-review` 分别由独立只读代理执行 Standards 与 Spec 两轴审查，最终代码累计范围为基点至 `18bf37f`：`rtk git diff 6ee9ee53afc34f24bb96422f6284a52f937010d5...18bf37fd11bef4735f5ccb8321caf653ec3b269a`。
 
 ### Standards
 
@@ -93,6 +93,8 @@ rtk proxy powershell -NoProfile -ExecutionPolicy Bypass -File verify-user-launch
 最终 0 项遗留问题。迁移排序 P2 已补失败回归并修复；输入等待、Shell 显露和物理命中核对保留所有原行为断言，专门桌面恢复检查仍使用真实 Win+D。审查是静态复核，实际 Windows 结果独立列在上文。
 
 最终 Standards 0 项、Spec 0 项；原生通知自动点击与未实测硬件范围如实保留，不合并为自动检查通过。
+
+对关闭记录 `c9108f4` 的最后复核，Spec 无遗留；Standards 指出报告中的 diff 示例缺少 RTK 前缀，已补齐。此次修正仅涉及文档，不改变最终包。
 
 首轮审查范围为基点至 `9d72b07`。Standards 0 项可行动问题；Spec 1 项 P2：迁移前尚未刷新时，直接忽略身份重绑会丢失可靠外部改名位置或认领同名替换。已先建立失败回归，再补源身份协调及 intent 提交，回归转绿，待累计复审。
 
