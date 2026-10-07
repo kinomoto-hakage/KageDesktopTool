@@ -71,7 +71,16 @@ internal static class ContentInputChecks
                 async Task EnsureHit(Point point)
                 {
                     var hit = WindowsDesktop.WindowFromPoint(new WindowsDesktop.POINT { X = (int)point.X, Y = (int)point.Y });
-                    if (hit != header.Handle && !WindowsDesktop.IsChild(header.Handle, hit)) { Desktop(); await Task.Delay(350); }
+                    if (hit != header.Handle && !WindowsDesktop.IsChild(header.Handle, hit))
+                    {
+                        Desktop();
+                        for (var attempt = 0; attempt < 20; attempt++)
+                        {
+                            await Task.Delay(100);
+                            hit = WindowsDesktop.WindowFromPoint(new WindowsDesktop.POINT { X = (int)point.X, Y = (int)point.Y });
+                            if (hit == header.Handle || WindowsDesktop.IsChild(header.Handle, hit)) break;
+                        }
+                    }
                     CheckHit(header, point);
                 }
                 async Task Click(FrameworkElement element, bool twice = false)
@@ -489,7 +498,15 @@ internal static class ContentInputChecks
     private static void CheckHit(FolderHeader header, Point point)
     {
         var hwnd = WindowsDesktop.WindowFromPoint(new WindowsDesktop.POINT { X = (int)point.X, Y = (int)point.Y });
-        if (hwnd != header.Handle && !WindowsDesktop.IsChild(header.Handle, hwnd)) throw new IOException($"鼠标未命中夹具窗口：{point}，请先结束其他桌面覆盖窗口。");
+        if (hwnd != header.Handle && !WindowsDesktop.IsChild(header.Handle, hwnd))
+        {
+            var screen = System.Windows.Forms.SystemInformation.VirtualScreen;
+            using var bitmap = new System.Drawing.Bitmap(screen.Width, screen.Height);
+            using var graphics = System.Drawing.Graphics.FromImage(bitmap);
+            graphics.CopyFromScreen(screen.Left, screen.Top, 0, 0, screen.Size);
+            bitmap.Save(Path.Combine(Environment.CurrentDirectory, ".scratch", "desktop-folder", "verification", "content-hit-failure.png"));
+            throw new IOException($"鼠标未命中夹具窗口：{point}，期望 HWND={header.Handle}，实际 HWND={hwnd}，请先结束其他桌面覆盖窗口。");
+        }
     }
     private static async Task MouseAt(Point point, bool twice, uint down = 2)
     {
