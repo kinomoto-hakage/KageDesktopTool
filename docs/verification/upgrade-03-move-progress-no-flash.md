@@ -29,7 +29,7 @@
 
 用户确认普通运行通知可见，[Windows 通知截图](../../.scratch/desktop-tool-upgrade/references/2026-10-05-notification-visible.png)显示文件移动计数、Folder 布局及展开／折叠结果；[设置详情截图](../../.scratch/desktop-tool-upgrade/references/2026-10-05-notification-details.png)显示操作结果记录。这补充了普通运行的实际显示证据；自动检查进程未找到通知控件的旧记录保留，不能再据此断言普通应用通知不可用。
 
-截图没有证明系统通知点击、冷启动激活或 Windows 系统关闭通知；这些原票据验收项仍须如实区分。本次用户报告的闪窗修复已通过可失败的真实移动检查。
+截图本身没有证明系统通知点击、冷启动激活或 Windows 系统关闭通知。2026-10-07 用户随后明确确认这三个场景已通过人工检查、功能正常，原票据已 resolved，详见 [主验收记录](upgrade-03-settings-style-and-notifications.md)。用户报告的闪窗修复另有可失败的真实移动检查通过证据。
 
 ## 复现命令
 
@@ -53,4 +53,4 @@ rtk proxy dotnet publish src/KageDesktopTool/KageDesktopTool.csproj -c Release -
 
 发现 0。快速移入／移出不显示中央窗口、耗时才显示、冲突立即询问、取消保留实际结果和一批一次通知均符合本次反馈及原票要求。
 
-两轴各 0 项遗留；原票的其他原生通知验收缺口仍单独保留，不与已通过的闪窗修复混同。
+两轴各 0 项遗留。闪窗修复的自动回归与原票其他系统通知的人工验收分别记录；后者已由 2026-10-07 用户确认补齐。
