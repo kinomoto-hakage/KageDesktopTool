@@ -68,23 +68,26 @@ internal static class ContentInputChecks
                 var contents = header.Contents;
                 ListBoxItem Item(string path) => contents.Items.Items.Cast<ListBoxItem>().Single(item => (string)item.Tag == path);
                 Point Center(FrameworkElement element) => element.PointToScreen(new Point(element.ActualWidth / 2, element.ActualHeight / 2));
+                async Task EnsureHit(Point point)
+                {
+                    var hit = WindowsDesktop.WindowFromPoint(new WindowsDesktop.POINT { X = (int)point.X, Y = (int)point.Y });
+                    if (hit != header.Handle && !WindowsDesktop.IsChild(header.Handle, hit)) { Desktop(); await Task.Delay(350); }
+                    CheckHit(header, point);
+                }
                 async Task Click(FrameworkElement element, bool twice = false)
                 {
                     await Task.Delay((int)GetDoubleClickTime() + 100);
                     var parent = FolderHeader.FindParent<ListBoxItem>(element);
                     if (parent != null) { contents.Items.ScrollIntoView(parent); header.UpdateLayout(); }
                     var point = Center(element);
-                    var hit = WindowsDesktop.WindowFromPoint(new WindowsDesktop.POINT { X = (int)point.X, Y = (int)point.Y });
-                    if (hit != header.Handle && !WindowsDesktop.IsChild(header.Handle, hit)) { Desktop(); await Task.Delay(350); }
-                    CheckHit(header, point);
+                    await EnsureHit(point);
                     await MouseAt(point, twice);
                     await Task.Delay(550);
                 }
                 async Task FolderRight(ListBoxItem item)
                 {
                     var point = Center(item);
-                    var hit = WindowsDesktop.WindowFromPoint(new WindowsDesktop.POINT { X = (int)point.X, Y = (int)point.Y });
-                    if (hit != header.Handle) { Desktop(); await Task.Delay(350); }
+                    await EnsureHit(point);
                     await MouseAt(point, false, 8);
                     await WaitUntil(() => ShellContextMenu.ActiveMenuWindow != IntPtr.Zero);
                 }
@@ -263,12 +266,13 @@ internal static class ContentInputChecks
                 Require(ShellContextMenu.ActiveMenuWindow != IntPtr.Zero, "图标右键在 Folder 原地呈现 Windows 原生传统菜单");
                 Key(0x1B); await Task.Delay(500);
                 Require(ShellContextMenu.ActiveMenuWindow == IntPtr.Zero, "Esc 真实输入取消原生菜单");
-                Desktop(); await Task.Delay(350);
                 Require(contents.SelectedPaths().SequenceEqual(new[] { link }), "右键未选项目先切换当前选择");
                 contents.Items.UpdateLayout();
                 // 空白框选向上覆盖多行，真实修饰键修改集合。
                 var blank = contents.Viewport.PointToScreen(new Point(contents.Viewport.ActualWidth - 5, contents.Viewport.ActualHeight - 20));
                 var first = contents.Viewport.PointToScreen(new Point(2, 2));
+                await EnsureHit(blank);
+                CheckHit(header, first);
                 await Drag(blank, first);
                 Render(header, Path.Combine(evidence, "content-box.png"));
                 Require(contents.Items.SelectedItems.Count > 1, "空白处真实框选多项并在释放后保留");
@@ -362,11 +366,12 @@ internal static class ContentInputChecks
                 await FolderRight(Item(link)); await Task.Delay(400);
                 Require(contents.SelectedPaths().SequenceEqual(selectedBeforeMenu) && ShellContextMenu.ActiveMenuWindow != IntPtr.Zero,
                     "右键已选项目保留多项集合并取得原生集合菜单");
-                Key(0x1B); await Task.Delay(350); Desktop(); await Task.Delay(350);
+                Key(0x1B); await Task.Delay(350);
                 Require(runtime.Feedback.Entries.Count(entry => entry.Title.StartsWith("文件菜单", StringComparison.Ordinal)) == feedbackBeforeCancel,
                     "取消原生菜单不伪造已执行命令或结果通知");
                 var beforeOrder = workspace.Snapshot.Folders.First().Entries.Select(entry => entry.Name).ToArray();
                 var origin = Center((Image)((Grid)Item(link).Content).Children[0]);
+                await EnsureHit(origin);
                 await Drag(origin, new Point(origin.X + 1, origin.Y));
                 Require(workspace.Snapshot.Folders.First().Folder.SortKey == ContentSortKey.Name
                     && workspace.Snapshot.Folders.First().Entries.Select(entry => entry.Name).SequenceEqual(beforeOrder), "未越过系统拖动阈值不改变排序");
@@ -555,7 +560,14 @@ internal static class ContentInputChecks
         finally { Marshal.ReleaseComObject(windows); Marshal.ReleaseComObject(shell); }
         return IntPtr.Zero;
     }
-    private static void Desktop() { keybd_event(0x5B, 0, 0, UIntPtr.Zero); Key(0x44); keybd_event(0x5B, 0, 2, UIntPtr.Zero); }
+    private static void Desktop()
+    {
+        // 这里只显露夹具；避免在 Ctrl／Shift 用例中把 Win+D 合成为其他系统快捷键。
+        // 真实 Win+D 输入由 DesktopRecoveryChecks 单独验收。
+        dynamic shell = Activator.CreateInstance(Type.GetTypeFromProgID("Shell.Application")!)!;
+        try { shell.ToggleDesktop(); }
+        finally { Marshal.FinalReleaseComObject(shell); }
+    }
     private static void Shortcut(string path, string marker)
     {
         dynamic shell = Activator.CreateInstance(Type.GetTypeFromProgID("WScript.Shell")!)!;

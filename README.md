@@ -78,6 +78,7 @@ rtk proxy src/KageDesktopTool/bin/Debug/net10.0-windows10.0.19041.0/win-x64/Kage
 ```powershell
 rtk proxy powershell -NoProfile -ExecutionPolicy Bypass -File publish.ps1 -OutputDirectory releases/KageDesktopTool-win-x64-1.1.0
 rtk proxy powershell -NoProfile -ExecutionPolicy Bypass -File verify-release.ps1 -PackageDirectory releases/KageDesktopTool-win-x64-1.1.0
+rtk proxy powershell -NoProfile -ExecutionPolicy Bypass -File verify-archive.ps1 -PackageDirectory releases/KageDesktopTool-win-x64-1.1.0
 rtk proxy powershell -NoProfile -ExecutionPolicy Bypass -File verify-user-launch.ps1 -PackageDirectory releases/KageDesktopTool-win-x64-1.1.0
 ```
 
