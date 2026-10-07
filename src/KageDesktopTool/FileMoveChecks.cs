@@ -127,12 +127,14 @@ internal static class FileMoveChecks
                 CloseResults();
                 Check(desktopNames.All(name => !File.Exists(Path.Combine(desktop, name)) && !Directory.Exists(Path.Combine(desktop, name))), "实际桌面文件快捷方式子目录多选拖入");
                 var blank = DesktopBackground();
+                var recorded = runtime.Feedback.Entries.Count;
                 await DragFolderItems(first, desktopNames, blank);
                 await WaitUntil(() => File.Exists(Path.Combine(desktop, desktopNames[0])) && runtime.ActiveMove == null);
                 CloseResults();
                 Check(File.ReadAllBytes(Path.Combine(desktop, desktopNames[0])).SequenceEqual(new byte[] { 7, 0, 255 }) && File.ReadAllText(Path.Combine(desktop, desktopNames[2], "内容.txt")) == "桌面子目录", "多选拖出至 Windows 实际桌面，字节一致");
                 Check(workspace.Snapshot.Folders.First().Entries.Count == 0, "桌面移出同步源展示与计数");
                 Check(desktop == Environment.GetFolderPath(Environment.SpecialFolder.DesktopDirectory), "桌面目录由 Windows 获取，兼容重定向");
+                Check(runtime.Feedback.Entries.Count == recorded + 1, "桌面定位随同批移动仅记录一次结果");
                 await Task.Delay(1000);
                 var firstMovedName = Path.GetFileName(runtime.LastMoveResult!.Items.First(item => item.Outcome == Outcome.Success).ActualPath!);
                 var placed = FindItem(desktopView, firstMovedName, Path.GetFileNameWithoutExtension(firstMovedName));
@@ -154,6 +156,11 @@ internal static class FileMoveChecks
                 File.AppendAllText(log, $"单项落点检查：鼠标 {singlePoint}；图标 {single.Current.BoundingRectangle}\n");
                 Check(Math.Abs(Center(single.Current.BoundingRectangle).X - singlePoint.X) < 180
                     && Math.Abs(Center(single.Current.BoundingRectangle).Y - singlePoint.Y) < 180, "单项移出跟随新的鼠标落点");
+                SHChangeNotify(0x1000, 5, desktop, IntPtr.Zero);
+                await Task.Delay(1500);
+                single = FindItem(desktopView, desktopNames[0], Path.GetFileNameWithoutExtension(desktopNames[0]))!;
+                Check(Math.Abs(Center(single.Current.BoundingRectangle).X - singlePoint.X) < 180
+                    && Math.Abs(Center(single.Current.BoundingRectangle).Y - singlePoint.Y) < 180, "后续 Shell 目录更新仍保持鼠标落点");
 
                 var conflictNames = new[] { "先完成.txt", "保留两份.txt", "跳过.lnk", "取消目录", "后续.txt" };
                 foreach (var name in conflictNames.Where(name => name != "取消目录")) File.WriteAllText(Path.Combine(firstPath, name), "源内容");
