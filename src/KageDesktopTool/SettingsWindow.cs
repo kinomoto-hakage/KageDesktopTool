@@ -150,7 +150,7 @@ internal sealed class SettingsWindow : Window
         notificationSection.Children.Add(new TextBlock { Text = "关闭提示后，操作详情与必要恢复状态仍会保留。Windows 通知设置决定系统是否显示提示。最近 100 条结果保存在本机。", TextWrapping = TextWrapping.Wrap, Margin = new Thickness(0, 12, 0, 12) });
         notificationSection.Children.Add(notificationStatus);
         notificationSection.Children.Add(results);
-        sections["关于"].Children.Add(new TextBlock { Text = "Kage 桌面工具", FontSize = 18, FontWeight = FontWeights.SemiBold });
+        sections["关于"].Children.Add(new TextBlock { Text = "Kage 桌面工具 " + typeof(Program).Assembly.GetName().Version?.ToString(3), FontSize = 18, FontWeight = FontWeights.SemiBold });
         sections["关于"].Children.Add(new TextBlock { Text = "关闭设置后继续在后台运行。请从托盘“退出”结束程序，内容文件夹会保留。",
             TextWrapping = TextWrapping.Wrap, Margin = new Thickness(0, 20, 0, 0) });
         navigation.SelectedIndex = runtime.Workspace.Snapshot.RecoveryRequired ? 4 : 0;

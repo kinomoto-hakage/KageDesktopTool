@@ -50,9 +50,9 @@ public sealed partial class DesktopWorkspace
                     ReportMigration(progress, "内容目录及关联快捷方式已完成。", item);
                 }
                 cancellation.ThrowIfCancellationRequested();
-                var complete = original with { Root = target,
+                var complete = RebindMigratedOrder(original with { Root = target,
                     Folders = original.Folders.Select(folder => folder with { ContentRoot = null }).ToArray(),
-                    RetainedFolders = original.RetainedFolders.Select(folder => folder with { ContentPath = items.Single(item => item.FolderId == folder.FolderId).DestinationPath }).ToArray() };
+                    RetainedFolders = original.RetainedFolders.Select(folder => folder with { ContentPath = items.Single(item => item.FolderId == folder.FolderId).DestinationPath }).ToArray() });
                 store.Save(complete);
                 state = complete;
                 Publish();
@@ -134,7 +134,11 @@ public sealed partial class DesktopWorkspace
         }
         if (failures.Count == 0)
         {
-            try { store.Save(original); state = original; blocked = false; notices.Clear(); }
+            try
+            {
+                var restored = RebindMigratedOrder(original);
+                store.Save(restored); state = restored; blocked = false; notices.Clear();
+            }
             catch (Exception saveError) { failures.Add($"原配置恢复提交失败：{saveError.Message}"); }
         }
         if (failures.Count != 0)
@@ -172,6 +176,19 @@ public sealed partial class DesktopWorkspace
         WindowsPaths.CheckRoot(target, true);
         CheckAncestors(target);
     }
+
+    private static WorkspaceState RebindMigratedOrder(WorkspaceState configuration)
+        => configuration with { Folders = configuration.Folders.Select(folder =>
+        {
+            if (folder.CustomOrder == null) return folder;
+            var path = Path.Combine(folder.ContentRoot ?? configuration.Root, folder.Name);
+            if (!WindowsPaths.HasIdentity(path, folder.Id)) throw new IOException("迁移顺序对应的内容归属尚未确认：" + path);
+            // 复制／恢复会改变 NTFS 文件身份。目录与字节核对完成后，按已保存名称顺序重新绑定身份。
+            var names = folder.CustomOrder.Select(item => item with { Identity = null }).ToArray();
+            var rebound = ContentOrdering.Reconcile(ContentFiles.Read(path), names)
+                .Select(entry => new ContentOrderItem(entry.Name, entry.Identity)).ToArray();
+            return folder.CustomOrder.SequenceEqual(rebound) ? folder : folder with { CustomOrder = rebound };
+        }).ToArray() };
 
     private void SaveMigration(PendingRootMigration pending)
     {

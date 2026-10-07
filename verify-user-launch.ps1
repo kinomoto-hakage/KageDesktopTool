@@ -1,6 +1,8 @@
-﻿param([string]$PackageDirectory = 'releases/KageDesktopTool-win-x64-1.0.0')
+﻿param([string]$PackageDirectory)
 
 $ErrorActionPreference = 'Stop'
+. (Join-Path $PSScriptRoot 'tools/windows/ReleasePackage.ps1')
+if (-not $PackageDirectory) { $PackageDirectory = 'releases/KageDesktopTool-win-x64-' + (Read-ReleaseVersion $PSScriptRoot) }
 if (Get-Process -Name KageDesktopTool -ErrorAction SilentlyContinue) { throw '请从托盘退出现有实例后验收普通启动。' }
 Add-Type -AssemblyName UIAutomationClient,UIAutomationTypes,System.Windows.Forms,System.Drawing
 Add-Type @'
@@ -42,7 +44,7 @@ $stateDirectory = Join-Path $env:LOCALAPPDATA 'KageDesktopTool'
 $statePath = Join-Path $stateDirectory 'workspace.json'
 if (-not (Test-Path -LiteralPath $statePath)) { throw '没有实际用户状态，不能将隔离初次启动标为实际设置验收。' }
 $state = Get-Content -LiteralPath $statePath -Encoding UTF8 -Raw | ConvertFrom-Json
-if ($state.PendingCreate -or $state.PendingStartup -or $state.PendingFolderChange -or $state.PendingRootMigration) {
+if ($state.PendingCreate -or $state.PendingStartup -or $state.PendingFolderChange -or $state.PendingRootMigration -or $state.PendingContentRename) {
     throw '实际工作区待恢复，停止普通启动验收，避免触发恢复副作用。'
 }
 $before = @(Read-ProtectedFiles)
@@ -50,7 +52,8 @@ $contentBefore = @(Get-ChildItem -LiteralPath $state.Root -Recurse -Force | Sort
 $runKey = 'HKCU:\Software\Microsoft\Windows\CurrentVersion\Run'
 $startupBefore = (Get-ItemProperty -LiteralPath $runKey -ErrorAction SilentlyContinue).KageDesktopTool
 $evidence = Join-Path $PSScriptRoot '.scratch/desktop-folder/verification'
-$log = Join-Path $evidence '13-user-launch.txt'
+New-Item -ItemType Directory -Path $evidence -Force | Out-Null
+$log = Join-Path $evidence 'upgrade-05-user-launch.txt'
 $cursor = [System.Windows.Forms.Cursor]::Position
 $process = Start-Process -FilePath $executable -WindowStyle Hidden -PassThru
 try {
@@ -61,10 +64,18 @@ try {
         [System.Windows.Automation.AutomationElement]::RootElement.FindFirst([System.Windows.Automation.TreeScope]::Children,
             [System.Windows.Automation.PropertyCondition]::new([System.Windows.Automation.AutomationElement]::ProcessIdProperty, $process.Id))
     }
-    if ($settings.Current.Name -ne 'Kage 桌面整理 · 设置') { throw '普通重复启动未显示现有实例的设置。' }
+    if ($settings.Current.Name -ne 'Kage 桌面工具 · 设置') { throw '普通重复启动未显示现有实例的设置。' }
+    $navigation = $settings.FindFirst([System.Windows.Automation.TreeScope]::Descendants,
+        [System.Windows.Automation.PropertyCondition]::new([System.Windows.Automation.AutomationElement]::NameProperty, '存储'))
+    $navigation.GetCurrentPattern([System.Windows.Automation.SelectionItemPattern]::Pattern).Select()
+    Start-Sleep -Milliseconds 200
     $edit = $settings.FindFirst([System.Windows.Automation.TreeScope]::Descendants,
         [System.Windows.Automation.PropertyCondition]::new([System.Windows.Automation.AutomationElement]::ControlTypeProperty, [System.Windows.Automation.ControlType]::Edit))
     if ($edit.GetCurrentPattern([System.Windows.Automation.ValuePattern]::Pattern).Current.Value -ne $state.Root) { throw '普通启动没有读取实际根目录。' }
+    $folderNavigation = $settings.FindFirst([System.Windows.Automation.TreeScope]::Descendants,
+        [System.Windows.Automation.PropertyCondition]::new([System.Windows.Automation.AutomationElement]::NameProperty, '桌面 Folder'))
+    $folderNavigation.GetCurrentPattern([System.Windows.Automation.SelectionItemPattern]::Pattern).Select()
+    Start-Sleep -Milliseconds 200
     $texts = $settings.FindAll([System.Windows.Automation.TreeScope]::Descendants,
         [System.Windows.Automation.PropertyCondition]::new([System.Windows.Automation.AutomationElement]::ControlTypeProperty, [System.Windows.Automation.ControlType]::Text))
     foreach ($folder in $state.Folders) {
@@ -73,7 +84,7 @@ try {
     $bounds = [System.Windows.Forms.Screen]::PrimaryScreen.Bounds
     $bitmap = [System.Drawing.Bitmap]::new($bounds.Width, $bounds.Height)
     $graphics = [System.Drawing.Graphics]::FromImage($bitmap)
-    try { $graphics.CopyFromScreen($bounds.Left, $bounds.Top, 0, 0, $bounds.Size); $bitmap.Save((Join-Path $evidence '13-实际用户设置.png')) }
+    try { $graphics.CopyFromScreen($bounds.Left, $bounds.Top, 0, 0, $bounds.Size); $bitmap.Save((Join-Path $evidence 'upgrade-05-实际用户设置.png')) }
     finally { $graphics.Dispose(); $bitmap.Dispose() }
     $settings.GetCurrentPattern([System.Windows.Automation.WindowPattern]::Pattern).Close()
     Start-Sleep -Milliseconds 300
@@ -101,7 +112,7 @@ try {
     @('通过：最终 EXE 无检查参数普通启动，读取实际用户根目录和全部 Folder。',
       '通过：普通重复启动转交设置请求；关闭设置继续运行，真实托盘退出正常。',
       '通过：实际状态、备份及原型数据 SHA256 不变，内容路径／文件属性与正式自启项不变。',
-      "完成：$(Get-Date -Format o)") | Set-Content -LiteralPath $log -Encoding UTF8
+      "程序位置：$executable", "完成：$(Get-Date -Format o)") | Set-Content -LiteralPath $log -Encoding UTF8
 } finally {
     [KageReleaseInput]::SetCursorPos($cursor.X, $cursor.Y) | Out-Null
     if (-not $process.HasExited) { Write-Warning "验收未完成，保留普通实例 PID $($process.Id)，请从托盘退出。" }

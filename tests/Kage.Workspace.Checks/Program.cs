@@ -2,9 +2,17 @@ using Kage.Workspace;
 
 if (args.Length == 3 && args[0] == "--interrupt-migration")
     return await MigrationRecoveryChecks.InterruptChild(args[1], args[2]);
+if (args.Length == 2 && args[0] == "--rollback-package")
+{
+    UpgradeChecks.Rollback(args[1]);
+    return 0;
+}
 
 var tests = new (string Name, Func<Task> Run)[]
 {
+    ("升级兼容旧状态与损坏主状态备份恢复", UpgradeChecks.ValidAndBackup),
+    ("升级兼容六种旧未完成意图保留证据", UpgradeChecks.PendingIntents),
+    ("升级组合迁移后保留手动顺序", UpgradeChecks.CustomOrderMigration),
     ("通知偏好旧状态默认保存故障与重启", NotificationChecks.Preference),
     ("升级布局自由穿越与最近释放", UpgradeLayoutChecks.FreeDrag),
     ("升级布局底部展开与头部独立调高", UpgradeLayoutChecks.ExpansionAndHeader),

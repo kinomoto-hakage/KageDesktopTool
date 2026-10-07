@@ -1,6 +1,7 @@
 using System;
 using System.IO;
 using System.Linq;
+using System.Text.Json;
 using System.Threading;
 using System.Threading.Tasks;
 using Kage.Workspace;
@@ -56,7 +57,21 @@ internal static class ReleaseWorkflowChecks
                 && File.ReadAllText(Path.Combine(input, "子目录", "嵌套.txt")) == "嵌套内容保持"
                 && !File.Exists(Path.Combine(second.ActualPath, "内容 (2).bin")) && !Directory.Exists(Path.Combine(second.ActualPath, "子目录")), "批量移出后核对目录、字节与源消失");
             await Require(workspace.ToggleFolderAsync(first.Folder.Id));
-            await Require(workspace.SetViewAsync(first.Folder.Id, false));
+            await Require(workspace.SetContentViewAsync(first.Folder.Id, false, 96, ContentSortKey.Modified, true));
+            await Require(workspace.RefreshAsync(displays));
+            await Require(workspace.ReorderContentsAsync(first.Folder.Id, [Path.Combine(first.ActualPath, "实际链接.lnk")], null));
+            // 增加第二个项目，实际重排才会改变排序模式；单项目释放保持原顺序。
+            File.WriteAllText(Path.Combine(first.ActualPath, "顺序.txt"), "不因重排改变字节");
+            File.SetLastWriteTimeUtc(Path.Combine(first.ActualPath, "顺序.txt"), new DateTime(2001, 1, 1, 0, 0, 0, DateTimeKind.Utc));
+            await Require(workspace.RefreshAsync(displays));
+            await Require(workspace.ReorderContentsAsync(first.Folder.Id, [Path.Combine(first.ActualPath, "顺序.txt")],
+                Path.Combine(first.ActualPath, "实际链接.lnk")));
+            Check(workspace.Snapshot.Folders.Single(f => f.Folder.Id == first.Folder.Id).Folder.SortKey == ContentSortKey.Custom,
+                "列表超大图标与真实手动重排配合使用");
+            var layout = workspace.BeginLayout(first.Folder.Id)!;
+            Check(layout.ResizeHeaderBy(10), "展开时独立调高头部");
+            await Require(workspace.CommitLayoutAsync(layout));
+            await Require(workspace.SetNotificationsAsync(false));
             var appearance = workspace.BeginAppearance(first.Folder.Id)!;
             await Require(Task.FromResult(appearance.SetHex("#235A81")));
             await Require(Task.FromResult(appearance.SetOpacity(.55)));
@@ -75,11 +90,14 @@ internal static class ReleaseWorkflowChecks
                 && shell.ShortcutTargets(link, Path.Combine(newRoot, "灵感")), "根迁移覆盖活动及保留内容，链接更新");
             await Require(workspace.SetStartupAsync(true));
             Check(startup.ReadCommand() == $"\"{Path.Combine(AppContext.BaseDirectory, "KageDesktopTool.exe")}\" --background", "随机真实自启项指向当前发布包完整路径");
-            var records = workspace.Snapshot.Folders.Select(f => f.Folder).ToArray();
+            var records = JsonSerializer.Serialize(workspace.Snapshot.Folders.Select(f => f.Folder));
             workspace = new DesktopWorkspace(store, startup, shell, transfer);
             await Require(workspace.InitializeAsync(displays));
             Check(workspace.Snapshot.Root == newRoot && workspace.Snapshot.IconChoice == "b" && workspace.Snapshot.StartupEnabled
-                && workspace.Snapshot.Folders.Select(f => f.Folder).SequenceEqual(records), "重启读取持久根目录、稳定标识、布局、外观与自启");
+                && !workspace.Snapshot.NotificationsEnabled
+                && JsonSerializer.Serialize(workspace.Snapshot.Folders.Select(f => f.Folder)) == records, "重启读取根目录、稳定标识、视图尺寸、手动顺序、头部、外观、通知及自启");
+            Check(workspace.Snapshot.Folders.Single().Entries.Select(entry => entry.Name).SequenceEqual(new[] { "顺序.txt", "实际链接.lnk" }),
+                "改名、保留删除、根迁移与重启后仍恢复手动顺序");
             await Require(workspace.SetStartupAsync(false));
             transfer.Fail = true;
             var interrupted = await workspace.MigrateRootAsync(Path.Combine(fixture, "中断目标"));

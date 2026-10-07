@@ -1,17 +1,23 @@
-﻿param([string]$PackageDirectory = 'releases/KageDesktopTool-win-x64-1.0.0', [string]$FromCheck = 'publish')
+﻿param([string]$PackageDirectory, [string]$FromCheck = 'publish', [string]$OnlyCheck)
 
 $ErrorActionPreference = 'Stop'
+. (Join-Path $PSScriptRoot 'tools/windows/ReleasePackage.ps1')
+if (-not $PackageDirectory) { $PackageDirectory = 'releases/KageDesktopTool-win-x64-' + (Read-ReleaseVersion $PSScriptRoot) }
 $executable = [IO.Path]::GetFullPath((Join-Path $PSScriptRoot (Join-Path $PackageDirectory 'KageDesktopTool.exe')))
 if (-not (Test-Path -LiteralPath $executable)) { throw '发布 EXE 不存在。' }
-$checks = @('publish', 'release-workflow', 'session', 'content-layout', 'appearance',
-    'file-move', 'folder-action', 'root-migration', 'migration-recovery', 'display-dpi', 'desktop-recovery')
+$checks = @('publish', 'release-workflow', 'session', 'content-input', 'shell-image', 'content-layout', 'layout-input', 'appearance',
+    'settings-notification', 'move-progress', 'tray-session', 'file-move', 'folder-action', 'root-migration', 'migration-recovery', 'display-dpi', 'desktop-recovery')
 $first = [Array]::IndexOf($checks, $FromCheck)
 if ($first -lt 0) { throw '未知的检查起点。' }
 $checks = $checks[$first..($checks.Length - 1)]
+if ($OnlyCheck) {
+    if ($OnlyCheck -notin $checks) { throw '未知的单项检查。' }
+    $checks = @($OnlyCheck)
+}
 $evidence = Join-Path $PSScriptRoot '.scratch/desktop-folder/verification'
 New-Item -ItemType Directory -Path $evidence -Force | Out-Null
-$summary = Join-Path $evidence '13-release-summary.txt'
-if ($first -eq 0) {
+$summary = Join-Path $evidence 'upgrade-05-release-summary.txt'
+if ($first -eq 0 -and -not $OnlyCheck) {
     "发布 EXE：$executable`n开始：$(Get-Date -Format o)" | Set-Content -LiteralPath $summary -Encoding UTF8
 } else {
     "继续：$FromCheck，$(Get-Date -Format o)" | Add-Content -LiteralPath $summary -Encoding UTF8
