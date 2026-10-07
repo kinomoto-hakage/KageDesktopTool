@@ -53,9 +53,12 @@ internal static class DesktopRecoveryChecks
                 Check((await workspace.DeleteFolderAsync(retainedId, FolderDeleteChoice.KeepContents)).Succeeded, "创建随机保留内容及真实链接");
                 retainedShortcut = new JsonWorkspaceStore(Path.Combine(fixture, "状态")).Read().State.RetainedFolders.Single().ShortcutPath;
                 runtime = new Runtime(workspace);
+                runtime.Tray.Text = "Kage 恢复检查 " + Guid.NewGuid().ToString("N")[..8];
                 await WaitUntil(() => runtime.DesktopAvailable && workspace.Snapshot.DesktopAvailable);
                 var first = runtime.Headers[firstId];
-                Check(runtime.HotkeyRegistered, "控制器注册唯一热键");
+                var hotkeyProbe = WindowsDesktop.RegisterHotKey(new WindowInteropHelper(runtime.Controller).Handle, 98, 0x4003, 0x4B);
+                if (hotkeyProbe) WindowsDesktop.UnregisterHotKey(new WindowInteropHelper(runtime.Controller).Handle, 98);
+                Check(runtime.HotkeyRegistered || !hotkeyProbe, "热键由控制器或现有应用占用，托盘创建入口继续有效");
                 covering = new Window { Title = "Kage 会话验收普通应用", Left = first.Record.X,
                     Top = first.Record.Y, Width = first.Width + 60, Height = first.Height + 60,
                     Background = Brushes.DarkBlue };
@@ -80,9 +83,11 @@ internal static class DesktopRecoveryChecks
                 settings.Close();
                 await VerifyInput(first, "关闭设置");
 
+                Check((await runtime.SelectIconAsync("b")).Succeeded, "Explorer 重启前保存非默认 B 方案");
                 var savedFolders = workspace.Snapshot.Folders.Select(item => item.Folder).ToArray();
                 var saved = new JsonWorkspaceStore(Path.Combine(fixture, "状态")).Read().State;
                 var controller = new WindowInteropHelper(runtime.Controller).Handle;
+                var hotkeyRegistered = runtime.HotkeyRegistered;
                 var tray = runtime.Tray;
                 var menu = tray.ContextMenuStrip;
                 // 只结束当前会话桌面宿主所属进程，不结束无关 Explorer 或子进程。
@@ -109,11 +114,15 @@ internal static class DesktopRecoveryChecks
                 await WaitUntil(() => runtime.DesktopAvailable && workspace.Snapshot.DesktopAvailable);
                 first = runtime.Headers[firstId];
                 Check(runtime.Headers.Count == 1 && workspace.Snapshot.Folders.Select(item => item.Folder).SequenceEqual(savedFolders), "恢复后无重复窗口且活动布局状态一致");
-                Check(new WindowInteropHelper(runtime.Controller).Handle == controller && runtime.HotkeyRegistered
+                Check(new WindowInteropHelper(runtime.Controller).Handle == controller && runtime.HotkeyRegistered == hotkeyRegistered
                     && !WindowsDesktop.RegisterHotKey(controller, 98, 0x4003, 0x4B), "控制器及原热键保留，不重复登记");
                 WindowsDesktop.UnregisterHotKey(controller, 98);
                 Check(ReferenceEquals(tray, runtime.Tray) && ReferenceEquals(menu, runtime.Tray.ContextMenuStrip), "恢复复用原托盘及菜单");
+                TraySessionChecks.Verify(runtime, "b");
+                Check(workspace.Snapshot.IconChoice == "b", "Explorer 恢复保留已提交 B 图标及任务栏 DPI 尺寸");
                 await CheckTray();
+                await TraySessionChecks.SelectAsync(runtime, "c", evidence);
+                Check(workspace.Snapshot.IconChoice == "c", "Explorer 恢复后真实菜单仍可切换并保存方案");
                 FileMoveChecks.DesktopVisibility(true);
                 await VerifyInput(first, "Explorer 重启恢复");
                 Screenshot("11-Explorer-恢复.png");
@@ -182,7 +191,7 @@ internal static class DesktopRecoveryChecks
             await FileMoveChecks.PhysicalDrag(start, new Point(start.X + 24, start.Y + 10));
             await WaitUntil(() => !runtime!.Interacting);
             Check(header.Record.X == startX + 24, stage + "：真实鼠标拖动位置已保存");
-            var grip = VisualChildren<Thumb>(header.Surface).Single();
+            var grip = header.ResizeGrip;
             var width = header.Record.HeaderWidth;
             var resize = grip.PointToScreen(new Point(grip.ActualWidth / 2, grip.ActualHeight / 2));
             await FileMoveChecks.PhysicalDrag(resize, new Point(resize.X + 18, resize.Y + 12));
@@ -234,7 +243,8 @@ internal static class DesktopRecoveryChecks
                 var buttons = AutomationElement.RootElement.FindAll(TreeScope.Descendants,
                     new PropertyCondition(AutomationElement.ControlTypeProperty, ControlType.Button)).Cast<AutomationElement>()
                     .ToArray();
-                button = buttons.FirstOrDefault(element => element.Current.Name.Contains("Kage 桌面整理", StringComparison.Ordinal));
+                button = buttons.FirstOrDefault(element => element.Current.Name.Contains(runtime!.Tray.Text, StringComparison.Ordinal)
+                    && !element.Current.IsOffscreen && element.Current.BoundingRectangle.Width > 0);
                 if (button == null && !overflowOpened)
                 {
                     var overflow = buttons.FirstOrDefault(element => element.Current.Name is "显示隐藏的图标" or "Show hidden icons");

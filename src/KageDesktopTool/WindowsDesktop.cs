@@ -15,6 +15,18 @@ internal static class WindowsDesktop
 {
     internal static readonly int TaskbarCreated = (int)RegisterWindowMessage("TaskbarCreated");
 
+    // 通知区域位于主任务栏；不能使用可能处于其他 DPI 的设置窗口计算图标尺寸。
+    internal static System.Drawing.Size TrayIconSize()
+    {
+        var dpi = GetDpiForWindow(FindWindow("Shell_TrayWnd", null));
+        if (dpi == 0) dpi = GetDpiForSystem();
+        return new System.Drawing.Size(GetSystemMetricsForDpi(49, dpi), GetSystemMetricsForDpi(50, dpi));
+    }
+
+    [DllImport("user32.dll", CharSet = CharSet.Unicode)] private static extern IntPtr FindWindow(string className, string? title);
+    [DllImport("user32.dll")] private static extern uint GetDpiForSystem();
+    [DllImport("user32.dll")] private static extern int GetSystemMetricsForDpi(int index, uint dpi);
+
     internal static bool Attached(IntPtr window, IntPtr host) => IsWindow(window) && IsWindow(host) && GetParent(window) == host;
 
     internal static IntPtr Attach(IntPtr window)

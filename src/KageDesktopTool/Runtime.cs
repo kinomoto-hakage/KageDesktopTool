@@ -100,7 +100,7 @@ internal sealed class Runtime : IDisposable
         SystemEvents.DisplaySettingsChanged += SystemDisplayChanged;
         SystemEvents.UserPreferenceChanged += SystemPreferenceChanged;
         HotkeyRegistered = WindowsDesktop.RegisterHotKey(handle, 1, 0x4003, 0x4B);
-        trayIcon = new Icon(Path.Combine(AppContext.BaseDirectory, "Assets", "tray-d.ico"));
+        trayIcon = IconChoices.Tray("d");
         Tray = new Forms.NotifyIcon { Icon = trayIcon, Text = "Kage 桌面整理", Visible = true };
         var menu = new Forms.ContextMenuStrip();
         menu.Items.Add("新建 Folder", null, (_, _) => Dispatch(async () => await CreateAsync()));
@@ -245,6 +245,7 @@ internal sealed class Runtime : IDisposable
             if (taskbarRestarted)
             {
                 // 复用同一个 NotifyIcon 和菜单；控制器热键无需重新注册。
+                ApplyIcons(Workspace.Snapshot.IconChoice);
                 Tray.Visible = false;
                 Tray.Icon = trayIcon;
                 Tray.Visible = true;
@@ -267,9 +268,9 @@ internal sealed class Runtime : IDisposable
 
     private void ApplyIcons(string key)
     {
-        if (iconChoice == key) return;
+        if (iconChoice == key && trayIcon.Size == WindowsDesktop.TrayIconSize()) return;
         var image = IconChoices.Image(key);
-        var next = new Icon(Path.Combine(AppContext.BaseDirectory, "Assets", $"tray-{key}.ico"));
+        var next = IconChoices.Tray(key);
         Tray.Icon = next;
         trayIcon.Dispose();
         trayIcon = next;
@@ -286,7 +287,7 @@ internal sealed class Runtime : IDisposable
         {
             // 保存前核对包内资源可加载，失败保留当前显示及偏好。
             _ = IconChoices.Image(key);
-            using var available = new Icon(Path.Combine(AppContext.BaseDirectory, "Assets", $"tray-{key}.ico"));
+            using var available = IconChoices.Tray(key);
             var result = await Workspace.SetIconAsync(key);
             Render();
             Complete("图标方案", result);

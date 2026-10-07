@@ -24,6 +24,7 @@ internal static class PublishChecks
                 throw new IOException("发布包仍依赖全局 .NET 运行时。");
             if (!Path.GetFullPath(typeof(object).Assembly.Location).StartsWith(AppContext.BaseDirectory, StringComparison.OrdinalIgnoreCase))
                 throw new IOException("实际执行未加载包内运行时。");
+            if (TrayIconChecks.Run() != 0) throw new IOException("发布包图标检查失败，详见 tray-icon-resources.txt。");
             File.WriteAllText(log, $"通过：包内 EXE、运行时、WPF、图标及说明完整。\n实际 CoreLib：{typeof(object).Assembly.Location}\n程序位置：{Environment.ProcessPath}\n完成：{DateTimeOffset.Now:O}\n");
             return 0;
         }

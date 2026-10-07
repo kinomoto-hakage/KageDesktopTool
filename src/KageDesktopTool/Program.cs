@@ -13,6 +13,8 @@ public static class Program
     public static int Main(string[] args)
     {
         if (args.Contains("--publish-check")) return PublishChecks.Run();
+        if (args.Contains("--tray-icon-check")) return TrayIconChecks.Run();
+        if (args.Contains("--tray-session-check")) return TraySessionChecks.Run();
         if (args.Contains("--release-workflow-check")) return ReleaseWorkflowChecks.Run().GetAwaiter().GetResult();
         if (args.Contains("--session-check")) return SessionChecks.Run(args.Contains("--instance-only"));
         if (args.Contains("--desktop-recovery-check")) return DesktopRecoveryChecks.Run();
