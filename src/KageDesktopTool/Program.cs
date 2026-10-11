@@ -12,6 +12,7 @@ public static class Program
     [STAThread]
     public static int Main(string[] args)
     {
+        if (args.Length == 2 && args[0] == "--selection-target-check") return ContentInputChecks.SelectionTarget(args[1]);
         if (args.Contains("--publish-check")) return PublishChecks.Run();
         if (args.Contains("--tray-icon-check")) return TrayIconChecks.Run();
         if (args.Contains("--tray-session-check")) return TraySessionChecks.Run();
@@ -21,7 +22,7 @@ public static class Program
         if (args.Contains("--manual-desktop-check")) return ManualDesktopChecks.Run();
         if (args.Contains("--content-layout-check")) return ContentLayoutChecks.Run();
         if (args.Contains("--layout-input-check")) return LayoutInputChecks.Run();
-        if (args.Contains("--content-input-check")) return ContentInputChecks.Run(args.Contains("--identity-only"), args.Contains("--refresh-only"), args.Contains("--menu-placement-only"), args.Contains("--menu-latency-only"), args.Contains("--grid-names-only"));
+        if (args.Contains("--content-input-check")) return ContentInputChecks.Run(args.Contains("--identity-only"), args.Contains("--refresh-only"), args.Contains("--menu-placement-only"), args.Contains("--menu-latency-only"), args.Contains("--grid-names-only"), args.Contains("--selection-only"));
         if (args.Contains("--shell-diagnostics-check")) return ShellDiagnosticsChecks.Run(args.Contains("--icons-only"), args.Contains("--cancel-only"));
         if (args.Contains("--shell-image-check")) return ShellImageChecks.Run();
         if (args.Contains("--display-dpi-check")) return DisplayDpiChecks.Run();

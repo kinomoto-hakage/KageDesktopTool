@@ -23,6 +23,7 @@ internal sealed partial class FolderContents : DockPanel
     internal bool GridView => snapshot?.Folder.Grid == true;
     internal Guid FolderId => id;
     internal bool InputActive => input.Active;
+    internal bool OwnsCommandWindow(IntPtr window) => input.OwnsCommandWindow(window);
     private FolderSnapshot? snapshot;
     private double scale;
     private int metricsRevision = -1;
@@ -61,6 +62,13 @@ internal sealed partial class FolderContents : DockPanel
         Children.Add(Viewport);
         input = new ContentPointerInput(this);
         InitializeNames();
+        Runtime.Current.Selection.Register(this);
+        Items.PreviewKeyDown += (_, e) =>
+        {
+            if (e.Key is Key.Up or Key.Down or Key.Left or Key.Right or Key.Home or Key.End or Key.PageUp or Key.PageDown or Key.Space
+                || e.Key == Key.A && (Keyboard.Modifiers & ModifierKeys.Control) != 0)
+                Runtime.Current.Selection.Claim(this);
+        };
         Items.ContextMenuOpening += (_, e) =>
         {
             if (FolderHeader.FindParent<ListBoxItem>(e.OriginalSource as DependencyObject) != null) e.Handled = true;
@@ -253,5 +261,19 @@ internal sealed partial class FolderContents : DockPanel
         return index < 0 ? null : (string)items[index].Tag;
     }
 
-    internal void Dispose() { input.Dispose(); disposed = true; generation++; }
+    internal void ClearSelection()
+    {
+        input.ClearSelection();
+        Items.SelectedItems.Clear();
+        currentNamePath = null;
+        nameHistory.Clear();
+        revealName = false;
+        QueueNames(false);
+    }
+
+    internal void Dispose()
+    {
+        Runtime.Current.Selection.Unregister(this);
+        input.Dispose(); disposed = true; generation++;
+    }
 }

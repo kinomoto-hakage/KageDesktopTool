@@ -6,6 +6,7 @@ using System.Windows;
 using System.Windows.Controls;
 using System.Windows.Controls.Primitives;
 using System.Windows.Input;
+using System.Windows.Interop;
 using System.Windows.Media;
 using System.Windows.Shapes;
 using System.Windows.Threading;
@@ -26,9 +27,13 @@ internal sealed class ContentPointerInput : IDisposable
     private ModifierKeys modifiers;
     private bool boxing;
     private bool menuOpen;
+    private ContentRenameDialog? renameDialog;
     private bool disposed;
     private ScrollViewer? scroll;
     internal bool Active => origin != null || boxing || menuOpen;
+    internal bool OwnsCommandWindow(IntPtr window) => menuOpen && (ShellContextMenu.OwnsWindow(window)
+        || renameDialog != null && (window == new WindowInteropHelper(renameDialog).Handle
+            || WindowsDesktop.IsChild(new WindowInteropHelper(renameDialog).Handle, window)));
 
     internal ContentPointerInput(FolderContents contents)
     {
@@ -62,6 +67,7 @@ internal sealed class ContentPointerInput : IDisposable
     {
         if (OnScrollBar(e.OriginalSource as DependencyObject) || Runtime.Current.Moving || Runtime.Current.Interacting) return;
         pressed = FolderHeader.FindParent<ListBoxItem>(e.OriginalSource as DependencyObject);
+        Runtime.Current.Selection.Claim(contents);
         if (e.ClickCount == 2)
         {
             Finish();
@@ -167,6 +173,7 @@ internal sealed class ContentPointerInput : IDisposable
     {
         var item = FolderHeader.FindParent<ListBoxItem>(e.OriginalSource as DependencyObject);
         if (item == null) return;
+        Runtime.Current.Selection.Claim(contents);
         items.Focus();
         if (!item.IsSelected) { items.SelectedItems.Clear(); item.IsSelected = true; }
         contents.SetCurrentName(item);
@@ -190,14 +197,20 @@ internal sealed class ContentPointerInput : IDisposable
         try
         {
             command = await ShellContextMenu.ShowAsync(paths, screen,
-                (modifiers & ModifierKeys.Shift) != 0, (modifiers & ModifierKeys.Control) != 0);
-            if (command?.RenamePath is { } rename && !disposed) new ContentRenameDialog(contents.FolderId, rename).ShowDialog();
+                (modifiers & ModifierKeys.Shift) != 0, (modifiers & ModifierKeys.Control) != 0,
+                Runtime.Current.Headers.TryGetValue(contents.FolderId, out var header) ? header.Handle : IntPtr.Zero);
+            if (command?.RenamePath is { } rename && !disposed)
+            {
+                renameDialog = new ContentRenameDialog(contents.FolderId, rename);
+                renameDialog.ShowDialog();
+            }
         }
         catch (OperationCanceledException) { }
         catch (Exception e) { Runtime.Current.Complete("文件菜单", new OperationResult(Outcome.Failed, "Windows 菜单未正常返回：" + e.Message + "\n所选实际路径：\n" + string.Join("\n", paths))); }
         finally
         {
             menuOpen = false;
+            renameDialog = null;
             if (!disposed)
             {
                 var result = await Runtime.Current.Workspace.RefreshAsync(WindowsDesktop.Displays());
@@ -210,6 +223,14 @@ internal sealed class ContentPointerInput : IDisposable
 
     private void Select(HashSet<string> selected)
     { foreach (ListBoxItem item in items.Items) item.IsSelected = selected.Contains((string)item.Tag); }
+    internal void ClearSelection()
+    {
+        if (menuOpen) ShellContextMenu.CancelPending();
+        anchor = null;
+        initial.Clear();
+        pressed = null;
+        if (origin != null || boxing) Finish();
+    }
     private void Finish()
     {
         origin = null; boxing = false;

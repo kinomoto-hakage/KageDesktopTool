@@ -1,7 +1,7 @@
 # 02: Folder 统一选择协调
 
 Type: implementation
-Status: ready-for-agent
+Status: claimed
 Labels: ready-for-agent
 Approved: 2026-10-11
 Published: 2026-10-11
@@ -46,6 +46,8 @@ User stories: 25, 29-44, 85
 本票可用原有网格独立展示。其他票已实现时，追加全文收起、四向头部点击及侧栏／内容滚动的组合检查；共享代码变更不形成额外阻塞。
 
 ## Comments
+
+- 2026-10-11：开始实现；沿用已批准的真实 Windows 内容输入验收边界，选择协调保留在应用层，不新增测试专用业务 API。
 
 - 2026-10-11：根据已发布规格生成完整草稿，待用户确认任务划分后发布为 ready-for-agent。
 - 2026-10-11：用户确认发布三张功能票，按已批准范围发布本票，标记 ready-for-agent，无前置阻塞；尚未启动实现。

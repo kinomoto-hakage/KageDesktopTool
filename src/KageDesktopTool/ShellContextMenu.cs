@@ -28,6 +28,17 @@ internal static class ShellContextMenu
     private static IntPtr ownerWindow;
     private static IntPtr activeMenu;
     internal static IntPtr OwnerWindow => Volatile.Read(ref ownerWindow);
+    internal static bool OwnsWindow(IntPtr window)
+    {
+        var owner = OwnerWindow;
+        if (Volatile.Read(ref showing) == 0 || owner == IntPtr.Zero || window == IntPtr.Zero) return false;
+        if (window == owner || GetAncestor(window, 3) == owner) return true;
+        // 子菜单由菜单线程创建，不能按整个进程或 Explorer 身份放行其他窗口。
+        if (GetWindowThreadProcessId(window, out _) != GetWindowThreadProcessId(owner, out _)) return false;
+        var name = new StringBuilder(64);
+        GetClassName(window, name, name.Capacity);
+        return name.ToString() == "#32768";
+    }
     internal static long LastMenuLatency { get; private set; }
     internal static long LastObjectLatency { get; private set; }
     internal static long LastBuildLatency { get; private set; }
@@ -53,7 +64,7 @@ internal static class ShellContextMenu
         return ShowAsync(paths, new Point(point.X, point.Y));
     }
 
-    internal static async Task<ShellCommandResult?> ShowAsync(string[] paths, Point screen, bool shift = false, bool control = false)
+    internal static async Task<ShellCommandResult?> ShowAsync(string[] paths, Point screen, bool shift = false, bool control = false, IntPtr returnWindow = default)
     {
         if (paths.Length == 0) return null;
         if (Interlocked.CompareExchange(ref showing, 1, 0) != 0)
@@ -65,7 +76,7 @@ internal static class ShellContextMenu
         try
         {
             cancellation.Token.ThrowIfCancellationRequested();
-            return await worker.Value.ShowAsync(paths.ToArray(), screen, shift, control, watch, cancellation.Token);
+            return await worker.Value.ShowAsync(paths.ToArray(), screen, shift, control, watch, cancellation.Token, returnWindow);
         }
         finally { Volatile.Write(ref currentRequest, null); Interlocked.Exchange(ref showing, 0); }
     }
@@ -124,13 +135,13 @@ internal static class ShellContextMenu
             prepared?.Dispose(); prepared = null;
         }
 
-        internal async Task<ShellCommandResult?> ShowAsync(string[] paths, Point screen, bool shift, bool control, Stopwatch watch, CancellationToken cancellation)
+        internal async Task<ShellCommandResult?> ShowAsync(string[] paths, Point screen, bool shift, bool control, Stopwatch watch, CancellationToken cancellation, IntPtr returnWindow)
         {
             var dispatcher = await ready.Task.WaitAsync(cancellation);
-            return await dispatcher.InvokeAsync(() => Show(paths, screen, shift, control, watch, cancellation)).Task;
+            return await dispatcher.InvokeAsync(() => Show(paths, screen, shift, control, watch, cancellation, returnWindow)).Task;
         }
 
-        private ShellCommandResult? Show(string[] paths, Point screen, bool shift, bool control, Stopwatch watch, CancellationToken cancellation)
+        private ShellCommandResult? Show(string[] paths, Point screen, bool shift, bool control, Stopwatch watch, CancellationToken cancellation, IntPtr returnWindow)
         {
             cancellation.ThrowIfCancellationRequested();
             var handle = source!.Handle;
@@ -215,6 +226,11 @@ internal static class ShellContextMenu
             {
                 Volatile.Write(ref activeMenu, IntPtr.Zero);
                 if (hook != null) source.RemoveHook(hook);
+                // 菜单仍拥有前台时回到来源桌面，避免隐藏宿主短暂激活上一个应用。
+                // 外部点击／应用切换已取消请求或改变前台，此时尊重原始系统输入。
+                if (!cancellation.IsCancellationRequested && returnWindow != IntPtr.Zero
+                    && WindowsDesktop.IsWindow(returnWindow) && GetForegroundWindow() == handle)
+                    SetForegroundWindow(GetAncestor(returnWindow, 2));
                 ShowWindow(handle, 0);
                 native?.Dispose();
             }
@@ -377,6 +393,7 @@ internal static class ShellContextMenu
     [DllImport("user32.dll")] private static extern IntPtr CreatePopupMenu();
     [DllImport("user32.dll")] private static extern bool DestroyMenu(IntPtr menu);
     [DllImport("user32.dll")] private static extern bool SetForegroundWindow(IntPtr window);
+    [DllImport("user32.dll")] private static extern IntPtr GetForegroundWindow();
     [DllImport("user32.dll")] private static extern bool ShowWindow(IntPtr window, int command);
     [DllImport("user32.dll")] private static extern bool SetWindowPos(IntPtr window, IntPtr after, int x, int y, int width, int height, uint flags);
     [DllImport("user32.dll")] private static extern bool PostMessage(IntPtr window, uint message, IntPtr wp, IntPtr lp);
@@ -384,5 +401,6 @@ internal static class ShellContextMenu
     [DllImport("user32.dll")] private static extern uint TrackPopupMenuEx(IntPtr menu, uint flags, int x, int y, IntPtr owner, IntPtr parameters);
     [DllImport("user32.dll", CharSet = CharSet.Unicode)] private static extern int GetClassName(IntPtr window, StringBuilder text, int count);
     [DllImport("user32.dll")] private static extern uint GetWindowThreadProcessId(IntPtr window, out uint process);
+    [DllImport("user32.dll")] private static extern IntPtr GetAncestor(IntPtr window, uint flags);
     [DllImport("user32.dll")] private static extern bool EnumWindows(WindowCallback callback, IntPtr parameter);
 }

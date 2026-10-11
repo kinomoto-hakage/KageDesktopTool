@@ -22,6 +22,8 @@ internal sealed class Runtime : IDisposable
     internal static BitmapImage ApplicationIcon => Current?.applicationIcon ?? IconChoices.Image("d");
     internal IDesktopWorkspace Workspace { get; }
     internal OperationFeedback Feedback { get; }
+    internal SelectionCoordinator Selection { get; } = new();
+    private readonly WindowsSelectionInput? selectionInput;
     internal Dictionary<Guid, FolderHeader> Headers { get; } = new();
     internal bool DesktopAvailable => WindowsDesktop.Host() != IntPtr.Zero
         && Headers.Values.All(h => WindowsDesktop.Attached(h.Handle, h.Host));
@@ -125,6 +127,8 @@ internal sealed class Runtime : IDisposable
         };
         refresh.Start();
         Render();
+        try { selectionInput = new WindowsSelectionInput(this, Selection); }
+        catch (Exception e) { ReportStatus("外部选择清除暂不可用：" + e.Message); }
         _ = RefreshDesktopSessionAsync();
         if (!HotkeyRegistered) ReportStatus("Ctrl+Alt+K 注册失败，可能被其他程序占用；仍可从托盘创建 Folder。");
     }
@@ -496,6 +500,8 @@ internal sealed class Runtime : IDisposable
     {
         if (disposed) return;
         disposed = true;
+        selectionInput?.Dispose();
+        Selection.Dispose();
         layoutInput.Stop();
         ShellContextMenu.CancelPending();
         ShellContextMenu.InvalidatePrepared();

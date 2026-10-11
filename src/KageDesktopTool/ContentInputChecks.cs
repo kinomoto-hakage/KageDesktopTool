@@ -19,13 +19,14 @@ namespace Kage.Desktop;
 // 不注入 WPF 事件：经过系统鼠标输入、命中与 Preview 路由验收正式窗口。
 internal static partial class ContentInputChecks
 {
-    internal static int Run(bool identityOnly = false, bool refreshOnly = false, bool menuPlacementOnly = false, bool menuLatencyOnly = false, bool gridNamesOnly = false)
+    internal static int Run(bool identityOnly = false, bool refreshOnly = false, bool menuPlacementOnly = false, bool menuLatencyOnly = false, bool gridNamesOnly = false, bool selectionOnly = false)
     {
         var fixture = Path.Combine(Path.GetTempPath(), "Kage-input-" + Guid.NewGuid().ToString("N"));
         var evidence = Path.Combine(Environment.CurrentDirectory, ".scratch", "desktop-folder", "verification");
         Directory.CreateDirectory(fixture);
         Directory.CreateDirectory(evidence);
         var log = Path.Combine(evidence, gridNamesOnly ? "content-grid-names-session.txt" : menuLatencyOnly ? "content-menu-latency-session.txt" : menuPlacementOnly ? "content-menu-placement-session.txt" : refreshOnly ? "content-refresh-session.txt" : identityOnly ? "content-identity-session.txt" : "content-input-session.txt");
+        if (selectionOnly) log = Path.Combine(evidence, "selection-coordination-session.txt");
         File.WriteAllText(log, "真实 Windows 内容输入验收\n");
         var app = new Application { ShutdownMode = ShutdownMode.OnExplicitShutdown };
         Runtime? runtime = null;
@@ -66,6 +67,13 @@ internal static partial class ContentInputChecks
                 await Task.Delay(650);
                 header.UpdateLayout();
                 var contents = header.Contents;
+                if (selectionOnly)
+                {
+                    await SelectionCoordination(workspace, runtime, header, fixture, evidence, Require,
+                        Environment.GetCommandLineArgs().Contains("--selection-moves-only"));
+                    exit = 0;
+                    return;
+                }
                 if (gridNamesOnly)
                 {
                     await GridNames(workspace, runtime, header, fixture, evidence, Require);
@@ -520,13 +528,14 @@ internal static partial class ContentInputChecks
         for (var i = 0; i < (twice ? 2 : 1); i++)
         { mouse_event(down, 0, 0, 0, UIntPtr.Zero); await Task.Delay(35); mouse_event(down * 2, 0, 0, 0, UIntPtr.Zero); await Task.Delay(65); }
     }
-    private static async Task Drag(Point start, Point end, Action? started = null, int hold = 0, Action? beforeRelease = null, bool cancel = false)
+    private static async Task Drag(Point start, Point end, Action? started = null, int hold = 0, Action? beforeRelease = null, bool cancel = false, Func<Task>? duringDrag = null)
     {
         SetCursorPos((int)start.X, (int)start.Y); await Task.Delay(70); mouse_event(2, 0, 0, 0, UIntPtr.Zero); await Task.Delay(80);
         started?.Invoke();
         for (var i = 1; i <= 15; i++) { SetCursorPos((int)(start.X + (end.X - start.X) * i / 15), (int)(start.Y + (end.Y - start.Y) * i / 15)); await Task.Delay(25); }
         if (hold > 0) await Task.Delay(hold);
         beforeRelease?.Invoke();
+        if (duringDrag != null) await duringDrag();
         if (cancel) { Key(0x1B); await Task.Delay(150); }
         mouse_event(4, 0, 0, 0, UIntPtr.Zero); await Task.Delay(500);
     }

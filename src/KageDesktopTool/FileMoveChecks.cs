@@ -292,7 +292,7 @@ internal static class FileMoveChecks
         var rectangle = list.Current.BoundingRectangle;
         return new(rectangle.Right - 40, rectangle.Bottom - 40);
     }
-    private static Point DesktopBackground(Point? previous = null)
+    internal static Point DesktopBackground(Point? previous = null)
     {
         var area = WindowsDesktop.Displays().First();
         for (var y = area.Y + area.Height / 2; y < area.Y + area.Height - 150; y += 100)

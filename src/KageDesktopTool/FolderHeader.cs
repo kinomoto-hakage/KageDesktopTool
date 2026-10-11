@@ -110,6 +110,16 @@ internal sealed class FolderHeader : Window
         ConfigureResize(HeaderDivider, true);
         Surface.Child = layout;
         Content = Surface;
+        PreviewMouseDown += (_, e) =>
+        {
+            var hit = e.OriginalSource as DependencyObject;
+            var selection = Runtime.Current.Selection;
+            if (FindParent<FolderContents>(hit) == Contents
+                && (FindParent<ScrollBar>(hit) != null || FindParent<ListBoxItem>(hit) != null
+                    || e.ChangedButton == MouseButton.Left && Keyboard.Modifiers != ModifierKeys.None))
+                selection.Claim(Contents);
+            else selection.Clear();
+        };
         var menu = new ContextMenu();
         Menu(menu, "展开／折叠", async () => await ToggleAsync());
         Menu(menu, "打开内容文件夹", () =>
