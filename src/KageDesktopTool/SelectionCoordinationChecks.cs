@@ -39,6 +39,27 @@ internal static partial class ContentInputChecks
             await SelectionMoves(workspace, runtime, first, fixture, require, Click);
             return;
         }
+        await workspace.SetViewAsync(first.FolderId, false); runtime.Render(); await first.Contents.IconsLoaded; first.UpdateLayout();
+        await Click(first, 0);
+        Key(0x24); Key(0x28); Key(0x28); await Task.Delay(200);
+        require(first.Contents.SelectedPaths().Length == 1 && first.Contents.SelectedPaths()[0] == (string)Item(first, 2).Tag,
+            "真实键盘建立非首项连选锚点");
+        keybd_event(0x10, 0, 0, UIntPtr.Zero); await Task.Delay(80); Key(0x28); await Task.Delay(100);
+        keybd_event(0x10, 0, 2, UIntPtr.Zero); await Task.Delay(200);
+        require(first.Contents.SelectedPaths().Length == 2, "真实 Shift 键盘先建立双项范围：" + string.Join("；", first.Contents.SelectedPaths()));
+        var keyboardHeader = first.HeaderInput.PointToScreen(new Point(60, 20));
+        await MouseAt(keyboardHeader, false); await Task.Delay(200);
+        require(Empty(), "头部真实点击清除已经由键盘建立的集合");
+        keybd_event(0x10, 0, 0, UIntPtr.Zero); await Task.Delay(80); Key(0x23); await Task.Delay(100);
+        keybd_event(0x10, 0, 2, UIntPtr.Zero); await Task.Delay(200);
+        require(first.Contents.SelectedPaths().SequenceEqual(new[] { (string)Item(first, first.Contents.Items.Items.Count - 1).Tag }),
+            "键盘锚点清除后 Shift+End 从新目标开始，不恢复旧范围");
+        keybd_event(0x10, 0, 0, UIntPtr.Zero); await Task.Delay(80); Key(0x26); await Task.Delay(100);
+        keybd_event(0x10, 0, 2, UIntPtr.Zero); await Task.Delay(200);
+        require(first.Contents.SelectedPaths().SequenceEqual(first.Contents.Items.Items.Cast<ListBoxItem>().TakeLast(2).Select(item => (string)item.Tag)),
+            "重新建立的键盘锚点继续支持 Shift 范围扩展");
+        if (Environment.GetCommandLineArgs().Contains("--selection-keyboard-only")) return;
+        await workspace.SetViewAsync(first.FolderId, true); runtime.Render(); await first.Contents.IconsLoaded; first.UpdateLayout();
         require(true, $"平台：{Environment.OSVersion}；显示工作区：{string.Join("；", WindowsDesktop.Displays().Select(display => display.ToString()))}");
         await Click(first, 0);
         require(first.Contents.SelectedPaths().Length == 1, "第一个 Folder 真实单击选择");

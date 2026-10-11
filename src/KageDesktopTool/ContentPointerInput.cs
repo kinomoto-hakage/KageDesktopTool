@@ -99,7 +99,11 @@ internal sealed class ContentPointerInput : IDisposable
             }
             else if ((modifiers & ModifierKeys.Control) != 0) pressed.IsSelected = !pressed.IsSelected;
             else if (!pressed.IsSelected) { items.SelectedItems.Clear(); pressed.IsSelected = true; }
-            if ((modifiers & ModifierKeys.Shift) == 0) anchor = hit;
+            if ((modifiers & ModifierKeys.Shift) == 0 || anchor == null)
+            {
+                anchor = hit;
+                contents.Items.SetSelectionAnchor(pressed);
+            }
             contents.SetCurrentName(pressed);
         }
         else if (modifiers == ModifierKeys.None) items.SelectedItems.Clear();
@@ -176,6 +180,8 @@ internal sealed class ContentPointerInput : IDisposable
         Runtime.Current.Selection.Claim(contents);
         items.Focus();
         if (!item.IsSelected) { items.SelectedItems.Clear(); item.IsSelected = true; }
+        anchor = (string)item.Tag;
+        contents.Items.SetSelectionAnchor(item);
         contents.SetCurrentName(item);
         e.Handled = true;
     }
@@ -230,6 +236,10 @@ internal sealed class ContentPointerInput : IDisposable
         initial.Clear();
         pressed = null;
         if (origin != null || boxing) Finish();
+    }
+    internal void RememberKeyboardAnchor(ListBoxItem item)
+    {
+        if ((Keyboard.Modifiers & ModifierKeys.Shift) == 0 || anchor == null) anchor = (string)item.Tag;
     }
     private void Finish()
     {

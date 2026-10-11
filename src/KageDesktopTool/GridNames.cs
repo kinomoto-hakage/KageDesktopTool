@@ -28,10 +28,14 @@ internal sealed partial class FolderContents
             if (added != null) RememberName((string)added.Tag);
             QueueNames(changed);
         };
-        Items.KeyUp += (_, _) =>
+        Items.KeyUp += (_, e) =>
         {
             if (FolderHeader.FindParent<ListBoxItem>(Keyboard.FocusedElement as DependencyObject) is { IsSelected: true } focused)
+            {
+                if (e.Key is Key.Up or Key.Down or Key.Left or Key.Right or Key.Home or Key.End or Key.PageUp or Key.PageDown or Key.Space)
+                    input.RememberKeyboardAnchor(focused);
                 SetCurrentName(focused);
+            }
         };
         Items.SizeChanged += (_, _) => QueueNames(false);
     }

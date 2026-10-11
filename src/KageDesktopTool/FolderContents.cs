@@ -13,7 +13,7 @@ namespace Kage.Desktop;
 
 internal sealed partial class FolderContents : DockPanel
 {
-    internal ListBox Items { get; }
+    internal ContentListBox Items { get; }
     private readonly TextBlock notice;
     private readonly Button view;
     private readonly Guid id;
@@ -47,7 +47,7 @@ internal sealed partial class FolderContents : DockPanel
         notice = new TextBlock { Foreground = Brushes.WhiteSmoke, TextWrapping = TextWrapping.Wrap, Margin = new Thickness(3, 0, 3, 5), FontSize = 11 };
         SetDock(notice, Dock.Top);
         Children.Add(notice);
-        Items = new ListBox { Background = Brushes.Transparent, BorderThickness = new Thickness(0), Padding = new Thickness(0), SelectionMode = SelectionMode.Extended, Foreground = Brushes.White, HorizontalContentAlignment = HorizontalAlignment.Stretch };
+        Items = new ContentListBox { Background = Brushes.Transparent, BorderThickness = new Thickness(0), Padding = new Thickness(0), SelectionMode = SelectionMode.Extended, Foreground = Brushes.White, HorizontalContentAlignment = HorizontalAlignment.Stretch };
         ScrollViewer.SetHorizontalScrollBarVisibility(Items, ScrollBarVisibility.Disabled);
         ScrollViewer.SetVerticalScrollBarVisibility(Items, ScrollBarVisibility.Auto);
         ScrollViewer.SetCanContentScroll(Items, false);
@@ -264,7 +264,7 @@ internal sealed partial class FolderContents : DockPanel
     internal void ClearSelection()
     {
         input.ClearSelection();
-        Items.SelectedItems.Clear();
+        Items.ResetSelection();
         currentNamePath = null;
         nameHistory.Clear();
         revealName = false;

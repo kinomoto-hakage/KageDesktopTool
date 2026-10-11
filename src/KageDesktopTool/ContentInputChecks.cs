@@ -541,7 +541,12 @@ internal static partial class ContentInputChecks
     }
     private static async Task WaitUntil(Func<bool> ready)
     { for (var i = 0; i < 80 && !ready(); i++) await Task.Delay(100); }
-    private static void Key(byte key) { keybd_event(key, 0, 0, UIntPtr.Zero); keybd_event(key, 0, 2, UIntPtr.Zero); }
+    private static void Key(byte key)
+    {
+        // 导航键使用扩展键标志，避免 Shift 时被系统当作数字键盘输入。
+        var flags = key is >= 0x21 and <= 0x28 or 0x2D or 0x2E ? 1u : 0u;
+        keybd_event(key, 0, flags, UIntPtr.Zero); keybd_event(key, 0, flags | 2, UIntPtr.Zero);
+    }
     private static AutomationElement[] MenuItems() => AutomationElement.FromHandle(ShellContextMenu.ActiveMenuWindow).FindAll(TreeScope.Descendants,
         new OrCondition(new PropertyCondition(AutomationElement.ControlTypeProperty, ControlType.MenuItem), new PropertyCondition(AutomationElement.ControlTypeProperty, ControlType.Button)))
         .Cast<AutomationElement>().ToArray();
