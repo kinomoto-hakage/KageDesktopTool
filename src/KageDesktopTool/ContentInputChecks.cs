@@ -536,7 +536,8 @@ internal static partial class ContentInputChecks
         if (hold > 0) await Task.Delay(hold);
         beforeRelease?.Invoke();
         if (duringDrag != null) await duringDrag();
-        if (cancel) { Key(0x1B); await Task.Delay(150); }
+        if (cancel)
+        { keybd_event(0x1B, 0, 0, UIntPtr.Zero); await Task.Delay(100); keybd_event(0x1B, 0, 2, UIntPtr.Zero); await Task.Delay(150); }
         mouse_event(4, 0, 0, 0, UIntPtr.Zero); await Task.Delay(500);
     }
     private static async Task WaitUntil(Func<bool> ready)

@@ -110,7 +110,9 @@ internal static class LayoutChecks
         Ensure(resize.ResizeBy(60, 80), "展开时调整共享宽度和内容高度");
         var changed = resize.Folders.Single().Folder;
         Ensure(changed.X == 12 && changed.HeaderWidth == 460 && changed.HeaderHeight == 68 && changed.BodyHeight == 340, "尺寸含义正确且左侧不变");
-        Ensure(!resize.ResizeBy(300, 500) && resize.Folders.Single().Folder == changed, "越界尺寸不提交");
+        Ensure(resize.ResizeBy(300, 500) && resize.Folders.Single().Folder == changed with { HeaderWidth = 760, BodyHeight = 720, Y = 12 },
+            "调到宽高上限时向上移动八像素容纳完整边界，不缩小展示尺寸");
+        changed = resize.Folders.Single().Folder;
         await resizing.CommitLayoutAsync(resize);
         await resizing.SetViewAsync(moving.Id, false);
         var restored = new DesktopWorkspace(fixture.Store, new TestStartup());

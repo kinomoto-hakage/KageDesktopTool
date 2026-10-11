@@ -18,12 +18,17 @@ internal sealed class StyleDialog : Window
     internal Slider Transparency { get; }
     internal TextBlock Error { get; }
     internal Button ApplyButton { get; }
+    internal ComboBox PositionChoice { get; }
+    internal ComboBox NameChoice { get; }
+    internal Slider SideWidth { get; }
     private readonly Runtime runtime;
-    private readonly StackPanel root = new() { Margin = new Thickness(24) };
+    private readonly StackPanel root = new() { Margin = new Thickness(24, 24, 24, 0) };
+    private readonly Grid content = new();
     private readonly Border swatch = new() { Height = 42, CornerRadius = new CornerRadius(7), Margin = new Thickness(0, 0, 0, 12) };
     private readonly TextBlock opacityLabel = new() { Margin = new Thickness(0, 0, 0, 8) };
     private bool syncing;
     private bool saving;
+    private string layoutNotice = "";
 
     internal StyleDialog(Runtime runtime, AppearanceInteraction interaction, string name)
     {
@@ -32,13 +37,30 @@ internal sealed class StyleDialog : Window
         Title = "Folder 样式";
         Width = 430;
         SizeToContent = SizeToContent.Height;
+        MaxHeight = Math.Max(240, SystemParameters.WorkArea.Height - 40);
         ResizeMode = ResizeMode.NoResize;
         WindowStartupLocation = WindowStartupLocation.CenterScreen;
         Icon = Runtime.ApplicationIcon;
         Background = new SolidColorBrush(Color.FromRgb(30, 33, 39));
         Foreground = Brushes.White;
-        Content = root;
+        content.RowDefinitions.Add(new RowDefinition());
+        content.RowDefinitions.Add(new RowDefinition { Height = GridLength.Auto });
+        content.Children.Add(new ScrollViewer { Content = root, VerticalScrollBarVisibility = ScrollBarVisibility.Auto,
+            HorizontalScrollBarVisibility = ScrollBarVisibility.Disabled });
+        Content = content;
         root.Children.Add(new TextBlock { Text = name, TextWrapping = TextWrapping.Wrap, Margin = new Thickness(0, 0, 0, 12) });
+        root.Children.Add(new TextBlock { Text = "头部位置", Margin = new Thickness(0, 0, 0, 6) });
+        PositionChoice = new ComboBox { ItemsSource = new[] { "上方（向下展开）", "下方（向上展开）", "左侧（向右展开）", "右侧（向左展开）" },
+            SelectedIndex = (int)interaction.Draft.HeaderPosition, Margin = new Thickness(0, 0, 0, 12) };
+        root.Children.Add(PositionChoice);
+        root.Children.Add(new TextBlock { Text = "名称方向", Margin = new Thickness(0, 0, 0, 6) });
+        NameChoice = new ComboBox { ItemsSource = new[] { "横排", "竖排（字符正向）" }, SelectedIndex = (int)interaction.Draft.NameOrientation,
+            Margin = new Thickness(0, 0, 0, 12) };
+        root.Children.Add(NameChoice);
+        root.Children.Add(new TextBlock { Text = "侧栏宽度（64–360 DIP）", Margin = new Thickness(0, 0, 0, 6) });
+        SideWidth = new Slider { Minimum = 64, Maximum = 360, Value = interaction.Draft.SideHeaderWidth,
+            SmallChange = 4, LargeChange = 16, Margin = new Thickness(0, 0, 0, 16) };
+        root.Children.Add(SideWidth);
         root.Children.Add(new TextBlock { Text = "背景颜色", FontSize = 20, FontWeight = FontWeights.SemiBold, Margin = new Thickness(0, 0, 0, 16) });
         root.Children.Add(swatch);
         var palette = new WrapPanel();
@@ -85,14 +107,31 @@ internal sealed class StyleDialog : Window
         Grid.SetColumn(labels, 1);
         opacityRow.Children.Add(labels);
         root.Children.Add(opacityRow);
-        var actions = new StackPanel { Orientation = Orientation.Horizontal, HorizontalAlignment = HorizontalAlignment.Right };
+        var actions = new StackPanel { Orientation = Orientation.Horizontal, HorizontalAlignment = HorizontalAlignment.Right,
+            Margin = new Thickness(24, 12, 24, 24) };
         var cancel = new Button { Content = "取消", IsCancel = true, Width = 86, Padding = new Thickness(8), Margin = new Thickness(0, 0, 10, 0) };
         cancel.Click += (_, _) => Close();
         ApplyButton = new Button { Content = "应用", IsDefault = true, Width = 86, Padding = new Thickness(8) };
         ApplyButton.Click += async (_, _) => await ApplyAsync();
         actions.Children.Add(cancel);
         actions.Children.Add(ApplyButton);
-        root.Children.Add(actions);
+        Grid.SetRow(actions, 1); content.Children.Add(actions);
+        PositionChoice.SelectionChanged += (_, _) =>
+        {
+            if (syncing) return;
+            var result = Interaction.SetHeaderPosition((HeaderPosition)PositionChoice.SelectedIndex);
+            SyncLayout(result);
+        };
+        NameChoice.SelectionChanged += (_, _) =>
+        {
+            if (syncing) return;
+            SyncLayout(Interaction.SetNameOrientation((NameOrientation)NameChoice.SelectedIndex));
+        };
+        SideWidth.ValueChanged += (_, _) =>
+        {
+            if (syncing) return;
+            SyncLayout(Interaction.SetSideHeaderWidth(SideWidth.Value));
+        };
         Closing += (_, e) => { if (saving && !runtime.Exiting) e.Cancel = true; };
         Closed += (_, _) =>
         {
@@ -108,7 +147,7 @@ internal sealed class StyleDialog : Window
     {
         if (saving || Interaction.Error.Length != 0 || runtime.Exiting) return;
         saving = true;
-        root.IsEnabled = false;
+        content.IsEnabled = false;
         try
         {
             var result = await runtime.Workspace.ApplyAppearanceAsync(Interaction);
@@ -117,7 +156,7 @@ internal sealed class StyleDialog : Window
             if (result.Succeeded) { saving = false; Close(); }
             else Error.Text = result.Message;
         }
-        finally { saving = false; root.IsEnabled = true; }
+        finally { saving = false; content.IsEnabled = true; }
     }
 
     internal void SelectColor(string value)
@@ -158,10 +197,24 @@ internal sealed class StyleDialog : Window
 
     internal void UpdatePreview()
     {
-        Error.Text = Interaction.Error;
+        Error.Text = Interaction.Error.Length != 0 ? Interaction.Error : layoutNotice;
         ApplyButton.IsEnabled = Interaction.Error.Length == 0;
         opacityLabel.Text = $"{Transparency.Value:0}%";
         runtime.PreviewAppearance(Interaction);
+    }
+
+    private void SyncLayout(OperationResult result)
+    {
+        layoutNotice = result.Succeeded ? "" : result.Message;
+        syncing = true;
+        try
+        {
+            PositionChoice.SelectedIndex = (int)Interaction.Draft.HeaderPosition;
+            NameChoice.SelectedIndex = (int)Interaction.Draft.NameOrientation;
+            SideWidth.Value = Interaction.Draft.SideHeaderWidth;
+        }
+        finally { syncing = false; }
+        UpdatePreview();
     }
 
     private static TextBox Field(Grid grid, string label, int column)

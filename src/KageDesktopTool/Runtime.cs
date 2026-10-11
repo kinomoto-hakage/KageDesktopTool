@@ -326,7 +326,13 @@ internal sealed class Runtime : IDisposable
 
     internal void PreviewAppearance(AppearanceInteraction interaction)
     {
-        if (Headers.TryGetValue(interaction.FolderId, out var header)) header.ApplyStyle(interaction.Color, interaction.Opacity);
+        if (Headers.TryGetValue(interaction.FolderId, out var header)
+            && Workspace.Snapshot.Folders.Any(f => f.Folder.Id == interaction.FolderId))
+        {
+            var preview = interaction.Preview;
+            header.ApplyGeometry(preview, preview: true);
+            header.ApplyStyle(preview.Folder.Color, preview.Folder.Opacity);
+        }
     }
 
     internal void EndAppearance(StyleDialog dialog)
@@ -356,7 +362,7 @@ internal sealed class Runtime : IDisposable
 
     internal LayoutInteraction? BeginInteraction(Guid id)
     {
-        if (Interacting || Exiting || Moving || ChangingFolder || refreshing || displayRefreshPending) return null;
+        if (Interacting || Exiting || Moving || ChangingFolder || appearance != null || refreshing || displayRefreshPending) return null;
         activeInteraction = Workspace.BeginLayout(id);
         if (activeInteraction != null) layoutInput.Start();
         return activeInteraction;

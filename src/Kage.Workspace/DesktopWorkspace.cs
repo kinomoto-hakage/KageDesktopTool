@@ -439,19 +439,68 @@ public sealed partial class DesktopWorkspace(IWorkspaceStore store, IStartupRegi
     {
         var current = snapshot;
         var folder = current.Folders.FirstOrDefault(folder => folder.Folder.Id == id);
-        return current.RecoveryRequired || current.RootMigration != null || folder == null ? null : new(this, folder.Folder);
+        return current.RecoveryRequired || current.RootMigration != null || folder == null || !folder.Visible ? null : new(this, folder.Folder, displays);
+    }
+
+    internal OperationResult ValidateAppearance(AppearanceInteraction interaction)
+    {
+        if (snapshot.RecoveryRequired || snapshot.RootMigration != null) return Locked();
+        if (interaction.Owner != this || interaction.Closed) return AppearanceInteraction.Ended();
+        if (!displays.SequenceEqual(interaction.Displays)) return new(Outcome.Failed, "显示环境已变化，请取消后重新打开样式。");
+        var current = snapshot.Folders.FirstOrDefault(f => f.Folder.Id == interaction.FolderId)?.Folder;
+        var original = interaction.Original;
+        if (current == null || current.Color != original.Color || current.Opacity != original.Opacity
+            || current.HeaderPosition != original.HeaderPosition || current.NameOrientation != original.NameOrientation
+            || current.SideHeaderWidth != original.SideHeaderWidth)
+            return new(Outcome.Failed, "Folder 样式已变化，请取消后重新打开。");
+        if (interaction.GeometryChanged && !SameGeometry(current, original))
+            return new(Outcome.Failed, "Folder 布局已变化，请取消后重新打开样式。");
+        return new(Outcome.Success, "草稿仍有效。");
+    }
+
+    private static bool SameGeometry(FolderRecord a, FolderRecord b) => a.X == b.X && a.Y == b.Y
+        && a.HeaderWidth == b.HeaderWidth && a.HeaderHeight == b.HeaderHeight && a.BodyHeight == b.BodyHeight
+        && a.Expanded == b.Expanded && a.LayoutHidden == b.LayoutHidden;
+
+    internal OperationResult PlaceAppearance(AppearanceInteraction interaction, FolderRecord candidate, out FolderRecord? placed)
+    {
+        placed = null;
+        var valid = ValidateAppearance(interaction);
+        if (!valid.Succeeded) return valid;
+        var current = snapshot.Folders.Single(f => f.Folder.Id == interaction.FolderId).Folder;
+        if (!SameGeometry(current, interaction.Original))
+            return new(Outcome.Failed, "Folder 布局已变化，请取消后重新打开样式。");
+        placed = NearestPlacement.Find(candidate, displays, HeaderLayout.Occupied(snapshot.Folders, interaction.FolderId, displays));
+        return placed == null ? new(Outcome.Failed, "没有可容纳本次样式的空位，已保留上一个可用布局。")
+            : new(Outcome.Success, "头部布局已预览。");
+    }
+
+    internal FolderSnapshot AppearancePreview(AppearanceInteraction interaction)
+    {
+        var current = snapshot.Folders.Single(f => f.Folder.Id == interaction.FolderId);
+        if (!ValidateAppearance(interaction).Succeeded) return current;
+        var draft = MergeAppearance(current.Folder, interaction);
+        return current with { Folder = draft, DisplayScale = HeaderLayout.DisplayFor(draft, displays)?.Scale ?? current.DisplayScale };
+    }
+
+    private static FolderRecord MergeAppearance(FolderRecord current, AppearanceInteraction interaction)
+    {
+        var draft = interaction.Draft;
+        return current with { Color = draft.Color, Opacity = draft.Opacity, NameOrientation = draft.NameOrientation,
+            HeaderPosition = draft.HeaderPosition, SideHeaderWidth = draft.SideHeaderWidth,
+            X = interaction.GeometryChanged ? draft.X : current.X, Y = interaction.GeometryChanged ? draft.Y : current.Y };
     }
 
     public Task<OperationResult> ApplyAppearanceAsync(AppearanceInteraction interaction) => Run(() =>
     {
         if (blocked) return Locked();
-        if (interaction.Owner != this || interaction.Closed) return AppearanceInteraction.Ended();
+        var valid = ValidateAppearance(interaction);
+        if (!valid.Succeeded) return valid;
         if (interaction.Error.Length != 0) return new(Outcome.Failed, interaction.Error);
-        var original = interaction.Original;
-        var current = state.Folders.FirstOrDefault(folder => folder.Id == interaction.FolderId);
-        if (current == null || current.Color != original.Color || current.Opacity != original.Opacity)
-            return new(Outcome.Failed, "Folder 外观已变化，本次草稿未覆盖新设置；请取消后重新打开。");
-        var changed = current with { Color = interaction.Color, Opacity = interaction.Opacity };
+        var current = state.Folders.Single(folder => folder.Id == interaction.FolderId);
+        var changed = MergeAppearance(current, interaction);
+        if (HeaderLayout.Available(changed, displays, HeaderLayout.Occupied(snapshot.Folders, changed.Id, displays)) == null)
+            return new(Outcome.Failed, "布局已变化，草稿位置不可用；请取消后重新打开样式。");
         var next = state with { Folders = state.Folders.Select(folder => folder.Id == changed.Id ? changed : folder).ToArray() };
         try { store.Save(next); }
         catch (Exception e) { return new(Outcome.Failed, $"外观保存失败，原设置保留；可重试或取消：{e.Message}"); }

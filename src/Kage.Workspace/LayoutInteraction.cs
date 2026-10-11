@@ -34,12 +34,15 @@ public sealed class LayoutInteraction
         if (area == null) return false;
         var width = HeaderLayout.Width(current, area);
         var height = HeaderLayout.Height(current, area);
+        var bounds = FolderGeometry.For(current, area.Scale);
+        var offsetX = current.X - bounds.X;
+        var offsetY = current.Y - bounds.Y;
         // 拖动只受工作区限制；Folder 间隙在释放时统一计算。
         var dx = (double)screenX - previous.X;
         var dy = (double)screenY - previous.Y;
         var point = displays.Length == 1
-            ? (X: (int)Math.Clamp(current.X + dx, area.X, (long)area.X + area.Width - width),
-                Y: (int)Math.Clamp(current.Y + dy, area.Y, (long)area.Y + area.Height - height))
+            ? (X: (int)Math.Clamp(current.X + dx, area.X + offsetX, (long)area.X + area.Width - width + offsetX),
+                Y: (int)Math.Clamp(current.Y + dy, area.Y + offsetY, (long)area.Y + area.Height - height + offsetY))
             : SweepDisplays(current, dx, dy);
         return Replace(current with { X = point.X, Y = point.Y }, []);
     }
@@ -83,14 +86,27 @@ public sealed class LayoutInteraction
             HeaderHeight = current.Expanded ? current.HeaderHeight : Math.Clamp(current.HeaderHeight + heightDelta, 42, 82),
             BodyHeight = current.Expanded ? Math.Clamp(current.BodyHeight + heightDelta, 160, 720) : current.BodyHeight
         };
-        return Replace(changed, HeaderLayout.Occupied(folders, target, displays));
+        if (FolderGeometry.Side(current))
+            changed = current with { HeaderWidth = current.Expanded ? Math.Clamp(current.HeaderWidth + widthDelta, 240, 760) : current.HeaderWidth,
+                SideHeaderWidth = current.Expanded ? current.SideHeaderWidth : Math.Clamp(current.SideHeaderWidth + widthDelta, 64, 360),
+                BodyHeight = Math.Clamp(current.BodyHeight + heightDelta, 160, 720) };
+        return Resize(changed);
     }
 
     public bool ResizeHeaderBy(double heightDelta)
     {
         if (!double.IsFinite(heightDelta)) return false;
         var current = folders.Single(folder => folder.Folder.Id == target).Folder;
-        return Replace(current with { HeaderHeight = Math.Clamp(current.HeaderHeight + heightDelta, 42, 82) }, HeaderLayout.Occupied(folders, target, displays));
+        return Resize(FolderGeometry.Side(current)
+            ? current with { SideHeaderWidth = Math.Clamp(current.SideHeaderWidth + heightDelta, 64, 360) }
+            : current with { HeaderHeight = Math.Clamp(current.HeaderHeight + heightDelta, 42, 82) });
+    }
+
+    private bool Resize(FolderRecord changed)
+    {
+        var occupied = HeaderLayout.Occupied(folders, target, displays);
+        var placed = NearestPlacement.Find(changed, displays, occupied);
+        return placed != null && Replace(placed, occupied);
     }
 
     private bool Replace(FolderRecord changed, IReadOnlyList<(FolderRecord Folder, DisplayArea Area)> occupied)

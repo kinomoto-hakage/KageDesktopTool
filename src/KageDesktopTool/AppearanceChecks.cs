@@ -84,7 +84,8 @@ internal static class AppearanceChecks
                 runtime.Render();
                 Check(((SolidColorBrush)header.Surface.Background).Color.A == 64, "后台刷新保留尚未应用的实时预览");
                 WindowsDesktop.GetWindowRect(header.Handle, out var previewBounds);
-                Check(originalBounds.Equals(previewBounds) && header.Record == original, "预览不改变实际 HWND 边界及内容布局记录");
+                Check(originalBounds.Equals(previewBounds) && workspace.Snapshot.Folders.Single(f => f.Folder.Id == header.FolderId).Folder == original,
+                    "预览不改变实际 HWND 边界及正式样式与布局记录");
                 Render(header.Surface, "06-半透明预览.png");
                 Render(dialog, "06-外观设置.png");
 

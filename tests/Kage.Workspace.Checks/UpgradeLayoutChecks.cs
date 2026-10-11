@@ -43,7 +43,10 @@ internal static class UpgradeLayoutChecks
         Ensure(expanded is { X: 50, Y: 492, Expanded: true }, "底部展开选择最近的上方位置");
         Ensure(workspace.Snapshot.Folders.Last().Folder == other, "展开不移动其他已展开 Folder");
         var edit = workspace.BeginLayout(bottom.Id)!;
-        Ensure(!edit.ResizeHeaderBy(20), "底部空间不足不改变头部高度");
+        Ensure(edit.ResizeHeaderBy(20) && edit.Folders.First().Folder == expanded with { HeaderHeight = 68, Y = 472 },
+            "底部调厚后仅当前 Folder 上移二十像素，保留展示宽高");
+        Ensure(workspace.Snapshot.Folders.First().Folder == expanded && edit.Folders.Last().Folder == other,
+            "调厚自动挪位仅属于预览，其他 Folder 不变");
         edit.BeginDrag(0, 0); edit.DragTo(0, -100);
         await workspace.CommitLayoutAsync(edit);
         var before = workspace.Snapshot.Folders.First().Folder;

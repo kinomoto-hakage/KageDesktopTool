@@ -26,14 +26,21 @@ internal static class NearestPlacement
                     var metrics = screen with { Scale = scale };
                     var width = HeaderLayout.Width(target, metrics);
                     var height = HeaderLayout.Height(target, metrics);
+                    var bounds = FolderGeometry.For(target, scale);
+                    var offsetX = target.X - bounds.X;
+                    var offsetY = target.Y - bounds.Y;
                     var cuts = new List<long> { screen.X, (long)screen.X + screen.Width };
                     foreach (var display in displays)
-                        cuts.AddRange([(long)display.X, (long)display.X + display.Width,
-                            (long)display.X - width + 1, (long)display.X + display.Width - width + 1]);
-                    foreach (var (other, area) in occupied.Where(o => (long)y + height + HeaderLayout.Gap > o.Folder.Y
-                        && y < (long)o.Folder.Y + HeaderLayout.Height(o.Folder, o.Area) + HeaderLayout.Gap))
-                        cuts.AddRange([(long)other.X - width - HeaderLayout.Gap + 1,
-                            (long)other.X + HeaderLayout.Width(other, area) + HeaderLayout.Gap]);
+                        cuts.AddRange([(long)display.X + offsetX, (long)display.X + display.Width + offsetX,
+                            (long)display.X - width + offsetX + 1, (long)display.X + display.Width - width + offsetX + 1]);
+                    foreach (var (other, area) in occupied)
+                    {
+                        var obstacle = FolderGeometry.For(other, area.Scale);
+                        if ((long)y - offsetY + height + HeaderLayout.Gap <= obstacle.Y
+                            || (long)y - offsetY >= (long)obstacle.Y + obstacle.Height + HeaderLayout.Gap) continue;
+                        cuts.AddRange([(long)obstacle.X - width - HeaderLayout.Gap + offsetX + 1,
+                            (long)obstacle.X + obstacle.Width + HeaderLayout.Gap + offsetX]);
+                    }
                     var boundaries = cuts.Where(x => x >= screen.X && x <= (long)screen.X + screen.Width).Distinct().Order().ToArray();
                     for (var i = 1; i < boundaries.Length; i++)
                     {

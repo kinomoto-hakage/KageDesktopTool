@@ -24,7 +24,9 @@ internal sealed class FolderHeader : Window
     internal FolderRecord Record { get; private set; }
     private readonly Grid layout;
     private readonly Grid header;
-    private readonly TextBlock title;
+    private readonly HeaderName title;
+    internal HeaderName NameDisplay => title;
+    internal Button ExpandButton => expand;
     private readonly TextBlock count;
     private readonly Button expand;
     private LayoutInteraction? interaction;
@@ -50,7 +52,7 @@ internal sealed class FolderHeader : Window
         UseLayoutRounding = true;
         SnapsToDevicePixels = true;
         TextOptions.SetTextFormattingMode(this, TextFormattingMode.Display);
-        Surface = new Border { CornerRadius = new CornerRadius(10), BorderThickness = new Thickness(1), BorderBrush = new SolidColorBrush(Color.FromArgb(55, 255, 255, 255)) };
+        Surface = new Border { CornerRadius = new CornerRadius(10) };
         layout = new Grid();
         layout.RowDefinitions.Add(new RowDefinition { Height = new GridLength(Record.HeaderHeight) });
         layout.RowDefinitions.Add(new RowDefinition());
@@ -58,7 +60,7 @@ internal sealed class FolderHeader : Window
         header.ColumnDefinitions.Add(new ColumnDefinition());
         header.ColumnDefinitions.Add(new ColumnDefinition { Width = GridLength.Auto });
         header.ColumnDefinitions.Add(new ColumnDefinition { Width = new GridLength(32) });
-        title = new TextBlock { Foreground = Brushes.White, FontSize = 14, FontWeight = FontWeights.SemiBold, VerticalAlignment = VerticalAlignment.Center, TextTrimming = TextTrimming.CharacterEllipsis, Cursor = Cursors.SizeAll };
+        title = new HeaderName { Cursor = Cursors.SizeAll };
         count = new TextBlock { Foreground = Brushes.WhiteSmoke, FontSize = 12, VerticalAlignment = VerticalAlignment.Center, Margin = new Thickness(10, 0, 8, 0) };
         expand = new Button { Content = "▾", FontSize = 20, Foreground = Brushes.White, Background = Brushes.Transparent, BorderThickness = new Thickness(0), Padding = new Thickness(1), ToolTip = "展开／折叠" };
         expand.Click += async (_, _) => await ToggleAsync();
@@ -108,7 +110,11 @@ internal sealed class FolderHeader : Window
         layout.Children.Add(HeaderDivider);
         ConfigureResize(grip, false);
         ConfigureResize(HeaderDivider, true);
-        Surface.Child = layout;
+        // 装饰描边叠在几何上，避免下／右头部的锚点受边框占用尺寸影响。
+        var surfaceLayout = new Grid(); surfaceLayout.Children.Add(layout);
+        surfaceLayout.Children.Add(new Border { CornerRadius = new CornerRadius(10), BorderThickness = new Thickness(1),
+            BorderBrush = new SolidColorBrush(Color.FromArgb(55, 255, 255, 255)), IsHitTestVisible = false });
+        Surface.Child = surfaceLayout;
         Content = Surface;
         PreviewMouseDown += (_, e) =>
         {
@@ -216,8 +222,10 @@ internal sealed class FolderHeader : Window
             // HWND 宿主与目标屏可能有不同 DPI；输入按真实物理像素换算为目标 DIP。
             var dx = (cursor.X - previous.X) / displayScale;
             var dy = (cursor.Y - previous.Y) / displayScale;
-            if (headerOnly) interaction.ResizeHeaderBy(dy);
-            else interaction.ResizeBy(dx, dy);
+            if (headerOnly) interaction.ResizeHeaderBy(Record.HeaderPosition switch
+            { HeaderPosition.Top => dy, HeaderPosition.Bottom => -dy, HeaderPosition.Left => dx, _ => -dx });
+            else interaction.ResizeBy(Record.Expanded && Record.HeaderPosition == HeaderPosition.Right ? -dx : dx,
+                Record.Expanded && Record.HeaderPosition == HeaderPosition.Bottom ? -dy : dy);
             Runtime.Current.Preview(interaction);
         };
         thumb.DragCompleted += async (_, _) => await EndInteractionAsync();
@@ -237,7 +245,6 @@ internal sealed class FolderHeader : Window
 
     internal void Update(FolderSnapshot folder)
     {
-        title.Text = folder.Folder.Name;
         Title = "Kage · " + folder.Folder.Name;
         count.Text = folder.FileCount?.ToString() ?? "?";
         ToolTip = folder.Notice ?? folder.ActualPath;
@@ -258,12 +265,16 @@ internal sealed class FolderHeader : Window
         // Explorer 子窗口可能沿用宿主 DPI。显式补偿 WPF 渲染尺寸和命中变换。
         var compensation = displayScale / sourceScale;
         Surface.LayoutTransform = compensation == 1 ? Transform.Identity : new ScaleTransform(compensation, compensation);
-        Width = Math.Ceiling(Record.HeaderWidth * displayScale) / sourceScale;
-        Height = Math.Ceiling((Record.HeaderHeight + (Record.Expanded ? Record.BodyHeight : 0)) * displayScale) / sourceScale;
-        layout.RowDefinitions[0].Height = new GridLength(Record.HeaderHeight);
+        var bounds = FolderGeometry.For(Record, displayScale);
+        Width = bounds.Width / sourceScale;
+        Height = bounds.Height / sourceScale;
+        ConfigureDirection();
+        title.Set(Record.Name, Record.NameOrientation, FolderGeometry.Side(Record));
         Contents.Visibility = Record.Expanded ? Visibility.Visible : Visibility.Collapsed;
         HeaderDivider.Visibility = Record.Expanded ? Visibility.Visible : Visibility.Collapsed;
-        expand.Content = Record.Expanded ? "▴" : "▾";
+        expand.Content = Record.HeaderPosition switch
+        { HeaderPosition.Top => Record.Expanded ? "▴" : "▾", HeaderPosition.Bottom => Record.Expanded ? "▾" : "▴",
+            HeaderPosition.Left => Record.Expanded ? "◂" : "▸", _ => Record.Expanded ? "▸" : "◂" };
         if (Handle == IntPtr.Zero) return;
         if (!WindowsDesktop.Attached(Handle, Host)) Attach();
         if (!folder.Visible || Host == IntPtr.Zero) { Hide(); return; }
@@ -271,9 +282,7 @@ internal sealed class FolderHeader : Window
         positioning = true;
         try
         {
-            if (!WindowsDesktop.Position(Handle, Host, Record.X, Record.Y,
-                (int)Math.Ceiling(Record.HeaderWidth * displayScale),
-                (int)Math.Ceiling((Record.HeaderHeight + (Record.Expanded ? Record.BodyHeight : 0)) * displayScale)))
+            if (!WindowsDesktop.Position(Handle, Host, bounds.X, bounds.Y, bounds.Width, bounds.Height))
             { Host = IntPtr.Zero; Hide(); }
         }
         finally { positioning = false; }
@@ -286,5 +295,76 @@ internal sealed class FolderHeader : Window
         var color = (Color)ColorConverter.ConvertFromString(value);
         color.A = (byte)Math.Round(opacity * 255);
         Surface.Background = new SolidColorBrush(color);
+    }
+
+    private HeaderPosition? arrangedDirection;
+    private void ConfigureDirection()
+    {
+        var side = FolderGeometry.Side(Record);
+        var reverse = Record.HeaderPosition is HeaderPosition.Bottom or HeaderPosition.Right;
+        layout.RowDefinitions.Clear(); layout.ColumnDefinitions.Clear();
+        if (side)
+        {
+            layout.RowDefinitions.Add(new RowDefinition());
+            layout.ColumnDefinitions.Add(new ColumnDefinition { Width = new GridLength(reverse && Record.Expanded ? Record.HeaderWidth : Record.SideHeaderWidth) });
+            layout.ColumnDefinitions.Add(new ColumnDefinition { Width = new GridLength(Record.Expanded ? reverse ? Record.SideHeaderWidth : Record.HeaderWidth : 0) });
+        }
+        else
+        {
+            layout.ColumnDefinitions.Add(new ColumnDefinition());
+            layout.RowDefinitions.Add(new RowDefinition { Height = new GridLength(reverse && Record.Expanded ? Record.BodyHeight : Record.HeaderHeight) });
+            layout.RowDefinitions.Add(new RowDefinition { Height = new GridLength(Record.Expanded ? reverse ? Record.HeaderHeight : Record.BodyHeight : 0) });
+        }
+        var headIndex = reverse && Record.Expanded ? 1 : 0;
+        foreach (var element in new FrameworkElement[] { header, HeaderDivider })
+        { Grid.SetRow(element, side ? 0 : headIndex); Grid.SetColumn(element, side ? headIndex : 0); }
+        Grid.SetRow(Contents, side ? 0 : 1 - headIndex); Grid.SetColumn(Contents, side ? 1 - headIndex : 0);
+        Grid.SetRow(ResizeGrip, 0); Grid.SetColumn(ResizeGrip, 0);
+        Grid.SetRowSpan(ResizeGrip, layout.RowDefinitions.Count); Grid.SetColumnSpan(ResizeGrip, layout.ColumnDefinitions.Count);
+        ResizeGrip.HorizontalAlignment = Record.Expanded && Record.HeaderPosition == HeaderPosition.Right ? HorizontalAlignment.Left : HorizontalAlignment.Right;
+        ResizeGrip.VerticalAlignment = Record.Expanded && Record.HeaderPosition == HeaderPosition.Bottom ? VerticalAlignment.Top : VerticalAlignment.Bottom;
+        ResizeGrip.Cursor = Record.Expanded && reverse ? Cursors.SizeNESW : Cursors.SizeNWSE;
+        if (arrangedDirection == Record.HeaderPosition) return;
+        arrangedDirection = Record.HeaderPosition;
+        var grip = new FrameworkElementFactory(typeof(TextBlock));
+        grip.SetValue(TextBlock.TextProperty, Record.HeaderPosition switch
+        { HeaderPosition.Bottom => "◥", HeaderPosition.Right => "◣", _ => "◢" });
+        grip.SetValue(TextBlock.ForegroundProperty, Brushes.White);
+        ResizeGrip.Template = new ControlTemplate(typeof(Thumb)) { VisualTree = grip };
+        header.RowDefinitions.Clear(); header.ColumnDefinitions.Clear();
+        header.Margin = side ? new Thickness(8, 8, 8, 6) : new Thickness(14, 0, 12, 0);
+        if (side)
+        {
+            header.ColumnDefinitions.Add(new ColumnDefinition());
+            header.RowDefinitions.Add(new RowDefinition());
+            header.RowDefinitions.Add(new RowDefinition { Height = new GridLength(24) });
+            header.RowDefinitions.Add(new RowDefinition { Height = new GridLength(32) });
+        }
+        else
+        {
+            header.RowDefinitions.Add(new RowDefinition());
+            header.ColumnDefinitions.Add(new ColumnDefinition());
+            header.ColumnDefinitions.Add(new ColumnDefinition { Width = GridLength.Auto });
+            header.ColumnDefinitions.Add(new ColumnDefinition { Width = new GridLength(32) });
+        }
+        Grid.SetRow(title, 0); Grid.SetColumn(title, 0);
+        Grid.SetRow(count, side ? 1 : 0); Grid.SetColumn(count, side ? 0 : 1);
+        Grid.SetRow(expand, side ? 2 : 0); Grid.SetColumn(expand, side ? 0 : 2);
+        count.Margin = side ? new Thickness(0) : new Thickness(10, 0, 8, 0);
+        count.HorizontalAlignment = side ? HorizontalAlignment.Center : HorizontalAlignment.Stretch;
+        HeaderDivider.Width = side ? 8 : double.NaN; HeaderDivider.Height = side ? double.NaN : 8;
+        HeaderDivider.Cursor = side ? Cursors.SizeWE : Cursors.SizeNS;
+        HeaderDivider.ToolTip = side ? "拖动调整侧栏宽度" : "拖动调整头部高度";
+        HeaderDivider.HorizontalAlignment = side ? reverse ? HorizontalAlignment.Left : HorizontalAlignment.Right : HorizontalAlignment.Stretch;
+        HeaderDivider.VerticalAlignment = side ? VerticalAlignment.Stretch : reverse ? VerticalAlignment.Top : VerticalAlignment.Bottom;
+        HeaderDivider.Margin = side ? reverse ? new Thickness(-4, 8, 0, 8) : new Thickness(0, 8, -4, 8)
+            : reverse ? new Thickness(8, -4, 8, 0) : new Thickness(8, 0, 8, -4);
+        var divider = new FrameworkElementFactory(typeof(Border)); divider.SetValue(Border.BackgroundProperty, Brushes.Transparent);
+        var line = new FrameworkElementFactory(typeof(Border));
+        line.SetValue(side ? Border.WidthProperty : Border.HeightProperty, 1.0);
+        line.SetValue(Border.BackgroundProperty, new SolidColorBrush(Color.FromArgb(120, 255, 255, 255)));
+        line.SetValue(side ? Border.HorizontalAlignmentProperty : Border.VerticalAlignmentProperty,
+            side ? (object)HorizontalAlignment.Center : VerticalAlignment.Center);
+        divider.AppendChild(line); HeaderDivider.Template = new ControlTemplate(typeof(Thumb)) { VisualTree = divider };
     }
 }

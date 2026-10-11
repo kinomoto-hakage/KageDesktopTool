@@ -89,6 +89,8 @@ public sealed class JsonWorkspaceStore(string directory) : IWorkspaceStore
                 }
             }
             if (!double.IsFinite(folder.HeaderWidth) || !double.IsFinite(folder.HeaderHeight) || !double.IsFinite(folder.BodyHeight)
+                || !Enum.IsDefined(folder.HeaderPosition) || !Enum.IsDefined(folder.NameOrientation)
+                || !double.IsFinite(folder.SideHeaderWidth) || folder.SideHeaderWidth is < 64 or > 360
                 || folder.HeaderWidth is < 240 or > 760 || folder.HeaderHeight is < 42 or > 82 || folder.BodyHeight is < 160 or > 720
                 || !double.IsFinite(folder.Opacity) || folder.Opacity is < 0 or > 1
                 || folder.Color == null || !System.Text.RegularExpressions.Regex.IsMatch(folder.Color, "^#[0-9a-fA-F]{6}$"))

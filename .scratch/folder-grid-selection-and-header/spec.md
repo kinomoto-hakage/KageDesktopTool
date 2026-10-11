@@ -1,8 +1,8 @@
 # KageDesktopTool 网格名称、统一选择与四向头部升级规格
 
 Type: spec
-Status: ready-for-agent
-Labels: ready-for-agent
+Status: resolved
+Labels: resolved
 Approved: 2026-10-11
 Test-seam-review: approved（沿用既有确认）
 
@@ -202,3 +202,4 @@ Q7 的“允许超出 Folder”仅为访谈中未采纳的建议，已被用户�
 ## Comments
 
 - 2026-10-11：用户通过 grill-me 确认 Q1—Q19 及 Q11 补充，随后调用 to-spec；按已确认设计发布本规格并标记 ready-for-agent，沿用既有测试边界。
+- 2026-10-11：01／02／03 均已关闭，最后完成的 03 补齐四向视口内的全文裁剪、末端滚动、头部及外部清除和样式／重启组合验收。详细结果及实际硬件未覆盖项见 `docs/verification/grid-03-four-way-header-and-style.md`；规格正文保持已批准语义。

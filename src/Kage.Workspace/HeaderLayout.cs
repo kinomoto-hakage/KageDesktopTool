@@ -3,8 +3,8 @@ namespace Kage.Workspace;
 internal static class HeaderLayout
 {
     internal const int Gap = 12;
-    internal static int Width(FolderRecord folder, DisplayArea area) => (int)Math.Ceiling(folder.HeaderWidth * area.Scale);
-    internal static int Height(FolderRecord folder, DisplayArea area) => (int)Math.Ceiling((folder.HeaderHeight + (folder.Expanded ? folder.BodyHeight : 0)) * area.Scale);
+    internal static int Width(FolderRecord folder, DisplayArea area) => FolderGeometry.For(folder, area.Scale).Width;
+    internal static int Height(FolderRecord folder, DisplayArea area) => FolderGeometry.For(folder, area.Scale).Height;
 
     internal static (FolderRecord Folder, DisplayArea Area)[] Occupied(IEnumerable<FolderSnapshot> folders, Guid target, IReadOnlyList<DisplayArea> displays)
         => folders.Where(folder => folder.Visible && folder.Folder.Id != target)
@@ -17,11 +17,15 @@ internal static class HeaderLayout
     }
 
     internal static bool Fits(FolderRecord folder, DisplayArea area, IReadOnlyList<DisplayArea> displays, IReadOnlyList<(FolderRecord Folder, DisplayArea Area)> occupied)
-        => Covered(folder, area, displays)
-            && occupied.All(other => (long)folder.X + Width(folder, area) + Gap <= other.Folder.X
-                || folder.X >= other.Folder.X + Width(other.Folder, other.Area) + Gap
-                || (long)folder.Y + Height(folder, area) + Gap <= other.Folder.Y
-                || folder.Y >= (long)other.Folder.Y + Height(other.Folder, other.Area) + Gap);
+    {
+        var bounds = FolderGeometry.For(folder, area.Scale);
+        return Covered(folder, area, displays) && occupied.All(other =>
+        {
+            var obstacle = FolderGeometry.For(other.Folder, other.Area.Scale);
+            return (long)bounds.X + bounds.Width + Gap <= obstacle.X || bounds.X >= (long)obstacle.X + obstacle.Width + Gap
+                || (long)bounds.Y + bounds.Height + Gap <= obstacle.Y || bounds.Y >= (long)obstacle.Y + obstacle.Height + Gap;
+        });
+    }
 
     // 优先使用物理窗口最大交叠面积对应的显示器，并核对尺寸选择。
     // 高到低 DPI 的接缝可能没有自洽解，此时稳定使用头部原点所在屏。
@@ -29,10 +33,9 @@ internal static class HeaderLayout
     {
         foreach (var area in displays.OrderBy(a => a.Scale).ThenBy(a => a.X).ThenBy(a => a.Y))
         {
-            var width = Width(folder, area);
-            var height = Height(folder, area);
-            long Intersection(DisplayArea display) => Math.Max(0, Math.Min((long)folder.X + width, (long)display.X + display.Width) - Math.Max(folder.X, display.X))
-                * Math.Max(0, Math.Min((long)folder.Y + height, (long)display.Y + display.Height) - Math.Max(folder.Y, display.Y));
+            var bounds = FolderGeometry.For(folder, area.Scale);
+            long Intersection(DisplayArea display) => Math.Max(0, Math.Min((long)bounds.X + bounds.Width, (long)display.X + display.Width) - Math.Max(bounds.X, display.X))
+                * Math.Max(0, Math.Min((long)bounds.Y + bounds.Height, (long)display.Y + display.Height) - Math.Max(bounds.Y, display.Y));
             var selected = displays.OrderByDescending(Intersection).ThenBy(a => a.X).ThenBy(a => a.Y).FirstOrDefault();
             if (selected == area && Intersection(area) > 0) return area;
         }
@@ -43,7 +46,8 @@ internal static class HeaderLayout
 
     private static bool Covered(FolderRecord folder, DisplayArea area, IReadOnlyList<DisplayArea> displays)
     {
-        long left = folder.X, top = folder.Y, right = left + Width(folder, area), bottom = top + Height(folder, area);
+        var bounds = FolderGeometry.For(folder, area.Scale);
+        long left = bounds.X, top = bounds.Y, right = left + bounds.Width, bottom = top + bounds.Height;
         var cuts = displays.SelectMany(d => new[] { (long)d.X, (long)d.X + d.Width }).Append(left).Append(right)
             .Where(x => x >= left && x <= right).Distinct().Order().ToArray();
         for (var i = 1; i < cuts.Length; i++)
@@ -88,20 +92,24 @@ internal static class HeaderLayout
     {
         var width = Width(folder, area);
         var height = Height(folder, area);
-        var xs = new List<int> { folder.X, area.X, area.X + area.Width - width };
-        var ys = new List<int> { folder.Y, area.Y, area.Y + area.Height - height };
+        var bounds = FolderGeometry.For(folder, area.Scale);
+        var offsetX = folder.X - bounds.X;
+        var offsetY = folder.Y - bounds.Y;
+        var xs = new List<int> { folder.X, area.X + offsetX, area.X + area.Width - width + offsetX };
+        var ys = new List<int> { folder.Y, area.Y + offsetY, area.Y + area.Height - height + offsetY };
         foreach (var (other, display) in occupied)
         {
-            xs.Add(other.X + Width(other, display) + Gap);
-            xs.Add(other.X - width - Gap);
-            ys.Add(other.Y + Height(other, display) + Gap);
-            ys.Add(other.Y - height - Gap);
+            var obstacle = FolderGeometry.For(other, display.Scale);
+            xs.Add(obstacle.X + obstacle.Width + Gap + offsetX);
+            xs.Add(obstacle.X - width - Gap + offsetX);
+            ys.Add(obstacle.Y + obstacle.Height + Gap + offsetY);
+            ys.Add(obstacle.Y - height - Gap + offsetY);
         }
         foreach (var y in ys.Distinct())
             foreach (var x in xs.Distinct()) yield return (x, y);
         for (var y = area.Y + Gap; (long)y + Height(folder, area) <= (long)area.Y + area.Height; y += 24)
             for (var x = area.X + Gap; (long)x + Width(folder, area) <= (long)area.X + area.Width; x += 24)
-                yield return (x, y);
+                yield return (x + offsetX, y + offsetY);
     }
 
     internal static FolderRecord? Find(FolderRecord folder, IReadOnlyList<DisplayArea> displays, IReadOnlyList<(FolderRecord Folder, DisplayArea Area)> occupied)

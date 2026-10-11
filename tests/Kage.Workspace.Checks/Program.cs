@@ -10,6 +10,13 @@ if (args.Length == 2 && args[0] == "--rollback-package")
 
 var tests = new (string Name, Func<Task> Run)[]
 {
+    ("四向头部锚点与展示宽高", FourWayChecks.Directions),
+    ("四向头部分隔线外角与折叠尺寸", FourWayChecks.Resizing),
+    ("四向头部草稿挪位保存失败取消与过期保护", FourWayChecks.DraftTransactions),
+    ("四向头部容量不足保留有效预览和折叠", FourWayChecks.Capacity),
+    ("四向头部真实旧状态兼容保存重启", FourWayChecks.Legacy),
+    ("四向头部混合 DPI 双向跨屏负坐标与空洞", FourWayChecks.Displays),
+    ("四向头部最近放置与逐像素穷举一致", FourWayChecks.Nearest),
     ("升级兼容旧状态与损坏主状态备份恢复", UpgradeChecks.ValidAndBackup),
     ("升级兼容六种旧未完成意图保留证据", UpgradeChecks.PendingIntents),
     ("升级组合迁移后保留手动顺序", UpgradeChecks.CustomOrderMigration),
