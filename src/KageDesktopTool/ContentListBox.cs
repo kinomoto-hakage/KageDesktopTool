@@ -13,12 +13,14 @@ internal sealed class ContentListBox : ListBox
     }
 
     internal void SetSelectionAnchor(ListBoxItem item) => AnchorItem = item;
+    internal static bool IsSelectionKey(Key key) => key is Key.Up or Key.Down or Key.Left or Key.Right
+        or Key.Home or Key.End or Key.PageUp or Key.PageDown or Key.Space;
 
     protected override void OnKeyDown(KeyEventArgs e)
     {
         var newRange = SelectionMode == SelectionMode.Extended && AnchorItem == null && SelectedItems.Count == 0
             && (Keyboard.Modifiers & ModifierKeys.Shift) != 0
-            && e.Key is Key.Up or Key.Down or Key.Left or Key.Right or Key.Home or Key.End or Key.PageUp or Key.PageDown or Key.Space;
+            && IsSelectionKey(e.Key);
         if (!newRange) { base.OnKeyDown(e); return; }
         // 首次 Shift 导航仍由 WPF 定位，只从新目标建立范围，不使用默认首项或旧焦点作为锚点。
         SelectionMode = SelectionMode.Multiple;

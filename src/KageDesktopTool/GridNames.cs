@@ -32,7 +32,7 @@ internal sealed partial class FolderContents
         {
             if (FolderHeader.FindParent<ListBoxItem>(Keyboard.FocusedElement as DependencyObject) is { IsSelected: true } focused)
             {
-                if (e.Key is Key.Up or Key.Down or Key.Left or Key.Right or Key.Home or Key.End or Key.PageUp or Key.PageDown or Key.Space)
+                if (ContentListBox.IsSelectionKey(e.Key))
                     input.RememberKeyboardAnchor(focused);
                 SetCurrentName(focused);
             }

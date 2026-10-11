@@ -65,7 +65,7 @@ internal sealed partial class FolderContents : DockPanel
         Runtime.Current.Selection.Register(this);
         Items.PreviewKeyDown += (_, e) =>
         {
-            if (e.Key is Key.Up or Key.Down or Key.Left or Key.Right or Key.Home or Key.End or Key.PageUp or Key.PageDown or Key.Space
+            if (ContentListBox.IsSelectionKey(e.Key)
                 || e.Key == Key.A && (Keyboard.Modifiers & ModifierKeys.Control) != 0)
                 Runtime.Current.Selection.Claim(this);
         };

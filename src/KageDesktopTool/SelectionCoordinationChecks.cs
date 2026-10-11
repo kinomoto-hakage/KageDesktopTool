@@ -74,8 +74,7 @@ internal static partial class ContentInputChecks
         CheckHit(second, blank); await MouseAt(blank, false); await Task.Delay(200);
         require(first.Contents.SelectedPaths().Length == 0, "点击其他 Folder 空白清除所有图标选择");
         await Click(first, 0);
-        var area = WindowsDesktop.Displays().First();
-        var desktopPoint = new Point(area.X + area.Width - 80, area.Y + area.Height / 2);
+        var desktopPoint = FileMoveChecks.DesktopBackground();
         var desktopHit = WindowsDesktop.WindowFromPoint(new WindowsDesktop.POINT { X = (int)desktopPoint.X, Y = (int)desktopPoint.Y });
         require(WindowsDesktop.IsChild(WindowsDesktop.Host(), desktopHit) || desktopHit == WindowsDesktop.Host(), "桌面空白真实命中桌面视图");
         await MouseAt(desktopPoint, false); await Task.Delay(200);
@@ -173,23 +172,40 @@ internal static partial class ContentInputChecks
         IntPtr appWindow = IntPtr.Zero;
         try
         {
+            // 让桌面左侧的新项目保持可点击，同时用真实头部拖动验证原布局操作仍可用。
+            var beforeDrag = first.Record;
+            var display = WindowsDesktop.Displays().First();
+            var dragStart = first.HeaderInput.PointToScreen(new Point(60, 20));
+            await Drag(dragStart, new Point(display.X + display.Width / 2 - 400, display.Y + 80));
+            await WaitUntil(() => !runtime.Interacting);
+            require(first.Record.X != beforeDrag.X || first.Record.Y != beforeDrag.Y, "清除选择后的真实头部拖动仍更新 Folder 位置");
             Shortcut(desktopLink, desktopMarker);
             var desktop = AutomationElement.FromHandle(WindowsDesktop.Host());
             AutomationElement? desktopItem = null;
             await WaitUntil(() => (desktopItem = desktop.FindFirst(TreeScope.Descendants,
                 new PropertyCondition(AutomationElement.NameProperty, desktopName))) != null);
             require(desktopItem != null, "随机隔离桌面快捷方式可定位");
+            desktopPoint = FileMoveChecks.DesktopBackground();
             var desktopRect = desktopItem!.Current.BoundingRectangle;
             var desktopItemPoint = new Point(desktopRect.Left + desktopRect.Width / 2, desktopRect.Top + 20);
             await Click(first, 0);
             await Task.Delay((int)GetDoubleClickTime() + 100);
+            var itemHit = WindowsDesktop.WindowFromPoint(new WindowsDesktop.POINT { X = (int)desktopItemPoint.X, Y = (int)desktopItemPoint.Y });
+            require((itemHit == WindowsDesktop.Host() || WindowsDesktop.IsChild(WindowsDesktop.Host(), itemHit))
+                && runtime.Headers.Values.All(header => itemHit != header.Handle && !WindowsDesktop.IsChild(header.Handle, itemHit)),
+                "桌面项目真实点击位置未被 Folder 遮挡");
             await MouseAt(desktopItemPoint, false); await Task.Delay(200);
             require(Empty() && ((SelectionItemPattern)desktopItem.GetCurrentPattern(SelectionItemPattern.Pattern)).Current.IsSelected,
                 "桌面项目收到原始真实点击并被 Windows 选中，同时 Folder 清除");
             await Click(first, 0);
+            desktopPoint = FileMoveChecks.DesktopBackground();
             await MouseAt(desktopPoint, false); await Task.Delay(200);
-            require(Empty() && !((SelectionItemPattern)desktopItem.GetCurrentPattern(SelectionItemPattern.Pattern)).Current.IsSelected,
-                "桌面空白收到原始点击并取消 Windows 项目选择，同时 Folder 清除");
+            require(Empty(), "桌面空白真实点击清除所有 Folder 选择与全文");
+            var desktopFocus = new SelectionGuiInfo { Size = (uint)Marshal.SizeOf<SelectionGuiInfo>() };
+            var blankHit = WindowsDesktop.WindowFromPoint(new WindowsDesktop.POINT { X = (int)desktopPoint.X, Y = (int)desktopPoint.Y });
+            require(SelectionGuiInfoFor(SelectionWindowThread(WindowsDesktop.Host(), out _), ref desktopFocus)
+                && desktopFocus.Focus == blankHit && desktopFocus.Capture == IntPtr.Zero,
+                "桌面空白原始点击由真实桌面视图取得焦点，无捕获残留");
             await Click(first, 0);
             await MouseAt(desktopItemPoint, true); await WaitUntil(() => File.Exists(desktopMarker));
             require(Empty() && File.Exists(desktopMarker), "桌面项目双击继续打开真实快捷方式目标");
@@ -299,4 +315,12 @@ internal static partial class ContentInputChecks
 
     [DllImport("user32.dll", EntryPoint = "GetForegroundWindow")] private static extern IntPtr GetSelectionForeground();
     [DllImport("user32.dll", EntryPoint = "ShowWindow")] private static extern bool ShowSelectionWindow(IntPtr window, int command);
+    [StructLayout(LayoutKind.Sequential)] private struct SelectionGuiInfo
+    {
+        internal uint Size, Flags;
+        internal IntPtr Active, Focus, Capture, MenuOwner, MoveSize, Caret;
+        internal WindowsDesktop.RECT CaretRect;
+    }
+    [DllImport("user32.dll", EntryPoint = "GetGUIThreadInfo")] private static extern bool SelectionGuiInfoFor(uint thread, ref SelectionGuiInfo info);
+    [DllImport("user32.dll", EntryPoint = "GetWindowThreadProcessId")] private static extern uint SelectionWindowThread(IntPtr window, out uint process);
 }
