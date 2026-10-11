@@ -1,4 +1,5 @@
 using System;
+using System.Collections.Generic;
 using System.Linq;
 using System.Windows;
 using System.Windows.Controls;
@@ -11,6 +12,7 @@ namespace Kage.Desktop;
 internal sealed partial class FolderContents
 {
     private string? currentNamePath;
+    private readonly List<string> nameHistory = new();
     private bool rebuildingNames;
     private bool namesQueued;
     private bool revealName;
@@ -23,7 +25,7 @@ internal sealed partial class FolderContents
             if (rebuildingNames) return;
             var added = e.AddedItems.Cast<ListBoxItem>().LastOrDefault();
             var changed = added != null && !string.Equals(currentNamePath, (string)added.Tag, StringComparison.OrdinalIgnoreCase);
-            if (added != null) currentNamePath = (string)added.Tag;
+            if (added != null) RememberName((string)added.Tag);
             QueueNames(changed);
         };
         Items.KeyUp += (_, _) =>
@@ -37,8 +39,23 @@ internal sealed partial class FolderContents
     internal void SetCurrentName(ListBoxItem item)
     {
         var changed = item.IsSelected && !string.Equals(currentNamePath, (string)item.Tag, StringComparison.OrdinalIgnoreCase);
-        currentNamePath = item.IsSelected ? (string)item.Tag : null;
+        if (item.IsSelected) RememberName((string)item.Tag);
+        else currentNamePath = null;
         QueueNames(changed);
+    }
+
+    private void RememberName(string path)
+    {
+        nameHistory.RemoveAll(previous => string.Equals(previous, path, StringComparison.OrdinalIgnoreCase));
+        nameHistory.Add(path);
+        currentNamePath = path;
+    }
+
+    private void RemapNamePath(string previous, string current)
+    {
+        if (string.Equals(currentNamePath, previous, StringComparison.OrdinalIgnoreCase)) currentNamePath = current;
+        for (var i = 0; i < nameHistory.Count; i++)
+            if (string.Equals(nameHistory[i], previous, StringComparison.OrdinalIgnoreCase)) nameHistory[i] = current;
     }
 
     private void QueueNames(bool reveal, double? offset = null)
@@ -58,7 +75,11 @@ internal sealed partial class FolderContents
     private void UpdateNames()
     {
         var selected = Items.Items.Cast<ListBoxItem>().Where(item => item.IsSelected).ToArray();
+        var selectedPaths = selected.Select(item => (string)item.Tag).ToHashSet(StringComparer.OrdinalIgnoreCase);
+        nameHistory.RemoveAll(path => !selectedPaths.Contains(path));
+        var recent = nameHistory.LastOrDefault();
         var current = selected.FirstOrDefault(item => string.Equals((string)item.Tag, currentNamePath, StringComparison.OrdinalIgnoreCase))
+            ?? selected.FirstOrDefault(item => string.Equals((string)item.Tag, recent, StringComparison.OrdinalIgnoreCase))
             ?? selected.LastOrDefault();
         currentNamePath = current?.Tag as string;
         Items.UpdateLayout();

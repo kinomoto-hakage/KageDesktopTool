@@ -131,6 +131,14 @@ internal static partial class ContentInputChecks
             "Ctrl 多选仅最后点击项全文展开");
         await workspace.RefreshAsync(WindowsDesktop.Displays()); runtime.Render(); await Task.Delay(200);
         require(contents.SelectedPaths().Length == 2 && FullLabel(Item(lastLink)) != null, "普通身份刷新保留多选与当前全文");
+        await ClickItem(lastLink);
+        keybd_event(0x11, 0, 0, UIntPtr.Zero);
+        await ClickItem(longLink);
+        var middleLink = Path.Combine(path, "01-shortcut.lnk");
+        await ClickItem(middleLink); await ClickItem(middleLink);
+        keybd_event(0x11, 0, 2, UIntPtr.Zero);
+        require(contents.SelectedPaths().Length == 2 && FullLabel(Item(longLink)) != null && FullLabel(Item(lastLink)) == null,
+            "Ctrl 取消当前项后恢复剩余选中项中的最后操作项，而非排序末项");
         await ClickItem(longLink);
         Key(0x23); await Task.Delay(200); header.UpdateLayout();
         require(contents.SelectedPaths().SequenceEqual(new[] { lastLink }) && FullLabel(Item(lastLink)) != null && FullLabel(Item(longLink)) == null,

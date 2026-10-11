@@ -122,7 +122,7 @@ internal sealed partial class FolderContents : DockPanel
             if (candidates.Length == 1)
             {
                 preserved.Add(candidates[0].ActualPath);
-                if (currentNamePath == removed[0].ActualPath) currentNamePath = candidates[0].ActualPath;
+                RemapNamePath(removed[0].ActualPath, candidates[0].ActualPath);
             }
         }
         var offset = ContentPointerInput.Descendant<ScrollViewer>(Items)?.VerticalOffset ?? 0;
