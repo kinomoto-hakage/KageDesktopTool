@@ -46,4 +46,4 @@ python -c "import subprocess; raise SystemExit(subprocess.run(['src/KageDesktopT
 
 ## 审查
 
-按 `code-review` 对照固定基线并行审查：Standards 未发现硬性违规或需要处理的 smell；Spec 补审发现 1 条 P2（Ctrl 取消当前项后错误地按排序末项回退）。已用真实四步输入先复现失败，再通过临时操作次序修正；修正复审结果在票据收尾时记录。
+按 `code-review` 对照固定基线并行审查：Standards 未发现硬性违规或需要处理的 smell；Spec 补审发现 1 条 P2（Ctrl 取消当前项后错误地按排序末项回退）。已用真实四步输入先复现失败，再通过临时操作次序修正；两轴复审均无剩余发现。修正后 Release 编译与最终完整真实内容输入再次通过。

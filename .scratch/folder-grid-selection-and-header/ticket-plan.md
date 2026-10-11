@@ -2,6 +2,7 @@
 
 Status: approved
 Tickets: published
+Implemented: 01（核心验收通过，既有回归限制见独立票据 Answer）；02、03 尚未实施
 Created: 2026-10-11
 Approved: 2026-10-11
 Published: 2026-10-11
