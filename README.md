@@ -4,7 +4,7 @@
 
 每个桌面 Folder 都对应一个真实文件夹。你可以直接在桌面查看、打开和整理内容，也可以随时在资源管理器中访问它们。
 
-**[下载 Windows x64 版 · 1.1.0](https://github.com/kinomoto-hakage/KageDesktopTool/releases/download/v1.1.0/KageDesktopTool-win-x64-1.1.0.zip)** · [发布说明](https://github.com/kinomoto-hakage/KageDesktopTool/releases/tag/v1.1.0) · [SHA256 校验文件](https://github.com/kinomoto-hakage/KageDesktopTool/releases/download/v1.1.0/KageDesktopTool-win-x64-1.1.0.zip.sha256)
+**[下载 Windows x64 版 · 1.1.1](https://github.com/kinomoto-hakage/KageDesktopTool/releases/download/v1.1.1/KageDesktopTool-win-x64-1.1.1.zip)** · [发布说明](https://github.com/kinomoto-hakage/KageDesktopTool/releases/tag/v1.1.1) · [SHA256 校验文件](https://github.com/kinomoto-hakage/KageDesktopTool/releases/download/v1.1.1/KageDesktopTool-win-x64-1.1.1.zip.sha256)
 
 ## 软件特色
 
@@ -18,9 +18,9 @@
 
 ## 安装与首次使用
 
-当前版本为 **1.1.0**，适用于 **Windows x64**。完整发布包为 `KageDesktopTool-win-x64-1.1.0.zip`，自带所需运行环境，无需另外安装 .NET。
+当前版本为 **1.1.1**，适用于 **Windows x64**。完整发布包为 `KageDesktopTool-win-x64-1.1.1.zip`，自带所需运行环境，无需另外安装 .NET。
 
-点击上方下载链接获取完整发布包，也可进入仓库右侧的 **Releases**，在 **Assets** 中选择 `KageDesktopTool-win-x64-1.1.0.zip`。下载后按以下步骤使用：
+点击上方下载链接获取完整发布包，也可进入仓库右侧的 **Releases**，在 **Assets** 中选择 `KageDesktopTool-win-x64-1.1.1.zip`。下载后按以下步骤使用：
 
 1. 将整个 ZIP 解压到固定目录，例如 `D:\工具\KageDesktopTool\`，保留包内全部文件。
 2. 双击 `KageDesktopTool.exe`，在系统托盘找到程序图标。

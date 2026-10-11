@@ -19,7 +19,7 @@ try {
     # 允许旧实例仍使用开发构建目录；本次发布使用独立输出，避免覆盖已加载 DLL。
     $buildDirectory = Join-Path $repoDirectory ('.scratch/desktop-folder/verification/build-' + [Guid]::NewGuid().ToString('N') + '/')
     # 只有维护者构建需要 SDK 和下载运行时；日常使用只需解压、双击。
-    & rtk proxy dotnet publish src/KageDesktopTool/KageDesktopTool.csproj `
+    & dotnet publish src/KageDesktopTool/KageDesktopTool.csproj --disable-build-servers `
         -p:PublishProfile=WindowsX64 "-p:BaseOutputPath=$buildDirectory" --source https://api.nuget.org/v3/index.json -o $releaseDirectory
     if ($LASTEXITCODE -ne 0) { throw '发布失败，未生成压缩包。' }
     $metadata = [Diagnostics.FileVersionInfo]::GetVersionInfo((Join-Path $releaseDirectory 'KageDesktopTool.exe'))
@@ -40,4 +40,15 @@ try {
     $archiveHash | Set-Content -LiteralPath ($releaseDirectory + '.zip.sha256') -Encoding UTF8
     Write-Output "发布完成：$releaseDirectory.zip"
     Write-Output "SHA256：$archiveHash"
-} finally { Pop-Location }
+} finally {
+    Pop-Location
+    # 发布只留下正式输出，清理本次唯一的临时构建目录。
+    if ($buildDirectory -and (Test-Path -LiteralPath $buildDirectory)) {
+        $resolvedBuild = [IO.Path]::GetFullPath($buildDirectory)
+        $buildRoot = [IO.Path]::GetFullPath((Join-Path $repoDirectory '.scratch/desktop-folder/verification')) + [IO.Path]::DirectorySeparatorChar
+        if (-not $resolvedBuild.StartsWith($buildRoot, [StringComparison]::OrdinalIgnoreCase) -or (Split-Path -Leaf $resolvedBuild.TrimEnd('/','\')) -notlike 'build-*') {
+            throw '拒绝清理临时构建范围外的目录。'
+        }
+        Remove-Item -LiteralPath $resolvedBuild -Recurse -Force
+    }
+}
