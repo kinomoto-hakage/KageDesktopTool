@@ -17,15 +17,15 @@ using Kage.Workspace;
 namespace Kage.Desktop;
 
 // 不注入 WPF 事件：经过系统鼠标输入、命中与 Preview 路由验收正式窗口。
-internal static class ContentInputChecks
+internal static partial class ContentInputChecks
 {
-    internal static int Run(bool identityOnly = false, bool refreshOnly = false, bool menuPlacementOnly = false, bool menuLatencyOnly = false)
+    internal static int Run(bool identityOnly = false, bool refreshOnly = false, bool menuPlacementOnly = false, bool menuLatencyOnly = false, bool gridNamesOnly = false)
     {
         var fixture = Path.Combine(Path.GetTempPath(), "Kage-input-" + Guid.NewGuid().ToString("N"));
         var evidence = Path.Combine(Environment.CurrentDirectory, ".scratch", "desktop-folder", "verification");
         Directory.CreateDirectory(fixture);
         Directory.CreateDirectory(evidence);
-        var log = Path.Combine(evidence, menuLatencyOnly ? "content-menu-latency-session.txt" : menuPlacementOnly ? "content-menu-placement-session.txt" : refreshOnly ? "content-refresh-session.txt" : identityOnly ? "content-identity-session.txt" : "content-input-session.txt");
+        var log = Path.Combine(evidence, gridNamesOnly ? "content-grid-names-session.txt" : menuLatencyOnly ? "content-menu-latency-session.txt" : menuPlacementOnly ? "content-menu-placement-session.txt" : refreshOnly ? "content-refresh-session.txt" : identityOnly ? "content-identity-session.txt" : "content-input-session.txt");
         File.WriteAllText(log, "真实 Windows 内容输入验收\n");
         var app = new Application { ShutdownMode = ShutdownMode.OnExplicitShutdown };
         Runtime? runtime = null;
@@ -66,6 +66,12 @@ internal static class ContentInputChecks
                 await Task.Delay(650);
                 header.UpdateLayout();
                 var contents = header.Contents;
+                if (gridNamesOnly)
+                {
+                    await GridNames(workspace, runtime, header, fixture, evidence, Require);
+                    exit = 0;
+                    return;
+                }
                 ListBoxItem Item(string path) => contents.Items.Items.Cast<ListBoxItem>().Single(item => (string)item.Tag == path);
                 Point Center(FrameworkElement element) => element.PointToScreen(new Point(element.ActualWidth / 2, element.ActualHeight / 2));
                 async Task EnsureHit(Point point)

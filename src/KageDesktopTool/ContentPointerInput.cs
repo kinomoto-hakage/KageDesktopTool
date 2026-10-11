@@ -94,6 +94,7 @@ internal sealed class ContentPointerInput : IDisposable
             else if ((modifiers & ModifierKeys.Control) != 0) pressed.IsSelected = !pressed.IsSelected;
             else if (!pressed.IsSelected) { items.SelectedItems.Clear(); pressed.IsSelected = true; }
             if ((modifiers & ModifierKeys.Shift) == 0) anchor = hit;
+            contents.SetCurrentName(pressed);
         }
         else if (modifiers == ModifierKeys.None) items.SelectedItems.Clear();
         contents.Viewport.CaptureMouse();
@@ -153,7 +154,11 @@ internal sealed class ContentPointerInput : IDisposable
     {
         if (origin == null) return;
         if (!boxing && pressed != null && modifiers == ModifierKeys.None)
-        { items.SelectedItems.Clear(); pressed.IsSelected = true; }
+        {
+            if (items.SelectedItems.Count != 1 || !pressed.IsSelected)
+            { items.SelectedItems.Clear(); pressed.IsSelected = true; }
+            contents.SetCurrentName(pressed);
+        }
         Finish();
         e.Handled = true;
     }
@@ -164,6 +169,7 @@ internal sealed class ContentPointerInput : IDisposable
         if (item == null) return;
         items.Focus();
         if (!item.IsSelected) { items.SelectedItems.Clear(); item.IsSelected = true; }
+        contents.SetCurrentName(item);
         e.Handled = true;
     }
 

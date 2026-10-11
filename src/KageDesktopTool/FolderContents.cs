@@ -11,7 +11,7 @@ using Kage.Workspace;
 
 namespace Kage.Desktop;
 
-internal sealed class FolderContents : DockPanel
+internal sealed partial class FolderContents : DockPanel
 {
     internal ListBox Items { get; }
     private readonly TextBlock notice;
@@ -60,6 +60,7 @@ internal sealed class FolderContents : DockPanel
         Viewport.Children.Add(Feedback);
         Children.Add(Viewport);
         input = new ContentPointerInput(this);
+        InitializeNames();
         Items.ContextMenuOpening += (_, e) =>
         {
             if (FolderHeader.FindParent<ListBoxItem>(e.OriginalSource as DependencyObject) != null) e.Handled = true;
@@ -90,12 +91,18 @@ internal sealed class FolderContents : DockPanel
     private void BuildItems(FolderSnapshot folder, System.Collections.Generic.IReadOnlyList<ContentEntry>? previousEntries)
     {
         var grid = folder.Folder.Grid;
+        // 全文新增滚动范围时不能因滚动条出现而减少列数。
+        ScrollViewer.SetVerticalScrollBarVisibility(Items, grid ? ScrollBarVisibility.Visible : ScrollBarVisibility.Auto);
         var metrics = NativeViewMetrics.ForScale(scale);
         var iconSize = grid ? folder.Folder.GridIconSize : folder.Folder.ListIconSize;
-        var gridWidth = Math.Max(metrics.GridWidth, iconSize + 24);
-        var gridHeight = Math.Max(metrics.GridHeight, iconSize + metrics.FontSize * 2 + 18);
+        // 系统标题字体参与名称度量；系统桌面网格不再作为各档的共同下限。
+        // 行高落在完整物理像素上，避免 150% 等 DPI 舍入后第三行放不下。
+        var lineHeight = Math.Ceiling(metrics.FontSize * 1.35 * scale) / scale;
+        var gridWidth = Math.Ceiling(Math.Max(iconSize + 32, metrics.FontSize * 6 + iconSize / 2.0));
+        var iconRow = iconSize + 6 + iconSize / 8.0;
+        var gridHeight = Math.Ceiling(iconRow + lineHeight * 3 + 8);
         var rowHeight = iconSize == (int)ContentIconSize.Small ? metrics.ListHeight : Math.Max(metrics.ListHeight, iconSize + 8);
-        var factory = new FrameworkElementFactory(grid ? typeof(WrapPanel) : typeof(StackPanel));
+        var factory = new FrameworkElementFactory(grid ? typeof(ContentGridPanel) : typeof(StackPanel));
         factory.SetValue(FrameworkElement.HorizontalAlignmentProperty, HorizontalAlignment.Stretch);
         Items.ItemsPanel = new ItemsPanelTemplate(factory);
         var selected = Items.SelectedItems.Cast<ListBoxItem>().Select(item => (string)item.Tag).ToHashSet(StringComparer.OrdinalIgnoreCase);
@@ -112,8 +119,14 @@ internal sealed class FolderContents : DockPanel
             if (removed.Length != 1 || !selected.Contains(removed[0].ActualPath)) continue;
             var candidates = folder.Entries.Where(entry => entry.Identity == group.Key
                 && (!previousByPath.TryGetValue(entry.ActualPath, out var previous) || !SameIdentity(entry, previous))).ToArray();
-            if (candidates.Length == 1) preserved.Add(candidates[0].ActualPath);
+            if (candidates.Length == 1)
+            {
+                preserved.Add(candidates[0].ActualPath);
+                if (currentNamePath == removed[0].ActualPath) currentNamePath = candidates[0].ActualPath;
+            }
         }
+        var offset = ContentPointerInput.Descendant<ScrollViewer>(Items)?.VerticalOffset ?? 0;
+        rebuildingNames = true;
         Items.Items.Clear();
         foreach (var entry in folder.Entries)
         {
@@ -124,10 +137,13 @@ internal sealed class FolderContents : DockPanel
             var cell = new Grid();
             if (grid)
             {
-                cell.RowDefinitions.Add(new RowDefinition { Height = new GridLength(iconSize + 8) });
+                cell.RowDefinitions.Add(new RowDefinition { Height = new GridLength(iconRow) });
                 cell.RowDefinitions.Add(new RowDefinition());
                 Grid.SetRow(text, 1);
                 text.Margin = new Thickness(3, 0, 3, 0);
+                text.LineHeight = lineHeight;
+                text.LineStackingStrategy = LineStackingStrategy.BlockLineHeight;
+                text.Height = lineHeight * 3;
             }
             else
             {
@@ -139,6 +155,8 @@ internal sealed class FolderContents : DockPanel
             cell.Children.Add(text);
             Items.Items.Add(new ListBoxItem { Tag = entry.ActualPath, Content = cell, Width = grid ? gridWidth : double.NaN, Height = grid ? gridHeight : rowHeight, BorderThickness = new Thickness(1 / scale), Margin = new Thickness(0), Padding = new Thickness(2, 0, 2, 0), HorizontalAlignment = grid ? HorizontalAlignment.Left : HorizontalAlignment.Stretch, HorizontalContentAlignment = HorizontalAlignment.Stretch, VerticalContentAlignment = VerticalAlignment.Stretch, ToolTip = entry.ActualPath, IsSelected = preserved.Contains(entry.ActualPath) });
         }
+        rebuildingNames = false;
+        QueueNames(false, offset);
     }
 
     private async Task LoadIconsAsync()

@@ -1,7 +1,7 @@
 # 01: Folder 网格与完整图标名称
 
 Type: implementation
-Status: ready-for-agent
+Status: claimed
 Labels: ready-for-agent
 Approved: 2026-10-11
 Published: 2026-10-11
@@ -47,6 +47,8 @@ User stories: 1-28, 39, 44, 84-85
 实现先于票据 02 时，本票使用已有本地取消入口验收。若 02 或 03 已完成，必须同时验证外部清除能够收起全文，以及四向展示视口内的裁剪和滚动。
 
 ## Comments
+
+- 2026-10-11：通过 implement 领取；沿用父规格已批准的工作区与真实 Windows 输入测试边界。
 
 - 2026-10-11：根据已发布规格生成完整草稿，待用户确认任务划分后发布为 ready-for-agent。
 - 2026-10-11：用户确认发布三张功能票，按已批准范围发布本票，标记 ready-for-agent，无前置阻塞；尚未启动实现。
