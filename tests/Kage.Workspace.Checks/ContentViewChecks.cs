@@ -3,6 +3,28 @@ using System.Runtime.InteropServices;
 
 internal static class ContentViewChecks
 {
+    internal static async Task ShortcutNames()
+    {
+        using var fixture = new Fixture();
+        IDesktopWorkspace workspace = new DesktopWorkspace(fixture.Store, new TestStartup());
+        DisplayArea[] displays = [new(0, 0, 1200, 900)];
+        await workspace.InitializeAsync(displays); await workspace.SelectRootAsync(fixture.Content);
+        await workspace.CreateFolderAsync("快捷方式名称");
+        var folder = workspace.Snapshot.Folders.Single();
+        foreach (var name in new[] { "Wallpaper Engine：壁纸引擎.url", "大小写.URL", "原有链接.lnk", "普通.txt" })
+            File.WriteAllText(Path.Combine(folder.ActualPath, name), "保留字节");
+        Directory.CreateDirectory(Path.Combine(folder.ActualPath, "目录.url"));
+        await workspace.RefreshAsync(displays);
+        var entries = workspace.Snapshot.Folders.Single().Entries.ToDictionary(e => e.Name);
+        Check(entries["Wallpaper Engine：壁纸引擎.url"].DisplayName == "Wallpaper Engine：壁纸引擎"
+            && entries["大小写.URL"].DisplayName == "大小写" && entries["原有链接.lnk"].DisplayName == "原有链接",
+            "两种快捷方式标签隐藏后缀且支持大小写");
+        Check(entries["普通.txt"].DisplayName == "普通.txt" && entries["目录.url"].DisplayName == "目录.url",
+            "普通文件和同后缀目录名称保留");
+        Check(entries.Values.Where(e => !e.IsDirectory).All(e => File.ReadAllText(e.ActualPath) == "保留字节"),
+            "显示名称处理不修改实际路径和字节");
+    }
+
     internal static async Task NaturalOrder()
     {
         using var fixture = new Fixture();

@@ -26,6 +26,8 @@ internal sealed class StyleDialog : Window
     private readonly Grid content = new();
     private readonly Border swatch = new() { Height = 42, CornerRadius = new CornerRadius(7), Margin = new Thickness(0, 0, 0, 12) };
     private readonly TextBlock opacityLabel = new() { Margin = new Thickness(0, 0, 0, 8) };
+    private readonly TextBlock thicknessLabel = new() { Margin = new Thickness(0, 0, 0, 6) };
+    private readonly TextBlock thicknessValue = new() { Margin = new Thickness(14, 0, 0, 0), MinWidth = 70 };
     private bool syncing;
     private bool saving;
     private string layoutNotice = "";
@@ -57,10 +59,15 @@ internal sealed class StyleDialog : Window
         NameChoice = new ComboBox { ItemsSource = new[] { "横排", "竖排（字符正向）" }, SelectedIndex = (int)interaction.Draft.NameOrientation,
             Margin = new Thickness(0, 0, 0, 12) };
         root.Children.Add(NameChoice);
-        root.Children.Add(new TextBlock { Text = "侧栏宽度（64–360 DIP）", Margin = new Thickness(0, 0, 0, 6) });
+        root.Children.Add(thicknessLabel);
         SideWidth = new Slider { Minimum = 64, Maximum = 360, Value = interaction.Draft.SideHeaderWidth,
-            SmallChange = 4, LargeChange = 16, Margin = new Thickness(0, 0, 0, 16) };
-        root.Children.Add(SideWidth);
+            SmallChange = 4, LargeChange = 16, TickFrequency = 1, IsSnapToTickEnabled = true };
+        var thicknessRow = new Grid { Margin = new Thickness(0, 0, 0, 16) };
+        thicknessRow.ColumnDefinitions.Add(new ColumnDefinition());
+        thicknessRow.ColumnDefinitions.Add(new ColumnDefinition { Width = GridLength.Auto });
+        thicknessRow.Children.Add(SideWidth);
+        Grid.SetColumn(thicknessValue, 1); thicknessRow.Children.Add(thicknessValue);
+        root.Children.Add(thicknessRow);
         root.Children.Add(new TextBlock { Text = "背景颜色", FontSize = 20, FontWeight = FontWeights.SemiBold, Margin = new Thickness(0, 0, 0, 16) });
         root.Children.Add(swatch);
         var palette = new WrapPanel();
@@ -130,7 +137,8 @@ internal sealed class StyleDialog : Window
         SideWidth.ValueChanged += (_, _) =>
         {
             if (syncing) return;
-            SyncLayout(Interaction.SetSideHeaderWidth(SideWidth.Value));
+            SyncLayout(FolderGeometry.Side(Interaction.Draft) ? Interaction.SetSideHeaderWidth(SideWidth.Value)
+                : Interaction.SetHeaderHeight(SideWidth.Value));
         };
         Closing += (_, e) => { if (saving && !runtime.Exiting) e.Cancel = true; };
         Closed += (_, _) =>
@@ -140,7 +148,7 @@ internal sealed class StyleDialog : Window
         };
         Loaded += (_, _) => { Hex.Focus(); Hex.SelectAll(); };
         SyncColor();
-        UpdatePreview();
+        SyncLayout(new OperationResult(Outcome.Success, ""));
     }
 
     internal async Task ApplyAsync()
@@ -200,6 +208,7 @@ internal sealed class StyleDialog : Window
         Error.Text = Interaction.Error.Length != 0 ? Interaction.Error : layoutNotice;
         ApplyButton.IsEnabled = Interaction.Error.Length == 0;
         opacityLabel.Text = $"{Transparency.Value:0}%";
+        thicknessValue.Text = $"{SideWidth.Value:0.#} DIP";
         runtime.PreviewAppearance(Interaction);
     }
 
@@ -211,7 +220,13 @@ internal sealed class StyleDialog : Window
         {
             PositionChoice.SelectedIndex = (int)Interaction.Draft.HeaderPosition;
             NameChoice.SelectedIndex = (int)Interaction.Draft.NameOrientation;
-            SideWidth.Value = Interaction.Draft.SideHeaderWidth;
+            var side = FolderGeometry.Side(Interaction.Draft);
+            thicknessLabel.Text = side ? "头部宽度（64–360 DIP）" : "头部高度（42–82 DIP）";
+            SideWidth.Minimum = side ? 64 : 42;
+            SideWidth.Maximum = side ? 360 : 82;
+            SideWidth.SmallChange = side ? 4 : 1;
+            SideWidth.LargeChange = side ? 16 : 10;
+            SideWidth.Value = side ? Interaction.Draft.SideHeaderWidth : Interaction.Draft.HeaderHeight;
         }
         finally { syncing = false; }
         UpdatePreview();

@@ -10,9 +10,12 @@ if (args.Length == 2 && args[0] == "--rollback-package")
 
 var tests = new (string Name, Func<Task> Run)[]
 {
+    ("尺寸受阻保留位置与立即反向", ResizeBoundaryChecks.ScreenAndFolders),
+    ("尺寸四边分隔线受阻与 DPI 外缘", ResizeBoundaryChecks.DividerEdges),
+    ("快捷方式显示名称保留实际类型", ContentViewChecks.ShortcutNames),
     ("四向头部锚点与展示宽高", FourWayChecks.Directions),
     ("四向头部分隔线外角与折叠尺寸", FourWayChecks.Resizing),
-    ("四向头部草稿挪位保存失败取消与过期保护", FourWayChecks.DraftTransactions),
+    ("四向头部原地草稿保存失败取消与过期保护", FourWayChecks.DraftTransactions),
     ("四向头部容量不足保留有效预览和折叠", FourWayChecks.Capacity),
     ("四向头部真实旧状态兼容保存重启", FourWayChecks.Legacy),
     ("四向头部混合 DPI 双向跨屏负坐标与空洞", FourWayChecks.Displays),

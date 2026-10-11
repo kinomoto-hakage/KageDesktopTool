@@ -97,16 +97,26 @@ public sealed class LayoutInteraction
     {
         if (!double.IsFinite(heightDelta)) return false;
         var current = folders.Single(folder => folder.Folder.Id == target).Folder;
-        return Resize(FolderGeometry.Side(current)
+        var changed = FolderGeometry.Side(current)
             ? current with { SideHeaderWidth = Math.Clamp(current.SideHeaderWidth + heightDelta, 64, 360) }
-            : current with { HeaderHeight = Math.Clamp(current.HeaderHeight + heightDelta, 42, 82) });
+            : current with { HeaderHeight = Math.Clamp(current.HeaderHeight + heightDelta, 42, 82) };
+        // 下／右头部固定外缘，移动头部原点，让内侧分隔线跟随鼠标而非向反方向生长。
+        var area = HeaderLayout.DisplayFor(current, displays);
+        if (area == null) return false;
+        var before = FolderGeometry.For(current, area.Scale);
+        var after = FolderGeometry.For(changed, area.Scale);
+        if (current.HeaderPosition == HeaderPosition.Bottom)
+            changed = changed with { Y = current.Y + before.Y + before.Height - after.Y - after.Height };
+        if (current.HeaderPosition == HeaderPosition.Right)
+            changed = changed with { X = current.X + before.X + before.Width - after.X - after.Width };
+        return Resize(changed);
     }
 
     private bool Resize(FolderRecord changed)
     {
         var occupied = HeaderLayout.Occupied(folders, target, displays);
-        var placed = NearestPlacement.Find(changed, displays, occupied);
-        return placed != null && Replace(placed, occupied);
+        // 尺寸受阻时保留最后有效几何；最近空位仅由位置拖动的提交路径处理。
+        return Replace(changed, occupied);
     }
 
     private bool Replace(FolderRecord changed, IReadOnlyList<(FolderRecord Folder, DisplayArea Area)> occupied)

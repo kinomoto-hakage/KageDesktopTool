@@ -23,6 +23,7 @@ public static class Program
         if (args.Contains("--content-layout-check")) return ContentLayoutChecks.Run();
         if (args.Contains("--layout-input-check")) return LayoutInputChecks.Run();
         if (args.Contains("--four-way-input-check")) return ContentInputChecks.RunFourWay();
+        if (args.Contains("--style-layout-feedback-check")) return ContentInputChecks.RunStyleLayoutFeedback();
         if (args.Contains("--four-way-restart-check")) return ContentInputChecks.RunFourWayRestart();
         if (args.Contains("--content-input-check")) return ContentInputChecks.Run(args.Contains("--identity-only"), args.Contains("--refresh-only"), args.Contains("--menu-placement-only"), args.Contains("--menu-latency-only"), args.Contains("--grid-names-only"), args.Contains("--selection-only"));
         if (args.Contains("--shell-diagnostics-check")) return ShellDiagnosticsChecks.Run(args.Contains("--icons-only"), args.Contains("--cancel-only"));

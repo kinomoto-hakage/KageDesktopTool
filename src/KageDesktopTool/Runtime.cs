@@ -222,6 +222,9 @@ internal sealed class Runtime : IDisposable
         }
         foreach (var folder in snapshot.Folders)
         {
+            // 一次刷新只绘制当前有效草稿，避免正式方向与预览方向之间的瞬时回切。
+            var displayed = appearance is { Interaction.Closed: false } && appearance.Interaction.FolderId == folder.Folder.Id
+                ? appearance.Interaction.Preview : folder;
             // Explorer 退出可销毁跨进程子窗口；失效 HWND 必须重建 WPF 窗口。
             if (Headers.TryGetValue(folder.Folder.Id, out var lost) && !WindowsDesktop.IsWindow(lost.Handle))
             {
@@ -230,13 +233,12 @@ internal sealed class Runtime : IDisposable
             }
             if (!Headers.TryGetValue(folder.Folder.Id, out var header))
             {
-                header = new FolderHeader(folder);
+                header = new FolderHeader(displayed);
                 new WindowInteropHelper(header).EnsureHandle();
                 Headers.Add(folder.Folder.Id, header);
             }
-            header.Update(folder);
+            header.Update(displayed);
         }
-        if (appearance != null && !appearance.Interaction.Closed) PreviewAppearance(appearance.Interaction);
         settings?.Refresh();
     }
 

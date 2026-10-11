@@ -12,9 +12,13 @@ internal static class LayoutChecks
         fixture.Store.Save(new WorkspaceState { Root = fixture.Content, Folders = [a, b] });
         IDesktopWorkspace workspace = new DesktopWorkspace(fixture.Store, new TestStartup());
         await workspace.InitializeAsync([new(0, 0, 1000, 800)]);
-        Ensure((await workspace.ToggleFolderAsync(a.Id)).Succeeded, "展开成功");
+        Ensure(!(await workspace.ToggleFolderAsync(a.Id)).Succeeded && workspace.Snapshot.Folders.First().Folder == a,
+            "邻居阻挡展开时保留折叠和原位置");
+        var move = workspace.BeginLayout(a.Id)!; move.BeginDrag(0, 0); move.DragTo(400, 0);
+        Ensure((await workspace.CommitLayoutAsync(move)).Succeeded, "用户移动到可展开位置");
+        Ensure((await workspace.ToggleFolderAsync(a.Id)).Succeeded, "移动后原地展开成功");
         var expanded = workspace.Snapshot.Folders.Single(f => f.Folder.Id == a.Id).Folder;
-        Ensure(expanded.Expanded && expanded.X == 12 && expanded.Y == 150, "展开只移动当前 Folder 到最近空位");
+        Ensure(expanded.Expanded && expanded.X == 412 && expanded.Y == 12, "展开保持用户移动后的锚点");
         Ensure(workspace.Snapshot.Folders.Single(f => f.Folder.Id == b.Id).Folder == b, "展开不移动冲突头部");
         Ensure((await workspace.ToggleFolderAsync(b.Id)).Succeeded && workspace.Snapshot.Folders.All(f => f.Folder.Expanded), "多个 Folder 可同时展开");
         Ensure((await workspace.ToggleFolderAsync(a.Id)).Succeeded && workspace.Snapshot.Folders.Single(f => f.Folder.Id == b.Id).Folder.Expanded, "折叠一个不折叠其他");
@@ -110,8 +114,8 @@ internal static class LayoutChecks
         Ensure(resize.ResizeBy(60, 80), "展开时调整共享宽度和内容高度");
         var changed = resize.Folders.Single().Folder;
         Ensure(changed.X == 12 && changed.HeaderWidth == 460 && changed.HeaderHeight == 68 && changed.BodyHeight == 340, "尺寸含义正确且左侧不变");
-        Ensure(resize.ResizeBy(300, 500) && resize.Folders.Single().Folder == changed with { HeaderWidth = 760, BodyHeight = 720, Y = 12 },
-            "调到宽高上限时向上移动八像素容纳完整边界，不缩小展示尺寸");
+        Ensure(!resize.ResizeBy(300, 500) && resize.Folders.Single().Folder == changed,
+            "超出屏幕边界时保持最后有效尺寸及位置");
         changed = resize.Folders.Single().Folder;
         await resizing.CommitLayoutAsync(resize);
         await resizing.SetViewAsync(moving.Id, false);

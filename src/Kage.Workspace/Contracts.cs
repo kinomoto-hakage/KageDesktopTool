@@ -30,7 +30,9 @@ public sealed record FolderRecord([property: JsonRequired] Guid Id, [property: J
 public sealed record ContentEntry(string ActualPath, string Name, bool IsDirectory, long? ModifiedTicks, long? Length,
     string? Identity = null)
 {
-    public string DisplayName => !IsDirectory && Name.EndsWith(".lnk", StringComparison.OrdinalIgnoreCase)
+    public bool IsShortcut => !IsDirectory && (Name.EndsWith(".lnk", StringComparison.OrdinalIgnoreCase)
+        || Name.EndsWith(".url", StringComparison.OrdinalIgnoreCase));
+    public string DisplayName => IsShortcut
         ? Name[..^4] : Name;
 }
 public sealed record FolderSnapshot(FolderRecord Folder, string ActualPath, bool Visible, int? FileCount, string? Notice)

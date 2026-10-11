@@ -63,7 +63,8 @@ internal static class FourWayChecks
             Require(resize.ResizeHeaderBy(10), "四向分隔线调厚度");
             var preview = resize.Folders.Single().Folder;
             Require(preview.HeaderWidth == original.HeaderWidth && preview.BodyHeight == original.BodyHeight
-                && preview.X == original.X && preview.Y == original.Y, $"分隔线保留展示宽高和锚点：{direction}，原 {original}，新 {preview}");
+                && preview.X == original.X - (direction == HeaderPosition.Right ? 15 : 0)
+                && preview.Y == original.Y - (direction == HeaderPosition.Bottom ? 15 : 0), $"分隔线保留展示宽高及外缘：{direction}，原 {original}，新 {preview}");
             Require(FolderGeometry.Side(preview) ? preview.SideHeaderWidth == original.SideHeaderWidth + 10
                 : preview.HeaderHeight == original.HeaderHeight + 10, "侧栏宽度独立于顶部厚度");
             Require((await workspace.CommitLayoutAsync(resize)).Succeeded, "保存分隔线");
@@ -95,25 +96,36 @@ internal static class FourWayChecks
         var first = workspace.Snapshot.Folders.First(); var id = first.Folder.Id;
         var other = workspace.Snapshot.Folders.Last();
         File.WriteAllText(Path.Combine(first.ActualPath, "真实内容.txt"), "保留字节");
-        await workspace.ToggleFolderAsync(id);
+        var top = workspace.BeginLayout(id)!; top.BeginDrag(0, 0); top.DragTo(500 - first.Folder.X, 12 - first.Folder.Y);
+        Require((await workspace.CommitLayoutAsync(top)).Succeeded && (await workspace.ToggleFolderAsync(id)).Succeeded,
+            "为原地草稿事务准备明确可展开且靠近顶部的夹具");
+        var edge = workspace.Snapshot.Folders.First().Folder;
+        var rejected = workspace.BeginAppearance(id)!;
+        Require(!rejected.SetHeaderPosition(HeaderPosition.Bottom).Succeeded && rejected.Draft == edge
+            && workspace.Snapshot.Folders.First().Folder == edge, "顶部方向预览受阻不寻找其他空位");
+        workspace.CancelAppearance(rejected);
+        var move = workspace.BeginLayout(id)!; move.BeginDrag(0, 0); move.DragTo(0, 300);
+        Require((await workspace.CommitLayoutAsync(move)).Succeeded, "用户移动至四向草稿可用位置");
         var original = workspace.Snapshot.Folders.First().Folder;
         var savedState = fixture.Store.Read().State;
         var edit = workspace.BeginAppearance(id)!;
-        Require(edit.SetHeaderPosition(HeaderPosition.Bottom).Succeeded && edit.Draft.Y > original.Y,
-            "下头部预览自动挪位仅属于草稿");
+        Require(edit.SetHeaderPosition(HeaderPosition.Bottom).Succeeded && edit.Draft.X == original.X && edit.Draft.Y == original.Y,
+            "方向预览保持用户头部原点");
         edit.SetNameOrientation(NameOrientation.Vertical); edit.SetHex("#2468AC"); edit.SetOpacity(.4);
+        Require(edit.SetHeaderHeight(60).Succeeded && edit.Preview.Folder.HeaderHeight == 60, "头部高度进入有效草稿预览");
         Require(fixture.Store.Read().State.Folders.SequenceEqual(savedState.Folders)
             && workspace.Snapshot.Folders.First().Folder == original, "方向名称颜色透明度预览不写盘");
         var draft = edit.Draft;
-        Require(workspace.CancelAppearance(edit).Outcome == Outcome.Cancelled && edit.Draft == original, "取消包含方向和挪位的整个草稿");
+        Require(workspace.CancelAppearance(edit).Outcome == Outcome.Cancelled && edit.Draft == original, "取消包含方向和高度的整个草稿");
         edit = workspace.BeginAppearance(id)!;
         edit.SetHeaderPosition(HeaderPosition.Bottom); edit.SetNameOrientation(NameOrientation.Vertical); edit.SetHex("#2468AC"); edit.SetOpacity(.4);
+        edit.SetHeaderHeight(60);
         store.FailOnSave = store.Saves + 1;
         Require(!(await workspace.ApplyAppearanceAsync(edit)).Succeeded && !edit.Closed && edit.Draft == draft
             && workspace.Snapshot.Folders.First().Folder == original, "失败保持正式状态和完整可重试草稿");
         Require((await workspace.ApplyAppearanceAsync(edit)).Succeeded && workspace.Snapshot.Folders.First().Folder == draft, "一次提交整个有效草稿");
         Require(workspace.Snapshot.Folders.Last().Folder == other.Folder && workspace.Snapshot.Folders.Last().ActualPath == other.ActualPath,
-            "草稿挪位应用不影响其他 Folder");
+            "草稿原地应用不影响其他 Folder");
         workspace = new DesktopWorkspace(store, new TestStartup()); await workspace.InitializeAsync(displays);
         Require(workspace.Snapshot.Folders.First().Folder == draft && File.ReadAllText(Path.Combine(first.ActualPath, "真实内容.txt")) == "保留字节",
             "重启恢复全部样式与几何和真实内容");
@@ -125,7 +137,8 @@ internal static class FourWayChecks
         await workspace.RefreshAsync([new(0, 0, 900, 650, 1.25)]);
         Require(!stale.SetHeaderPosition(HeaderPosition.Right).Succeeded && !(await workspace.ApplyAppearanceAsync(stale)).Succeeded,
             "显示环境变化拒绝旧草稿预览和提交");
-        stale = workspace.BeginAppearance(id)!; stale.SetHeaderPosition(HeaderPosition.Left);
+        stale = workspace.BeginAppearance(id)!;
+        Require(stale.SetHeaderHeight(stale.Draft.HeaderHeight + 2).Succeeded, "准备确定可容纳的过期几何草稿");
         await workspace.ToggleFolderAsync(id);
         var later = workspace.Snapshot.Folders.First().Folder;
         Require(!(await workspace.ApplyAppearanceAsync(stale)).Succeeded && stale.Preview.Folder == later,
@@ -248,16 +261,27 @@ internal static class FourWayChecks
             var other = workspace.Snapshot.Folders.Single(f => f.Folder.Id == obstacle.Id).Folder;
             var proposed = original with { Expanded = true };
             var obstacleBounds = FolderGeometry.For(other, 1);
-            var legal = (from y in Enumerable.Range(0, 470) from x in Enumerable.Range(0, 600)
-                let candidate = proposed with { X = x, Y = y }
+            FolderRecord? Nearest(FolderRecord proposal) => (from y in Enumerable.Range(0, 470) from x in Enumerable.Range(0, 600)
+                let candidate = proposal with { X = x, Y = y }
                 let b = FolderGeometry.For(candidate, 1)
                 where b.X >= 0 && b.Y >= 0 && b.X + b.Width <= 600 && b.Y + b.Height <= 470
                     && (b.X + b.Width + 12 <= obstacleBounds.X || b.X >= obstacleBounds.X + obstacleBounds.Width + 12
                         || b.Y + b.Height + 12 <= obstacleBounds.Y || b.Y >= obstacleBounds.Y + obstacleBounds.Height + 12)
-                orderby (long)(x - original.X) * (x - original.X) + (long)(y - original.Y) * (y - original.Y), y, x
+                orderby (long)(x - proposal.X) * (x - proposal.X) + (long)(y - proposal.Y) * (y - proposal.Y), y, x
                 select candidate).FirstOrDefault();
-            var result = await workspace.ToggleFolderAsync(target.Id);
-            Require(legal == null ? !result.Succeeded : result.Succeeded && workspace.Snapshot.Folders.Single(f => f.Folder.Id == target.Id).Folder == legal,
+            var legal = Nearest(proposed);
+            if (legal == null)
+            {
+                Require(!(await workspace.ToggleFolderAsync(target.Id)).Succeeded, "无展开空间保留折叠");
+                continue;
+            }
+            fixture.Store.Save(new WorkspaceState { Root = fixture.Content, Folders = [legal, other] });
+            workspace = new DesktopWorkspace(fixture.Store, new TestStartup()); await workspace.InitializeAsync(displays);
+            var drag = workspace.BeginLayout(target.Id)!; drag.BeginDrag(0, 0);
+            drag.DragTo(original.X - legal.X, original.Y - legal.Y);
+            var expected = Nearest(drag.Folders.Single(f => f.Folder.Id == target.Id).Folder);
+            var result = await workspace.CommitLayoutAsync(drag);
+            Require(result.Succeeded && workspace.Snapshot.Folders.Single(f => f.Folder.Id == target.Id).Folder == expected,
                 "四向最近空位与独立逐像素穷举一致（含右侧障碍）");
             Require(workspace.Snapshot.Folders.Single(f => f.Folder.Id == obstacle.Id).Folder == other, "最近放置不移动右侧头部障碍");
         }

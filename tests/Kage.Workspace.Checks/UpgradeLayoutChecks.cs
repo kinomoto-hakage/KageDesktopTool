@@ -38,15 +38,19 @@ internal static class UpgradeLayoutChecks
         IDesktopWorkspace workspace = new DesktopWorkspace(fixture.Store, new TestStartup());
         DisplayArea[] displays = [new(0, 0, 1000, 800)];
         await workspace.InitializeAsync(displays);
-        Ensure((await workspace.ToggleFolderAsync(bottom.Id)).Succeeded, "底部自动寻找完整展开位置");
+        Ensure(!(await workspace.ToggleFolderAsync(bottom.Id)).Succeeded && workspace.Snapshot.Folders.First().Folder == bottom,
+            "底部展开受阻时保持折叠且不寻找空位");
+        var move = workspace.BeginLayout(bottom.Id)!; move.BeginDrag(0, 0); move.DragTo(0, -248);
+        Ensure((await workspace.CommitLayoutAsync(move)).Succeeded, "用户移动至完整展开位置");
+        Ensure((await workspace.ToggleFolderAsync(bottom.Id)).Succeeded, "用户移动后原地展开");
         var expanded = workspace.Snapshot.Folders.First().Folder;
-        Ensure(expanded is { X: 50, Y: 492, Expanded: true }, "底部展开选择最近的上方位置");
+        Ensure(expanded is { X: 50, Y: 492, Expanded: true }, "展开保持用户移动后的锚点");
         Ensure(workspace.Snapshot.Folders.Last().Folder == other, "展开不移动其他已展开 Folder");
         var edit = workspace.BeginLayout(bottom.Id)!;
-        Ensure(edit.ResizeHeaderBy(20) && edit.Folders.First().Folder == expanded with { HeaderHeight = 68, Y = 472 },
-            "底部调厚后仅当前 Folder 上移二十像素，保留展示宽高");
+        Ensure(!edit.ResizeHeaderBy(20) && edit.Folders.First().Folder == expanded,
+            "屏幕底部调厚受阻时保留完整布局");
         Ensure(workspace.Snapshot.Folders.First().Folder == expanded && edit.Folders.Last().Folder == other,
-            "调厚自动挪位仅属于预览，其他 Folder 不变");
+            "调厚受阻不提交，其他 Folder 不变");
         edit.BeginDrag(0, 0); edit.DragTo(0, -100);
         await workspace.CommitLayoutAsync(edit);
         var before = workspace.Snapshot.Folders.First().Folder;
@@ -90,8 +94,8 @@ internal static class UpgradeLayoutChecks
         fixture.Store.Save(new WorkspaceState { Root = fixture.Content, Folders = [moving] });
         workspace = new DesktopWorkspace(fixture.Store, new TestStartup());
         await workspace.InitializeAsync(displays);
-        Ensure((await workspace.ToggleFolderAsync(moving.Id)).Succeeded, "当前屏无法展开时考虑其他显示器");
-        Ensure(workspace.Snapshot.Folders.Single() is { Folder.X: 200, Folder.Y: 100, DisplayScale: 1.5 }, "排除屏幕空洞并使用目标 DPI");
+        Ensure(!(await workspace.ToggleFolderAsync(moving.Id)).Succeeded, "当前屏无法展开时不跳到其他显示器");
+        Ensure(workspace.Snapshot.Folders.Single() is { Folder.X: -300, Folder.Y: 100, DisplayScale: 1 }, "保留当前位置、折叠状态和 DPI");
         moving = moving with { X = 0, Y = 0 };
         fixture.Store.Save(new WorkspaceState { Root = fixture.Content, Folders = [moving] });
         workspace = new DesktopWorkspace(fixture.Store, new TestStartup());

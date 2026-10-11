@@ -1,5 +1,6 @@
 using System;
 using System.IO;
+using System.Linq;
 using System.Windows;
 using System.Windows.Controls;
 using System.Windows.Input;
@@ -16,7 +17,9 @@ internal sealed class ContentRenameDialog : Window
         WindowStartupLocation = WindowStartupLocation.CenterScreen; Icon = Runtime.ApplicationIcon;
         var body = new StackPanel { Margin = new Thickness(20) };
         body.Children.Add(new TextBlock { Text = path, TextWrapping = TextWrapping.Wrap });
-        var input = new TextBox { Text = Path.GetFileName(path), Margin = new Thickness(0, 12, 0, 12) };
+        var entry = Runtime.Current.Workspace.Snapshot.Folders.Single(folder => folder.Folder.Id == folderId)
+            .Entries.Single(item => string.Equals(item.ActualPath, path, StringComparison.OrdinalIgnoreCase));
+        var input = new TextBox { Text = entry.DisplayName, Margin = new Thickness(0, 12, 0, 12) };
         var result = new TextBlock { TextWrapping = TextWrapping.Wrap, Margin = new Thickness(0, 0, 0, 12) };
         var buttons = new StackPanel { Orientation = Orientation.Horizontal, HorizontalAlignment = HorizontalAlignment.Right };
         var save = new Button { Content = "重命名", IsDefault = true, Padding = new Thickness(12, 6, 12, 6) };
@@ -27,7 +30,12 @@ internal sealed class ContentRenameDialog : Window
             busy = true; save.IsEnabled = cancel.IsEnabled = input.IsEnabled = false;
             try
             {
-                var outcome = await Runtime.Current.Workspace.RenameContentAsync(folderId, path, input.Text);
+                if (entry.IsShortcut && (string.IsNullOrWhiteSpace(input.Text) || input.Text.EndsWith(' ') || input.Text.EndsWith('.')))
+                { result.Text = "名称不能为空，也不能以空格或句点结尾。"; return; }
+                // 快捷方式编辑显示名称，保留磁盘类型和显式图标资源。
+                var name = entry.IsShortcut && !input.Text.EndsWith(Path.GetExtension(path), StringComparison.OrdinalIgnoreCase)
+                    ? input.Text + Path.GetExtension(path) : input.Text;
+                var outcome = await Runtime.Current.Workspace.RenameContentAsync(folderId, path, name);
                 Runtime.Current.Complete("重命名项目", outcome);
                 if (outcome.Succeeded) { busy = false; Close(); return; }
                 result.Text = outcome.Message;

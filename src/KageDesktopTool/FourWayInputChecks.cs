@@ -217,13 +217,15 @@ internal static partial class ContentInputChecks
                 store.Fail = true; await MouseAt(Center(dialog.ApplyButton), false); await Task.Delay(300);
                 Require(!dialog.Interaction.Closed && Saved() == saved && dialog.Error.Text.Length > 0, "实际样式窗口保存失败保留可重试草稿");
                 await ApplyStyle();
-                // 将当前 Folder 移到顶部，真实方向预览必须自动挪位；取消连挪位一起恢复。
+                // 将当前 Folder 移到顶部，越界方向预览必须保留当前草稿，不自动挪位。
                 var layout = workspace.BeginLayout(target.Id)!; layout.BeginDrag(0, 0); layout.DragTo(0, 20 - Saved().Y);
                 Require((await workspace.CommitLayoutAsync(layout)).Succeeded, "顶部隔离锚点准备"); runtime.Render(); saved = Saved();
-                await OpenStyle(); await Choose(dialog!.PositionChoice, (int)HeaderPosition.Bottom);
-                Require(header.Record.Y > saved.Y && Saved() == saved, "真实方向预览自动挪位属于草稿");
+                await OpenStyle();
+                await MouseAt(Center(dialog!.PositionChoice), false); Key(0x24); Key(0x28); Key(0x0D); await Task.Delay(200);
+                Require(header.Record == saved && Saved() == saved && dialog.PositionChoice.SelectedIndex == (int)saved.HeaderPosition
+                    && dialog.Error.Text.Length > 0, "真实方向预览越界保留有效方向、位置并提示");
                 Key(0x1B); await Task.Delay(200);
-                Require(dialog.Interaction.Closed && header.Record == saved && Saved() == saved, "真实取消恢复预览自动挪位"); dialog = null; Bounds();
+                Require(dialog.Interaction.Closed && header.Record == saved && Saved() == saved, "真实取消受阻方向预览保持原布局"); dialog = null; Bounds();
                 Require(workspace.Snapshot.Folders.Last().Folder == other, "整套真实交互保持其他 Folder 不变");
                 IDesktopWorkspace restarted = new DesktopWorkspace(disk, new NoStartup()); await restarted.InitializeAsync(displays);
                 Require(restarted.Snapshot.Folders.Select(f => f.Folder).SequenceEqual(workspace.Snapshot.Folders.Select(f => f.Folder)), "真实输入后逐 Folder 重启恢复");

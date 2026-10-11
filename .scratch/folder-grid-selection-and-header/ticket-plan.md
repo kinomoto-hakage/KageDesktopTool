@@ -3,6 +3,7 @@
 Status: approved
 Tickets: published
 Implemented: 01（核心验收通过，既有回归限制见独立票据 Answer）；02（统一选择与真实输入／文件结果及 Explorer 恢复验收通过）；03（四向头部与样式事务、73 项业务及真实输入／窗口重启和全文／选择组合验收通过）
+Feedback: 04／05 resolved（样式闪烁、四向分隔线、厚度滑块、全部主动布局入口取消自动挪位、InternetShortcut 名称与图标，76 项业务及真实输入验收通过）
 Created: 2026-10-11
 Approved: 2026-10-11
 Published: 2026-10-11
@@ -16,6 +17,8 @@ Published: 2026-10-11
 | 01 | [Folder 网格与完整图标名称](issues/01-grid-and-full-names.md) | None | 四档格子和间距、三行省略、选中全文、Folder 内整体滚动、名称命中与滚动恢复，含现有设置兼容及真实输入验收。 | 1-28, 39, 44, 84-85 |
 | 02 | [Folder 统一选择协调](issues/02-selection-coordination.md) | None | 跨 Folder、桌面、任务栏及应用切换清除选择；保留当前多选、滚动、原生菜单和文件拖动，含刷新与输入回归。 | 25, 29-44, 85 |
 | 03 | [Folder 四向头部、名称方向与样式事务](issues/03-four-way-header-and-style.md) | None | 四向展开、横排／竖排、头部锚点与尺寸、最近空位、样式预览／应用／取消、旧配置兼容与真实输入验收。 | 45-85 |
+| 04 | [样式与尺寸人工反馈](issues/04-style-and-resize-feedback.md) | None | 预览闪烁、分隔线方向、厚度滑块及受阻尺寸保留。 | 2026-10-11 人工反馈 1–4 |
+| 05 | [InternetShortcut 名称与图标](issues/05-internet-shortcut-names.md) | None | `.url` 显示后缀隐藏、磁盘类型及改名图标保留。 | 2026-10-11 补充反馈 |
 
 三张票覆盖父规格全部 85 条用户故事；重叠故事表示共同约束和各票自身的回归责任，不表示跨票重复实现。
 

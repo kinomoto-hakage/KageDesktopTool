@@ -318,9 +318,8 @@ public sealed partial class DesktopWorkspace(IWorkspaceStore store, IStartupRegi
         if (changed.Expanded)
         {
             var occupied = HeaderLayout.Occupied(snapshot.Folders, id, displays);
-            var placed = NearestPlacement.Find(changed, displays, occupied);
-            if (placed == null) return new(Outcome.Failed, "桌面工作区没有可容纳头部与展示部分的空位，已保持折叠；请缩小或折叠 Folder。");
-            changed = placed;
+            if (HeaderLayout.Available(changed, displays, occupied) == null)
+                return new(Outcome.Failed, "当前位置无法容纳头部与展示部分，已保持折叠；请先移动 Folder 或缩小尺寸。");
         }
         var complete = state with { Folders = state.Folders.Select(folder => folder.Id == id ? changed : folder).ToArray() };
         store.Save(complete);
@@ -470,8 +469,9 @@ public sealed partial class DesktopWorkspace(IWorkspaceStore store, IStartupRegi
         var current = snapshot.Folders.Single(f => f.Folder.Id == interaction.FolderId).Folder;
         if (!SameGeometry(current, interaction.Original))
             return new(Outcome.Failed, "Folder 布局已变化，请取消后重新打开样式。");
-        placed = NearestPlacement.Find(candidate, displays, HeaderLayout.Occupied(snapshot.Folders, interaction.FolderId, displays));
-        return placed == null ? new(Outcome.Failed, "没有可容纳本次样式的空位，已保留上一个可用布局。")
+        placed = HeaderLayout.Available(candidate, displays, HeaderLayout.Occupied(snapshot.Folders, interaction.FolderId, displays)) == null
+            ? null : candidate;
+        return placed == null ? new(Outcome.Failed, "当前位置无法容纳本次样式，已保留上一个可用布局；请先移动 Folder 或缩小尺寸。")
             : new(Outcome.Success, "头部布局已预览。");
     }
 
@@ -488,6 +488,7 @@ public sealed partial class DesktopWorkspace(IWorkspaceStore store, IStartupRegi
         var draft = interaction.Draft;
         return current with { Color = draft.Color, Opacity = draft.Opacity, NameOrientation = draft.NameOrientation,
             HeaderPosition = draft.HeaderPosition, SideHeaderWidth = draft.SideHeaderWidth,
+            HeaderHeight = interaction.GeometryChanged ? draft.HeaderHeight : current.HeaderHeight,
             X = interaction.GeometryChanged ? draft.X : current.X, Y = interaction.GeometryChanged ? draft.Y : current.Y };
     }
 

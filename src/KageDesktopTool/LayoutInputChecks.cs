@@ -79,6 +79,13 @@ internal static class LayoutInputChecks
                 Require(Saved() is { } placed && placed.X == obstacle.X + 20 && placed.Y == obstacle.Y - (int)Math.Ceiling(48 * scale) - 12, "真实释放使用最近空位及既有间隙");
                 Require(workspace.Snapshot.Folders.Single(f => f.Folder.Id == obstacle.Id).Folder == obstacle, "释放不移动其他入口");
                 Geometry();
+                var collapsed = Saved();
+                Require(!(await workspace.ToggleFolderAsync(moving.Id)).Succeeded && Saved() == collapsed,
+                    "释放后的折叠落点无法展开时不自动挪位");
+                var relocate = workspace.BeginLayout(moving.Id)!; relocate.BeginDrag(0, 0);
+                relocate.DragTo(0, obstacle.Y + (int)Math.Ceiling(obstacle.HeaderHeight * scale) + 12 - collapsed.Y);
+                Require((await workspace.CommitLayoutAsync(relocate)).Succeeded, "用户先将当前入口移到可展开位置");
+                runtime.Render(); await Task.Delay(150);
                 Require((await workspace.ToggleFolderAsync(moving.Id)).Succeeded, "隔离入口展开"); runtime.Render(); await Task.Delay(150);
                 var before = Saved(); header.UpdateLayout();
                 var divider = header.HeaderDivider;
@@ -109,9 +116,9 @@ internal static class LayoutInputChecks
                 Move(new Point(start.X + 25, start.Y)); await Task.Delay(100);
                 store.Fail = true; await Release();
                 Require(Saved() == saved && header.Record == saved, "布局保存故障恢复已提交快照及实际窗口");
-                Require((await workspace.ToggleFolderAsync(bottom.Id)).Succeeded, "真实屏幕底部展开成功"); runtime.Render();
+                Require(!(await workspace.ToggleFolderAsync(bottom.Id)).Succeeded, "真实屏幕底部展开受阻"); runtime.Render();
                 var expandedBottom = workspace.Snapshot.Folders.Single(f => f.Folder.Id == bottom.Id).Folder;
-                Require(expandedBottom.X == bottom.X && expandedBottom.Y == area.Y + area.Height - (int)Math.Ceiling((bottom.HeaderHeight + bottom.BodyHeight) * scale), "底部只上移当前 Folder 以容纳整体");
+                Require(expandedBottom == bottom, "底部展开不搜索空位、不挪位，保持折叠");
                 Require(Saved() == saved && workspace.Snapshot.Folders.Single(f => f.Folder.Id == obstacle.Id).Folder == obstacle, "底部展开保持其他布局");
                 Geometry();
                 header.UpdateLayout();

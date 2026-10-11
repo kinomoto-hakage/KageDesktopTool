@@ -12,7 +12,7 @@ public sealed class AppearanceInteraction
     public FolderRecord Draft { get; private set; }
     public FolderSnapshot Preview => Owner.AppearancePreview(this);
     internal bool GeometryChanged => Draft.HeaderPosition != Original.HeaderPosition
-        || Draft.SideHeaderWidth != Original.SideHeaderWidth || Draft.X != Original.X || Draft.Y != Original.Y;
+        || Draft.HeaderHeight != Original.HeaderHeight || Draft.SideHeaderWidth != Original.SideHeaderWidth || Draft.X != Original.X || Draft.Y != Original.Y;
     public Guid FolderId => Original.Id;
     public string Color => Draft.Color;
     public double Opacity => Draft.Opacity;
@@ -76,6 +76,10 @@ public sealed class AppearanceInteraction
     public OperationResult SetSideHeaderWidth(double value)
         => double.IsFinite(value) && value is >= 64 and <= 360
             ? ChangeLayout(Draft with { SideHeaderWidth = value }) : new(Outcome.Failed, "侧栏宽度必须为 64–360 DIP。");
+
+    public OperationResult SetHeaderHeight(double value)
+        => double.IsFinite(value) && value is >= 42 and <= 82
+            ? ChangeLayout(Draft with { HeaderHeight = value }) : new(Outcome.Failed, "头部高度必须为 42–82 DIP。");
 
     public OperationResult SetNameOrientation(NameOrientation value)
     {
