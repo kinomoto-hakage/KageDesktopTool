@@ -60,6 +60,8 @@ var tests = new (string Name, Func<Task> Run)[]
     ("显示环境拔屏分辨率容量不足及重启恢复", DisplayChecks.UnplugAndCapacity),
     ("显示环境恢复优先保留剩余屏位置", DisplayChecks.PreserveSurvivingScreen),
     ("显示环境混合 DPI 双向及上下跨屏", DisplayChecks.MixedDpiBothDirections),
+    ("毛玻璃默认关闭即时预览取消与结束保护", AppearanceChecks.FrostedPreview),
+    ("毛玻璃完整保存失败重试重启与并发保护", AppearanceChecks.FrostedPersistence),
     ("外观颜色同步校验及取消恢复", AppearanceChecks.InputAndCancel),
     ("外观独立保存失败及重启恢复", AppearanceChecks.Persistence),
     ("图标选择校验保存失败及重启恢复", AppearanceChecks.Icons),

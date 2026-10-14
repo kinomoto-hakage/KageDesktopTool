@@ -12,6 +12,7 @@ public static class Program
     [STAThread]
     public static int Main(string[] args)
     {
+        if (args.Contains("--frosted-input-check")) return FrostedInputChecks.Run(args.Contains("--unavailable"));
         if (args.Length == 2 && args[0] == "--selection-target-check") return ContentInputChecks.SelectionTarget(args[1]);
         if (args.Contains("--publish-check")) return PublishChecks.Run();
         if (args.Contains("--tray-icon-check")) return TrayIconChecks.Run();

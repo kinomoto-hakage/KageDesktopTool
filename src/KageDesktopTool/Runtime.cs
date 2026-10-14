@@ -21,6 +21,9 @@ internal sealed class Runtime : IDisposable
     internal static Runtime Current { get; private set; } = null!;
     internal static BitmapImage ApplicationIcon => Current?.applicationIcon ?? IconChoices.Image("d");
     internal IDesktopWorkspace Workspace { get; }
+    // 能力事实来自 Windows 边界；隔离验收可注入不可用环境而不修改系统设置。
+    private readonly Func<bool> frostedCapability;
+    internal bool SupportsFrosted => frostedCapability();
     internal OperationFeedback Feedback { get; }
     internal SelectionCoordinator Selection { get; } = new();
     private readonly WindowsSelectionInput? selectionInput;
@@ -67,9 +70,10 @@ internal sealed class Runtime : IDisposable
     internal MoveDialog? ActiveMove => moveDialog;
     internal BatchMoveResult? LastMoveResult { get; private set; }
 
-    internal Runtime(IDesktopWorkspace workspace, string? resultDirectory = null)
+    internal Runtime(IDesktopWorkspace workspace, string? resultDirectory = null, Func<bool>? frostedCapability = null)
     {
         Current = this;
+        this.frostedCapability = frostedCapability ?? (() => OperatingSystem.IsWindowsVersionAtLeast(10, 0, 22000));
         layoutInput.Tick += (_, _) =>
         {
             // Explorer 子窗口不一定持有键盘焦点，Esc 仍须取消当前捕获会话。

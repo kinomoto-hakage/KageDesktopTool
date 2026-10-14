@@ -22,6 +22,10 @@ internal sealed class FolderHeader : Window
     internal Thumb HeaderDivider { get; }
     internal Thumb ResizeGrip { get; }
     internal FolderRecord Record { get; private set; }
+    internal bool FrostedVisible => backdrop != null && WindowsDesktop.Attached(Handle, backdrop.Handle);
+    internal string FrostedUnavailableReason => Record.Frosted && !FrostedVisible ? "当前环境无法显示毛玻璃" : "";
+    private FrostedBackdrop? backdrop;
+    private bool backdropFailed;
     private readonly Grid layout;
     private readonly Grid header;
     private readonly HeaderName title;
@@ -143,7 +147,7 @@ internal sealed class FolderHeader : Window
         {
             if (!closed && !positioning && geometry != null) ApplyGeometry(geometry, previewingGeometry);
         });
-        Closed += async (_, _) => { closed = true; Contents.Dispose(); await EndInteractionAsync(); };
+        Closed += async (_, _) => { closed = true; backdrop?.Dispose(); backdrop = null; Contents.Dispose(); await EndInteractionAsync(); };
         Update(folder);
     }
 
@@ -235,6 +239,19 @@ internal sealed class FolderHeader : Window
     {
         var previous = Host;
         Host = WindowsDesktop.Attach(Handle);
+        // 先将清晰前景移回 Explorer，再释放旧背景，避免销毁其子 HWND。
+        backdrop?.Dispose(); backdrop = null;
+        if (Record.Frosted && Host != IntPtr.Zero && Runtime.Current.SupportsFrosted)
+        {
+            var candidate = FrostedBackdrop.TryCreate(Host);
+            if (candidate != null && candidate.Attach(Handle)) { backdrop = candidate; Host = candidate.Handle; }
+            else
+            {
+                if (candidate != null) Host = WindowsDesktop.Attach(Handle);
+                candidate?.Dispose(); backdropFailed = true;
+            }
+        }
+        else backdropFailed = Record.Frosted;
         if (Host != IntPtr.Zero && previous != Host)
         {
             // 重新挂接后通过 WPF 重新登记 OLE 接收，不重复订阅输入事件。
@@ -276,13 +293,15 @@ internal sealed class FolderHeader : Window
         { HeaderPosition.Top => Record.Expanded ? "▴" : "▾", HeaderPosition.Bottom => Record.Expanded ? "▾" : "▴",
             HeaderPosition.Left => Record.Expanded ? "◂" : "▸", _ => Record.Expanded ? "▸" : "◂" };
         if (Handle == IntPtr.Zero) return;
-        if (!WindowsDesktop.Attached(Handle, Host)) Attach();
-        if (!folder.Visible || Host == IntPtr.Zero) { Hide(); return; }
+        if (!WindowsDesktop.Attached(Handle, Host) || !Record.Frosted && backdrop != null
+            || Record.Frosted && backdrop == null && !backdropFailed) Attach();
+        if (!folder.Visible || Host == IntPtr.Zero) { Hide(); backdrop?.Hide(); return; }
         Show();
         positioning = true;
         try
         {
-            if (!WindowsDesktop.Position(Handle, Host, bounds.X, bounds.Y, bounds.Width, bounds.Height))
+            if (backdrop != null && !backdrop.Position(bounds.X, bounds.Y, bounds.Width, bounds.Height, displayScale)
+                || !WindowsDesktop.Position(Handle, Host, bounds.X, bounds.Y, bounds.Width, bounds.Height))
             { Host = IntPtr.Zero; Hide(); }
         }
         finally { positioning = false; }
