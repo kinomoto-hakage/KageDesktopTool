@@ -218,8 +218,11 @@ internal sealed class StyleDialog : Window
         opacityLabel.Text = $"{Transparency.Value:0}%";
         thicknessValue.Text = $"{SideWidth.Value:0.#} DIP";
         runtime.PreviewAppearance(Interaction);
-        FrostedStatus.Text = runtime.Headers.TryGetValue(Interaction.FolderId, out var header) ? header.FrostedUnavailableReason : "";
+        RefreshFrostedStatus();
     }
+
+    internal void RefreshFrostedStatus()
+        => FrostedStatus.Text = runtime.Headers.TryGetValue(Interaction.FolderId, out var header) ? header.FrostedUnavailableReason : "";
 
     private void SyncLayout(OperationResult result)
     {

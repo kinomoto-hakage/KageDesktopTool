@@ -12,6 +12,7 @@ public static class Program
     [STAThread]
     public static int Main(string[] args)
     {
+        if (args.Contains("--frosted-system-check")) return FrostedSystemChecks.Run(args.Contains("--real-settings"), args.Contains("--real-energy"));
         if (args.Contains("--frosted-input-check")) return FrostedInputChecks.Run(args.Contains("--unavailable"));
         if (args.Contains("--frosted-four-way-check")) return ContentInputChecks.RunFourWay(true,
             Enum.TryParse<HeaderPosition>(args.FirstOrDefault(a => a.StartsWith("--direction="))?[12..], out var checkedDirection) ? checkedDirection : null);
