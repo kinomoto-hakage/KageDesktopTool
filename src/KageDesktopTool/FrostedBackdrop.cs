@@ -19,6 +19,10 @@ internal sealed class FrostedBackdrop : IDisposable
     private SpriteVisual? visual;
     private readonly WindowProcedure procedure;
     private IntPtr previousProcedure;
+    private IntPtr foreground;
+    private FolderHeader? foregroundWindow;
+    private BackdropDropTarget? dropTarget;
+    private bool oleInitialized;
     private static IntPtr queueController;
 
     internal static FrostedBackdrop? TryCreate(IntPtr desktopHost)
@@ -68,12 +72,19 @@ internal sealed class FrostedBackdrop : IDisposable
         }
     }
 
-    internal bool Attach(IntPtr foreground)
+    internal bool Attach(FolderHeader window, IntPtr foreground, Guid folderId)
     {
         var style = WindowsDesktop.GetWindowLongPtr(foreground, -16).ToInt64();
         WindowsDesktop.SetWindowLongPtr(foreground, -16, new IntPtr((style & ~0x80000000L) | 0x40000000L));
         WindowsDesktop.SetParent(foreground, Handle);
-        return WindowsDesktop.Attached(foreground, Handle);
+        if (!WindowsDesktop.Attached(foreground, Handle)) return false;
+        this.foreground = foreground;
+        foregroundWindow = window;
+        var initialized = OleInitialize(IntPtr.Zero);
+        if (initialized < 0) return false;
+        oleInitialized = true;
+        dropTarget = new BackdropDropTarget(folderId);
+        return RegisterDragDrop(Handle, dropTarget) >= 0;
     }
 
     internal bool Position(int x, int y, int width, int height, double scale)
@@ -91,10 +102,26 @@ internal sealed class FrostedBackdrop : IDisposable
     internal void Hide() { if (Handle != IntPtr.Zero) ShowWindow(Handle, 0); }
 
     private IntPtr WindowMessage(IntPtr hwnd, uint message, IntPtr wp, IntPtr lp)
-        => message == 0x21 ? new IntPtr(3) : CallWindowProc(previousProcedure, hwnd, message, wp, lp);
+    {
+        if (message == 0x21) return new IntPtr(3);
+        if (message == 0x84) return new IntPtr(1);
+        // layered 前景在 alpha=0 的空白处让原生背景命中。将实际输入送回同一
+        // WPF 输入入口，不能用额外颜色 alpha 换取命中，否则改变完全透明语义。
+        if (WindowsDesktop.IsWindow(foreground) && (message is >= 0x200 and <= 0x20E || message == 0x7B))
+        {
+            foregroundWindow?.BackdropInput(message, wp, hwnd);
+            if (message == 0x200 && foregroundWindow != null && System.Windows.Input.Mouse.Captured == foregroundWindow.NameDisplay)
+                SendMessage(foreground, message, wp, lp);
+            return IntPtr.Zero;
+        }
+        return CallWindowProc(previousProcedure, hwnd, message, wp, lp);
+    }
 
     public void Dispose()
     {
+        if (dropTarget != null && Handle != IntPtr.Zero) RevokeDragDrop(Handle);
+        dropTarget = null;
+        if (oleInitialized) { OleUninitialize(); oleInitialized = false; }
         if (target != null) { target.Root = null; target.Dispose(); target = null; }
         visual?.Brush?.Dispose();
         visual?.Dispose(); visual = null;
@@ -121,5 +148,63 @@ internal sealed class FrostedBackdrop : IDisposable
     [DllImport("gdi32.dll")] private static extern IntPtr CreateRoundRectRgn(int left, int top, int right, int bottom, int width, int height);
     [DllImport("gdi32.dll")] private static extern bool DeleteObject(IntPtr obj);
     [DllImport("user32.dll", CharSet = CharSet.Unicode)] private static extern IntPtr CallWindowProc(IntPtr procedure, IntPtr hwnd, uint message, IntPtr wp, IntPtr lp);
+    [DllImport("user32.dll", CharSet = CharSet.Unicode)] private static extern IntPtr SendMessage(IntPtr hwnd, uint message, IntPtr wp, IntPtr lp);
     [DllImport("dwmapi.dll")] private static extern int DwmSetWindowAttribute(IntPtr hwnd, int attribute, ref int value, int size);
+    [DllImport("ole32.dll")] private static extern int RegisterDragDrop(IntPtr hwnd, IBackdropDropTarget target);
+    [DllImport("ole32.dll")] private static extern int RevokeDragDrop(IntPtr hwnd);
+    [DllImport("ole32.dll")] private static extern int OleInitialize(IntPtr reserved);
+    [DllImport("ole32.dll")] private static extern void OleUninitialize();
+
+    [ComVisible(true), Guid("00000122-0000-0000-C000-000000000046"), InterfaceType(ComInterfaceType.InterfaceIsIUnknown)]
+    private interface IBackdropDropTarget
+    {
+        [PreserveSig] int DragEnter([MarshalAs(UnmanagedType.Interface)] System.Runtime.InteropServices.ComTypes.IDataObject data, uint keys, long point, ref uint effect);
+        [PreserveSig] int DragOver(uint keys, long point, ref uint effect);
+        [PreserveSig] int DragLeave();
+        [PreserveSig] int Drop([MarshalAs(UnmanagedType.Interface)] System.Runtime.InteropServices.ComTypes.IDataObject data, uint keys, long point, ref uint effect);
+    }
+
+    // 只接收真实 OLE 的 FileDrop，移动仍由原 FileDrag/Workspace 路径执行。
+    // WPF 有色像素继续由 WPF 自己接收，空白像素由此背景 HWND 接收。
+    [ComVisible(true), ClassInterface(ClassInterfaceType.None)]
+    private sealed class BackdropDropTarget(Guid folderId) : IBackdropDropTarget
+    {
+        private bool files;
+        private static System.Runtime.InteropServices.ComTypes.FORMATETC Format => new()
+        { cfFormat = 15, dwAspect = System.Runtime.InteropServices.ComTypes.DVASPECT.DVASPECT_CONTENT,
+            lindex = -1, tymed = System.Runtime.InteropServices.ComTypes.TYMED.TYMED_HGLOBAL };
+
+        public int DragEnter(System.Runtime.InteropServices.ComTypes.IDataObject data, uint keys, long point, ref uint effect)
+        { var format = Format; files = data.QueryGetData(ref format) == 0; return DragOver(keys, point, ref effect); }
+        public int DragOver(uint keys, long point, ref uint effect)
+        { effect = files && FileDrag.CanReceive ? effect & 2 : 0; return 0; }
+        public int DragLeave() { files = false; return 0; }
+        public int Drop(System.Runtime.InteropServices.ComTypes.IDataObject data, uint keys, long point, ref uint effect)
+        {
+            effect = 0;
+            try
+            {
+                if (!FileDrag.CanReceive) return 0;
+                var format = Format;
+                data.GetData(ref format, out var medium);
+                try
+                {
+                    var count = DragQueryFile(medium.unionmember, uint.MaxValue, null, 0);
+                    var paths = new string[count];
+                    for (uint i = 0; i < count; i++)
+                    {
+                        var text = new System.Text.StringBuilder((int)DragQueryFile(medium.unionmember, i, null, 0) + 1);
+                        DragQueryFile(medium.unionmember, i, text, (uint)text.Capacity); paths[i] = text.ToString();
+                    }
+                    Application.Current.Dispatcher.BeginInvoke(async () => await FileDrag.ReceiveAsync(folderId, paths));
+                }
+                finally { ReleaseStgMedium(ref medium); }
+            }
+            catch (COMException) { }
+            finally { files = false; }
+            return 0;
+        }
+        [DllImport("shell32.dll", CharSet = CharSet.Unicode)] private static extern uint DragQueryFile(IntPtr drop, uint index, System.Text.StringBuilder? path, uint length);
+        [DllImport("ole32.dll")] private static extern void ReleaseStgMedium(ref System.Runtime.InteropServices.ComTypes.STGMEDIUM medium);
+    }
 }

@@ -18,7 +18,7 @@ namespace Kage.Desktop;
 // 验收真实 HWND 命中、物理鼠标和 OLE；Explorer 重启前拒绝存在文件操作的会话。
 internal static class DesktopRecoveryChecks
 {
-    internal static int Run()
+    internal static int Run(bool frosted = false)
     {
         var fixture = Path.Combine(Path.GetTempPath(), "Kage-desktop-recovery-" + Guid.NewGuid().ToString("N"));
         var evidence = Path.Combine(Environment.CurrentDirectory, ".scratch", "desktop-folder", "verification");
@@ -45,6 +45,12 @@ internal static class DesktopRecoveryChecks
                 Check((await workspace.SelectRootAsync(Path.Combine(fixture, "内容"))).Succeeded, "选择隔离内容目录");
                 await workspace.CreateFolderAsync("恢复后可操作");
                 var firstId = workspace.Snapshot.Folders.Single().Folder.Id;
+                if (frosted)
+                {
+                    var style = workspace.BeginAppearance(firstId)!;
+                    style.SetFrosted(true); style.SetOpacity(0);
+                    Check((await workspace.ApplyAppearanceAsync(style)).Succeeded, "Explorer 恢复夹具保存完全透明毛玻璃");
+                }
                 await workspace.ToggleFolderAsync(firstId);
                 await workspace.CreateFolderAsync(retainedName);
                 var retainedId = workspace.Snapshot.Folders.Last().Folder.Id;
@@ -114,6 +120,7 @@ internal static class DesktopRecoveryChecks
                 await WaitUntil(() => runtime.DesktopAvailable && workspace.Snapshot.DesktopAvailable);
                 first = runtime.Headers[firstId];
                 Check(runtime.Headers.Count == 1 && workspace.Snapshot.Folders.Select(item => item.Folder).SequenceEqual(savedFolders), "恢复后无重复窗口且活动布局状态一致");
+                if (frosted) Check(first.FrostedVisible, "Explorer 实际重启后保存的毛玻璃背景自动重建");
                 Check(new WindowInteropHelper(runtime.Controller).Handle == controller && runtime.HotkeyRegistered == hotkeyRegistered
                     && !WindowsDesktop.RegisterHotKey(controller, 98, 0x4003, 0x4B), "控制器及原热键保留，不重复登记");
                 WindowsDesktop.UnregisterHotKey(controller, 98);
@@ -178,8 +185,8 @@ internal static class DesktopRecoveryChecks
         {
             await Task.Delay(250);
             header.UpdateLayout();
-            Check(WindowsDesktop.IsWindowVisible(header.Handle) && Hit(HeaderPoint(header)) == header.Handle, stage + "：头部实际命中");
-            Check(Hit(header.Contents.PointToScreen(new Point(25, 20))) == header.Handle, stage + "：展示部分实际命中");
+            Check(WindowsDesktop.IsWindowVisible(header.Handle) && header.OwnsInputWindow(Hit(HeaderPoint(header))), stage + "：头部实际命中");
+            Check(header.OwnsInputWindow(Hit(header.Contents.PointToScreen(new Point(25, 20)))), stage + "：展示部分实际命中");
             var toggle = VisualChildren<Button>(header.HeaderInput).Single();
             Click(toggle.PointToScreen(new Point(toggle.ActualWidth / 2, toggle.ActualHeight / 2)));
             await WaitUntil(() => !header.Record.Expanded);

@@ -18,6 +18,7 @@ internal sealed partial class FolderContents : DockPanel
     private readonly Button view;
     private readonly Guid id;
     private readonly ContentPointerInput input;
+    internal ContentPointerInput PointerInput => input;
     internal Grid Viewport { get; }
     internal Canvas Feedback { get; }
     internal bool GridView => snapshot?.Folder.Grid == true;

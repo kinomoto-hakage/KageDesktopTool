@@ -141,10 +141,20 @@ internal static class FrostedInputChecks
                 await Click(dialog.ApplyButton);
                 Require(dialog.IsVisible && !dialog.Interaction.Closed && workspace.Snapshot.Folders.Single().Folder == original
                     && header.FrostedVisible && dialog.Error.Text.Length != 0, "真实应用保存故障保留有效草稿、原正式记录并显示可重试提示");
+                await Click(dialog.Transparency); Key(0x23); await Task.Delay(150);
                 await Click(dialog.ApplyButton);
                 await Task.Delay(300);
                 Require(workspace.Snapshot.Folders.Single().Folder.Frosted && header.FrostedVisible,
                     "正式应用按钮保存逐 Folder 毛玻璃意图");
+                var transparentStart = header.HeaderInput.PointToScreen(new Point(header.HeaderInput.ActualWidth / 2, 5));
+                var transparentX = header.Record.X;
+                File.AppendAllText(log, $"空白输入位置 {transparentStart}，实际命中 {WindowsDesktop.WindowFromPoint(new WindowsDesktop.POINT { X = (int)transparentStart.X, Y = (int)transparentStart.Y })}，前景 {header.Handle}，背景 {header.Host}\n");
+                await FileMoveChecks.PhysicalDrag(transparentStart, new Point(transparentStart.X + 24, transparentStart.Y + 12));
+                await Task.Delay(350);
+                Require(header.Record.X == transparentX + 24 && !runtime.Interacting,
+                    $"100% 透明时真实空白头部拖动保存位置而不改变着色 alpha：{transparentX}->{header.Record.X}，交互 {runtime.Interacting}");
+                Require(((SolidColorBrush)header.Surface.Background).Color.A == 0,
+                    "空白输入不偷偷增加 100% 透明着色");
                 var saved = workspace.Snapshot.Folders.Single().Folder;
                 var focus = new Window { Title = "隔离其他应用", Width = 300, Height = 150, Left = 25, Top = 650,
                     Content = new TextBlock { Text = "保持前台焦点", FontSize = 20 } };

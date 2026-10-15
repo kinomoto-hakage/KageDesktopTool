@@ -12,12 +12,18 @@ namespace Kage.Desktop;
 
 internal static class FileDrag
 {
+    internal static bool CanReceive => !Runtime.Current.Exiting && (!Runtime.Current.Moving || Runtime.Current.DraggingFiles)
+        && !Runtime.Current.Interacting && !Runtime.Current.Workspace.Snapshot.RecoveryRequired;
+
+    internal static Task ReceiveAsync(Guid folderId, string[] paths) => paths.Length == 0 || !CanReceive
+        ? Task.CompletedTask : Runtime.Current.MoveFilesAsync(paths, MoveTarget.Folder(folderId));
+
     internal static void Receive(FolderHeader header)
     {
         header.AllowDrop = true;
         header.PreviewDragOver += (_, e) =>
         {
-            e.Effects = !Runtime.Current.Exiting && (!Runtime.Current.Moving || Runtime.Current.DraggingFiles) && !Runtime.Current.Interacting && !Runtime.Current.Workspace.Snapshot.RecoveryRequired && e.Data.GetDataPresent(DataFormats.FileDrop)
+            e.Effects = CanReceive && e.Data.GetDataPresent(DataFormats.FileDrop)
                 ? DragDropEffects.Move : DragDropEffects.None;
             e.Handled = true;
         };
@@ -27,7 +33,7 @@ internal static class FileDrag
             e.Effects = DragDropEffects.None;
             e.Handled = true;
             if (e.Data.GetData(DataFormats.FileDrop) is string[] paths && paths.Length != 0)
-                await Runtime.Current.MoveFilesAsync(paths, MoveTarget.Folder(header.FolderId));
+                await ReceiveAsync(header.FolderId, paths);
         };
     }
 
@@ -105,7 +111,7 @@ internal static class FileDrag
     {
         var window = WindowsDesktop.WindowFromPoint(point);
         foreach (var header in Runtime.Current.Headers.Values)
-            if (window == header.Handle || WindowsDesktop.IsChild(header.Handle, window)) return MoveTarget.Folder(header.FolderId);
+            if (header.OwnsInputWindow(window)) return MoveTarget.Folder(header.FolderId);
         return WindowsDesktop.ContentTargetAt(point);
     }
 

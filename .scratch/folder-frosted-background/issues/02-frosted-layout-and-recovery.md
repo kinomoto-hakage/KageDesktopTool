@@ -1,7 +1,7 @@
 # 02: 四向毛玻璃布局与桌面恢复
 
 Type: implementation
-Status: ready-for-agent
+Status: claimed
 Labels: ready-for-agent
 Publication: published
 Created: 2026-10-14
@@ -45,6 +45,8 @@ User stories: 12–14、17–26、53–58
 - 沿用现有四向输入、样式反馈与桌面恢复检查模式，确保检查操作的是正式功能入口。
 
 ## Comments
+
+- 2026-10-14：02 implementer 在 `codex/frosted-02` claim；沿用已批准的 `IDesktopWorkspace` 与真实 Windows 输入／宿主验证边界。
 
 - 2026-10-14：依据已确认规格准备草稿，尚未发布为正式实现 issue。
 - 2026-10-14：用户确认任务粒度、阻塞关系及验证边界；按批准草稿发布正式实现 issue，标记 ready-for-agent，依赖 01 完成。
