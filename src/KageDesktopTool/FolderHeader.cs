@@ -23,7 +23,9 @@ internal sealed class FolderHeader : Window
     internal Thumb ResizeGrip { get; }
     internal FolderRecord Record { get; private set; }
     internal bool FrostedVisible => backdrop != null && WindowsDesktop.Attached(Handle, backdrop.Handle);
-    internal string FrostedUnavailableReason => Record.Frosted && !FrostedVisible ? "当前环境无法显示毛玻璃" : "";
+    internal string FrostedUnavailableReason => !Record.Frosted ? ""
+        : Runtime.Current.FrostedEnvironment.Reason.Length != 0 ? Runtime.Current.FrostedEnvironment.Reason
+        : !FrostedVisible ? "当前环境无法显示毛玻璃" : "";
     private FrostedBackdrop? backdrop;
     private bool backdropFailed;
     private readonly Grid layout;
@@ -251,7 +253,7 @@ internal sealed class FolderHeader : Window
                 candidate?.Dispose(); backdropFailed = true;
             }
         }
-        else backdropFailed = Record.Frosted;
+        else backdropFailed = false;
         if (Host != IntPtr.Zero && previous != Host)
         {
             // 重新挂接后通过 WPF 重新登记 OLE 接收，不重复订阅输入事件。
@@ -293,8 +295,8 @@ internal sealed class FolderHeader : Window
         { HeaderPosition.Top => Record.Expanded ? "▴" : "▾", HeaderPosition.Bottom => Record.Expanded ? "▾" : "▴",
             HeaderPosition.Left => Record.Expanded ? "◂" : "▸", _ => Record.Expanded ? "▸" : "◂" };
         if (Handle == IntPtr.Zero) return;
-        if (!WindowsDesktop.Attached(Handle, Host) || !Record.Frosted && backdrop != null
-            || Record.Frosted && backdrop == null && !backdropFailed) Attach();
+        if (!WindowsDesktop.Attached(Handle, Host) || (!Record.Frosted || !Runtime.Current.SupportsFrosted) && backdrop != null
+            || Record.Frosted && Runtime.Current.SupportsFrosted && backdrop == null && !backdropFailed) Attach();
         if (!folder.Visible || Host == IntPtr.Zero) { Hide(); backdrop?.Hide(); return; }
         Show();
         positioning = true;
@@ -314,6 +316,14 @@ internal sealed class FolderHeader : Window
         var color = (Color)ColorConverter.ConvertFromString(value);
         color.A = (byte)Math.Round(opacity * 255);
         Surface.Background = new SolidColorBrush(color);
+    }
+
+    internal void RefreshFrostedEnvironment(FolderSnapshot? effective = null)
+    {
+        // 只有系统通知／定时轮询重试能力；鼠标移动不会不断重建失败资源。
+        backdropFailed = false;
+        if (effective != null) ApplyStyle(effective.Folder.Color, effective.Folder.Opacity);
+        if ((effective ?? geometry) is { } current) ApplyGeometry(current, effective != null || previewingGeometry);
     }
 
     private HeaderPosition? arrangedDirection;

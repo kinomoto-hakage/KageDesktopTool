@@ -23,7 +23,10 @@ internal sealed class Runtime : IDisposable
     internal IDesktopWorkspace Workspace { get; }
     // 能力事实来自 Windows 边界；隔离验收可注入不可用环境而不修改系统设置。
     private readonly Func<bool> frostedCapability;
-    internal bool SupportsFrosted => frostedCapability();
+    private readonly Func<FrostedEnvironment> readFrostedEnvironment;
+    private readonly WindowsFrostedEnvironment? systemFrostedEnvironment;
+    internal FrostedEnvironment FrostedEnvironment { get; private set; } = new();
+    internal bool SupportsFrosted => FrostedEnvironment.AllowsFrosted;
     internal OperationFeedback Feedback { get; }
     internal SelectionCoordinator Selection { get; } = new();
     private readonly WindowsSelectionInput? selectionInput;
@@ -70,10 +73,19 @@ internal sealed class Runtime : IDisposable
     internal MoveDialog? ActiveMove => moveDialog;
     internal BatchMoveResult? LastMoveResult { get; private set; }
 
-    internal Runtime(IDesktopWorkspace workspace, string? resultDirectory = null, Func<bool>? frostedCapability = null)
+    internal Runtime(IDesktopWorkspace workspace, string? resultDirectory = null, Func<bool>? frostedCapability = null,
+        Func<FrostedEnvironment>? frostedEnvironment = null)
     {
         Current = this;
         this.frostedCapability = frostedCapability ?? (() => OperatingSystem.IsWindowsVersionAtLeast(10, 0, 22000));
+        if (frostedEnvironment == null)
+        {
+            systemFrostedEnvironment = new WindowsFrostedEnvironment();
+            systemFrostedEnvironment.Changed += FrostedEnvironmentChanged;
+            readFrostedEnvironment = systemFrostedEnvironment.Read;
+        }
+        else readFrostedEnvironment = frostedEnvironment;
+        RefreshFrostedEnvironment();
         layoutInput.Tick += (_, _) =>
         {
             // Explorer 子窗口不一定持有键盘焦点，Esc 仍须取消当前捕获会话。
@@ -126,6 +138,7 @@ internal sealed class Runtime : IDisposable
         refresh = new DispatcherTimer { Interval = TimeSpan.FromSeconds(3) };
         refresh.Tick += async (_, _) =>
         {
+            RefreshFrostedEnvironment();
             await RefreshDesktopSessionAsync();
             await RefreshDisplayEnvironmentAsync();
         };
@@ -142,6 +155,28 @@ internal sealed class Runtime : IDisposable
         if (!disposed) Application.Current.Dispatcher.BeginInvoke(action);
     }
 
+    internal void RefreshFrostedEnvironment()
+    {
+        if (Exiting) return;
+        try
+        {
+            var environment = readFrostedEnvironment();
+            FrostedEnvironment = environment with { Available = environment.Available && frostedCapability() };
+        }
+        catch { FrostedEnvironment = new FrostedEnvironment(Available: false); }
+        // 效果刷新独立于目录、布局和输入刷新，保留最近显示的有效草稿／拖动几何。
+        foreach (var header in Headers.Values)
+        {
+            if (appearance is { Interaction.Closed: false } && appearance.Interaction.FolderId == header.FolderId
+                && Workspace.Snapshot.Folders.Any(folder => folder.Folder.Id == header.FolderId))
+                header.RefreshFrostedEnvironment(appearance.Interaction.Preview);
+            else header.RefreshFrostedEnvironment();
+        }
+        appearance?.RefreshFrostedStatus();
+    }
+
+    private void FrostedEnvironmentChanged() => Dispatch(RefreshFrostedEnvironment);
+
     private void RequestDisplayRefresh()
     {
         displayRefreshPending = true;
@@ -151,7 +186,11 @@ internal sealed class Runtime : IDisposable
     }
 
     private void SystemDisplayChanged(object? sender, EventArgs args) => Dispatch(RequestDisplayRefresh);
-    private void SystemPreferenceChanged(object sender, UserPreferenceChangedEventArgs args) => Dispatch(RequestDisplayRefresh);
+    private void SystemPreferenceChanged(object sender, UserPreferenceChangedEventArgs args) => Dispatch(() =>
+    {
+        RefreshFrostedEnvironment();
+        RequestDisplayRefresh();
+    });
 
     internal async Task<OperationResult?> RefreshDisplayEnvironmentAsync(bool report = false)
     {
@@ -512,6 +551,11 @@ internal sealed class Runtime : IDisposable
     {
         if (disposed) return;
         disposed = true;
+        if (systemFrostedEnvironment != null)
+        {
+            systemFrostedEnvironment.Changed -= FrostedEnvironmentChanged;
+            systemFrostedEnvironment.Dispose();
+        }
         selectionInput?.Dispose();
         Selection.Dispose();
         layoutInput.Stop();
