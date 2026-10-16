@@ -14,12 +14,15 @@ internal static class FrostedCaptureChecks
 {
     internal static int Run()
     {
-        var fixture = Path.Combine(Path.GetTempPath(), "Kage-frosted-capture-" + Guid.NewGuid().ToString("N"));
-        var evidence = Path.Combine(Environment.CurrentDirectory, ".scratch", "folder-frosted-background", "verification");
+        using var session = new DesktopCheckSession("frosted-capture");
+        var fixture = session.DirectoryPath;
+        var evidence = DesktopCheckSession.EvidenceFor("folder-frosted-background");
         Directory.CreateDirectory(fixture); Directory.CreateDirectory(evidence);
         var log = Path.Combine(evidence, "review-native-capture.txt"); File.WriteAllText(log, "审查回归：透明原生捕获丢失\n");
         var app = new Application { ShutdownMode = ShutdownMode.OnExplicitShutdown };
-        Runtime? runtime = null; var exit = 1; WindowsDesktop.GetCursorPos(out var cursor);
+        Runtime? runtime = null; var exit = 1;
+        session.Defer(() => runtime?.Dispose());
+        session.Defer(() => { ReleaseCapture(); mouse_event(4, 0, 0, 0, UIntPtr.Zero); });
         app.Startup += async (_, _) =>
         {
             try
@@ -36,9 +39,9 @@ internal static class FrostedCaptureChecks
                 var file = Path.Combine(workspace.Snapshot.Folders.Single().ActualPath, "保留.bin"); File.WriteAllBytes(file, [0, 42, 255]);
                 await workspace.RefreshAsync(WindowsDesktop.Displays());
                 var environment = new FrostedEnvironment();
-                FileMoveChecks.DesktopVisibility(true); runtime = new Runtime(workspace, frostedEnvironment: () => environment);
-                var header = runtime.Headers[id]; await Task.Delay(300); header.UpdateLayout();
-                var point = header.HeaderDivider.PointToScreen(new Point(20, 1));
+                session.ShowDesktop(); runtime = new Runtime(workspace, frostedEnvironment: () => environment);
+                var header = runtime.Headers[id];
+                var point = await DesktopCheckSession.InputPointAsync(runtime, header, header.HeaderDivider, new Point(20, 1));
                 Require(WindowsDesktop.WindowFromPoint(new WindowsDesktop.POINT { X = (int)point.X, Y = (int)point.Y }) == header.Host,
                     "分隔线透明像素真实命中原生背景");
                 SetCursorPos((int)point.X, (int)point.Y); await Task.Delay(80); mouse_event(2, 0, 0, 0, UIntPtr.Zero);
@@ -85,9 +88,7 @@ internal static class FrostedCaptureChecks
 
                 async Task<(double Height, IntPtr Host, int Feedback)> BeginResize()
                 {
-                    await app.Dispatcher.InvokeAsync(() => { }, System.Windows.Threading.DispatcherPriority.ContextIdle);
-                    header.UpdateLayout();
-                    var start = header.HeaderDivider.PointToScreen(new Point(20, 1));
+                    var start = await DesktopCheckSession.InputPointAsync(runtime, header, header.HeaderDivider, new Point(20, 1));
                     Require(WindowsDesktop.WindowFromPoint(new WindowsDesktop.POINT { X = (int)start.X, Y = (int)start.Y }) == header.Host,
                         "下一次缩放仍由真实透明 Thumb 命中背景");
                     var feedback = runtime.Feedback.Entries.Count(e => e.Title == "Folder 布局");
@@ -100,8 +101,8 @@ internal static class FrostedCaptureChecks
                 }
                 async Task Toggle(bool expanded)
                 {
-                    await app.Dispatcher.InvokeAsync(() => { }, System.Windows.Threading.DispatcherPriority.ContextIdle); header.UpdateLayout();
-                    var target = header.ExpandButton.PointToScreen(new Point(header.ExpandButton.ActualWidth / 2, header.ExpandButton.ActualHeight / 2));
+                    var target = await DesktopCheckSession.InputPointAsync(runtime, header, header.ExpandButton,
+                        new Point(header.ExpandButton.ActualWidth / 2, header.ExpandButton.ActualHeight / 2));
                     Require(header.OwnsInputWindow(WindowsDesktop.WindowFromPoint(new WindowsDesktop.POINT { X = (int)target.X, Y = (int)target.Y })), "后续展开按钮真实命中当前 Folder");
                     SetCursorPos((int)target.X, (int)target.Y); await Task.Delay(80); mouse_event(2, 0, 0, 0, UIntPtr.Zero); mouse_event(4, 0, 0, 0, UIntPtr.Zero);
                     await Wait(() => header.Record.Expanded == expanded, "捕获结束后真实展开／折叠继续可用");
@@ -109,21 +110,18 @@ internal static class FrostedCaptureChecks
             }
             catch (Exception error) { File.AppendAllText(log, "失败：" + error + "\n"); }
             finally
-            { ReleaseCapture(); mouse_event(4, 0, 0, 0, UIntPtr.Zero); runtime?.Dispose(); FileMoveChecks.DesktopVisibility(false); SetCursorPos(cursor.X, cursor.Y); app.Shutdown(); }
+            {
+                try { await session.RestoreAsync(); }
+                catch (Exception error) { exit = 1; File.AppendAllText(log, "恢复失败：" + error + "\n"); }
+                finally { app.Shutdown(); }
+            }
         };
-        try { app.Run(); }
-        finally
-        {
-            var full = Path.GetFullPath(fixture);
-            if (!full.StartsWith(Path.GetFullPath(Path.GetTempPath()), StringComparison.OrdinalIgnoreCase)
-                || !Path.GetFileName(full).StartsWith("Kage-frosted-capture-", StringComparison.Ordinal)) throw new IOException("拒绝清理隔离范围之外的目录。");
-            Directory.Delete(full, true);
-        }
+        app.Run();
         return exit;
         void Require(bool condition, string message)
         { if (!condition) throw new InvalidOperationException(message); File.AppendAllText(log, "通过：" + message + "\n"); }
         async Task Wait(Func<bool> condition, string message)
-        { for (var i = 0; i < 25 && !condition(); i++) await Task.Delay(50); Require(condition(), message); }
+        { await DesktopCheckSession.WaitAsync(condition, message, 25, 50); Require(true, message); }
     }
     private sealed class NoStartup : IStartupRegistration
     { public string LaunchCommand => "隔离检查不注册自启"; public string? ReadCommand() => null; public void WriteCommand(string? command) => throw new InvalidOperationException(); }

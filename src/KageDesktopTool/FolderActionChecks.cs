@@ -16,7 +16,7 @@ internal static class FolderActionChecks
     internal static int Run()
     {
         var fixture = Path.Combine(Path.GetTempPath(), "Kage-actions-" + Guid.NewGuid().ToString("N"));
-        var evidence = Path.Combine(Environment.CurrentDirectory, ".scratch", "desktop-folder", "verification");
+        var evidence = DesktopCheckSession.EvidenceFor("desktop-folder");
         Directory.CreateDirectory(fixture);
         Directory.CreateDirectory(evidence);
         var log = Path.Combine(evidence, "folder-actions-session.txt");

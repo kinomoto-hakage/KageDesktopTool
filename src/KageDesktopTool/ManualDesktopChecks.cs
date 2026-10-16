@@ -12,7 +12,7 @@ internal static class ManualDesktopChecks
     internal static int Run()
     {
         var fixture = Path.Combine(Path.GetTempPath(), "Kage-manual-desktop-" + Guid.NewGuid().ToString("N"));
-        var evidence = Path.Combine(Environment.CurrentDirectory, ".scratch", "desktop-folder", "verification");
+        var evidence = DesktopCheckSession.EvidenceFor("desktop-folder");
         Directory.CreateDirectory(evidence);
         var log = Path.Combine(evidence, "manual-desktop-session.txt");
         var app = new Application { ShutdownMode = ShutdownMode.OnExplicitShutdown };

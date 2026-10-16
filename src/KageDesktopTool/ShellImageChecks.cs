@@ -13,7 +13,7 @@ internal static class ShellImageChecks
     internal static int Run()
     {
         var fixture = Path.Combine(Path.GetTempPath(), "Kage-shell-images-" + Guid.NewGuid().ToString("N"));
-        var evidence = Path.Combine(Environment.CurrentDirectory, ".scratch", "desktop-folder", "verification");
+        var evidence = DesktopCheckSession.EvidenceFor("desktop-folder");
         Directory.CreateDirectory(fixture); Directory.CreateDirectory(evidence);
         var log = Path.Combine(evidence, "shell-image-check.txt");
         File.WriteAllText(log, "快捷方式资源、尺寸和缓存回归\n");

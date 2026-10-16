@@ -4,6 +4,8 @@
 **/__pycache__/
 .vs/
 local-backups/
+.scratch/check-runs/
+.scratch/manual-review/
 .scratch/desktop-folder/verification/
 .scratch/folder-grid-selection-and-header/verification/
 .scratch/folder-frosted-background/verification/

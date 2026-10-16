@@ -23,7 +23,7 @@ internal static class FileMoveChecks
         var prefix = "Kage-move-" + Guid.NewGuid().ToString("N");
         var desktop = Environment.GetFolderPath(Environment.SpecialFolder.DesktopDirectory);
         string[] desktopNames = [prefix + "-文件.bin", prefix + "-快捷方式.lnk", prefix + "-目录"];
-        var evidence = Path.Combine(Environment.CurrentDirectory, ".scratch", "desktop-folder", "verification");
+        var evidence = DesktopCheckSession.EvidenceFor("desktop-folder");
         Directory.CreateDirectory(fixture);
         Directory.CreateDirectory(evidence);
         var log = Path.Combine(evidence, "file-move-session.txt");

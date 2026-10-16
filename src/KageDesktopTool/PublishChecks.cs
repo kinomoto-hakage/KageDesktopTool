@@ -9,7 +9,7 @@ internal static class PublishChecks
 {
     internal static int Run()
     {
-        var evidence = Path.Combine(Environment.CurrentDirectory, ".scratch", "desktop-folder", "verification");
+        var evidence = DesktopCheckSession.EvidenceFor("desktop-folder");
         Directory.CreateDirectory(evidence);
         var log = Path.Combine(evidence, "publish-package.txt");
         try

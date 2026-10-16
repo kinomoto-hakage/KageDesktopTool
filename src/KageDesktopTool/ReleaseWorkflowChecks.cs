@@ -14,7 +14,7 @@ internal static class ReleaseWorkflowChecks
     internal static async Task<int> Run()
     {
         var fixture = Path.Combine(Path.GetTempPath(), "Kage-release-" + Guid.NewGuid().ToString("N"));
-        var evidence = Path.Combine(Environment.CurrentDirectory, ".scratch", "desktop-folder", "verification");
+        var evidence = DesktopCheckSession.EvidenceFor("desktop-folder");
         Directory.CreateDirectory(evidence);
         Directory.CreateDirectory(fixture);
         var log = Path.Combine(evidence, "release-workflow.txt");

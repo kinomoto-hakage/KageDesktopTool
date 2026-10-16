@@ -18,19 +18,33 @@ internal static class FrostedCombinedChecks
 {
     internal static int Run()
     {
-        var fixture = Path.Combine(Path.GetTempPath(), "Kage-frosted-combined-" + Guid.NewGuid().ToString("N"));
-        var evidence = Path.Combine(Environment.CurrentDirectory, ".scratch", "folder-frosted-background", "verification");
+        using var session = new DesktopCheckSession("frosted-combined");
+        var fixture = session.DirectoryPath;
+        var evidence = DesktopCheckSession.EvidenceFor("folder-frosted-background");
         Directory.CreateDirectory(fixture); Directory.CreateDirectory(evidence);
         var log = Path.Combine(evidence, "02-03-combined.txt"); File.WriteAllText(log, "四向＋真实系统限制＋Explorer 生命周期组合\n");
         var app = new Application { ShutdownMode = ShutdownMode.OnExplicitShutdown };
         Runtime? runtime = null; StyleDialog? dialog = null; Window? patternWindow = null; var exit = 1;
-        WindowsDesktop.GetCursorPos(out var cursor);
+        session.Defer(() => patternWindow?.Close());
+        session.Defer(() => runtime?.Dispose());
+        session.Defer(() => dialog?.Close());
         app.Startup += async (_, _) =>
         {
             using var key = Registry.CurrentUser.OpenSubKey(@"Software\Microsoft\Windows\CurrentVersion\Themes\Personalize", true)!;
             var transparency = key.GetValue("EnableTransparency");
             var contrast = new HighContrast { Size = (uint)Marshal.SizeOf<HighContrast>() };
             var contrastChanged = false;
+            session.Defer(async () =>
+            {
+                if (contrastChanged && !await Task.Run(() => SystemParametersInfo(0x43, contrast.Size, ref contrast, 3)))
+                    throw new InvalidOperationException("恢复原高对比度设置失败。");
+            });
+            session.Defer(async () =>
+            {
+                if (transparency == null) key.DeleteValue("EnableTransparency", false); else key.SetValue("EnableTransparency", transparency, RegistryValueKind.DWord);
+                await Task.Run(Broadcast);
+                await Task.Delay(1000);
+            });
             try
             {
                 Require(SystemParametersInfo(0x42, contrast.Size, ref contrast, 0), "读取高对比度原设置");
@@ -43,12 +57,14 @@ internal static class FrostedCombinedChecks
                     area.Y + 150 + i / 2 * 520 + (direction == HeaderPosition.Bottom ? 270 : 0),
                     HeaderWidth: 240, BodyHeight: 180, Expanded: true, HeaderPosition: direction,
                     NameOrientation: i % 2 == 0 ? NameOrientation.Horizontal : NameOrientation.Vertical, Color: "#426A7F", Opacity: .4, Frosted: i != 3)).ToArray();
+                records = DesktopCheckSession.PlaceRecords(records, area, new Rect(area.X + 1580, area.Y + 60, 800, 1320));
+                File.AppendAllText(log, "避开已有实例后的夹具锚点：" + string.Join("；", records.Select(r => $"{r.Name}={r.X},{r.Y}")) + "\n");
                 foreach (var record in records)
                 { Directory.CreateDirectory(Path.Combine(root, record.Name)); File.WriteAllBytes(Path.Combine(root, record.Name, "原内容.bin"), [0, 42, 255]); }
                 var store = new JsonWorkspaceStore(Path.Combine(fixture, "状态")); store.Save(new WorkspaceState { Root = root, Folders = records });
                 IDesktopWorkspace workspace = new DesktopWorkspace(store, new NoStartup());
                 Require((await workspace.InitializeAsync(displays)).Succeeded, "真实四向组合状态加载");
-                FileMoveChecks.DesktopVisibility(true);
+                session.ShowDesktop();
                 runtime = new Runtime(workspace);
                 await Wait(() => runtime.Headers.Values.Count(h => h.FrostedVisible) == 3, "三个正式开启实例显示毛玻璃，正式关闭实例保持关闭");
                 var previewId = records[3].Id;
@@ -107,11 +123,11 @@ internal static class FrostedCombinedChecks
                     var points = workspace.Snapshot.Folders.Select(f => FolderGeometry.For(f.Folder, f.DisplayScale))
                         .Select(b => new Point(b.X + b.Width * .65, b.Y + b.Height * .65)).ToArray();
                     pattern.Background = Brushes.DarkBlue; await Task.Delay(400);
-                    var blue = points.Select(Pixel).ToArray(); await Screenshot("02-03-" + stage + "蓝.png");
+                    var blue = points.Select(DesktopCheckSession.Pixel).ToArray(); await Screenshot("02-03-" + stage + "蓝.png");
                     pattern.Background = Brushes.DarkGreen; await Task.Delay(400);
-                    var green = points.Select(Pixel).ToArray(); await Screenshot("02-03-" + stage + "绿.png");
+                    var green = points.Select(DesktopCheckSession.Pixel).ToArray(); await Screenshot("02-03-" + stage + "绿.png");
                     File.AppendAllText(log, $"{stage}实际像素：{string.Join("；", blue.Zip(green, (b, g) => $"{b.R},{b.G},{b.B}->{g.R},{g.G},{g.B}"))}\n");
-                    return blue.Zip(green, (b, g) => g.G > b.G + 15 && g.B < b.B - 15).All(v => v);
+                    return DesktopCheckSession.FollowsBlueToGreen(blue, green);
                 }
                 var live = await LivePixels("高对比恢复");
                 Require(live, "高对比解除后四向实际模糊继续跟随真实动态背景，不能仅以HWND挂接判定恢复");
@@ -124,60 +140,36 @@ internal static class FrostedCombinedChecks
             catch (Exception error) { File.AppendAllText(log, "失败：" + error + "\n"); await Screenshot("02-03-combined-failure.png", false); }
             finally
             {
-                if (transparency == null) key.DeleteValue("EnableTransparency", false); else key.SetValue("EnableTransparency", transparency, RegistryValueKind.DWord);
-                await Task.Run(Broadcast);
-                if (contrastChanged) await Task.Run(() => SystemParametersInfo(0x43, contrast.Size, ref contrast, 3));
-                await Task.Delay(1000);
-                File.AppendAllText(log, $"最终恢复：透明注册值 {key.GetValue("EnableTransparency")}，实际透明 {new UISettings().AdvancedEffectsEnabled}，高对比 {SystemParameters.HighContrast}，现代节能 {runtime?.FrostedEnvironment.EnergySaver}。\n");
-                dialog?.Close(); runtime?.Dispose(); patternWindow?.Close(); FileMoveChecks.DesktopVisibility(false); SetCursorPos(cursor.X, cursor.Y); app.Shutdown();
+                try
+                {
+                    await session.RestoreAsync();
+                    File.AppendAllText(log, $"最终恢复：透明注册值 {key.GetValue("EnableTransparency")}，实际透明 {new UISettings().AdvancedEffectsEnabled}，高对比 {SystemParameters.HighContrast}，现代节能 {runtime?.FrostedEnvironment.EnergySaver}。\n");
+                }
+                catch (Exception error) { exit = 1; File.AppendAllText(log, "恢复失败：" + error + "\n"); }
+                finally { app.Shutdown(); }
             }
         };
-        try { app.Run(); }
-        finally
-        {
-            var full = Path.GetFullPath(fixture);
-            if (!full.StartsWith(Path.GetFullPath(Path.GetTempPath()), StringComparison.OrdinalIgnoreCase)
-                || !Path.GetFileName(full).StartsWith("Kage-frosted-combined-", StringComparison.Ordinal)) throw new IOException("拒绝清理隔离范围外目录。");
-            Directory.Delete(full, true);
-        }
+        app.Run();
         return exit;
         void Require(bool condition, string message)
         { if (!condition) throw new InvalidOperationException(message); File.AppendAllText(log, "通过：" + message + "\n"); }
         async Task Wait(Func<bool> condition, string message)
-        { for (var attempt = 0; attempt < 100 && !condition(); attempt++) await Task.Delay(100); Require(condition(), message); }
+        { await DesktopCheckSession.WaitAsync(condition, message); Require(true, message); }
         async Task Screenshot(string name, bool requireVisible = true)
         {
-            bool Visible(FolderHeader header)
+            if (requireVisible && runtime != null)
             {
-                var point = header.HeaderInput.PointToScreen(new Point(20, 20));
-                return header.OwnsInputWindow(WindowsDesktop.WindowFromPoint(new WindowsDesktop.POINT { X = (int)point.X, Y = (int)point.Y }));
-            }
-            var stable = 0;
-            for (var attempt = 0; requireVisible && runtime != null && attempt < 30 && stable < 3; attempt++)
-            {
-                // Explorer 重开原目录窗口可能盖住桌面；截图前实际核对四向命中，
-                // 显露桌面后恢复当前样式窗口，避免把遮挡画面当作视觉验收。
-                if (runtime.Headers.Values.All(Visible)) stable++;
-                else
+                await DesktopCheckSession.CaptureAsync(Path.Combine(evidence, name), () => runtime.Headers.Values, () =>
                 {
-                    stable = 0;
-                    FileMoveChecks.DesktopVisibility(true);
+                    session.ShowDesktop();
                     if (dialog != null) { dialog.WindowState = WindowState.Normal; dialog.Show(); }
-                }
-                await Task.Delay(200);
+                });
+                Require(true, "截图前四向实际前景均无遮挡：" + name);
             }
-            if (requireVisible && runtime != null) Require(stable == 3 && runtime.Headers.Values.All(Visible), "截图前四向实际前景均无遮挡：" + name);
-            var screen = System.Windows.Forms.SystemInformation.VirtualScreen;
-            using var bitmap = new System.Drawing.Bitmap(screen.Width, screen.Height); using var graphics = System.Drawing.Graphics.FromImage(bitmap);
-            graphics.CopyFromScreen(screen.Left, screen.Top, 0, 0, screen.Size); bitmap.Save(Path.Combine(evidence, name));
+            else DesktopCheckSession.SaveScreenshot(Path.Combine(evidence, name));
         }
     }
     private static void Broadcast() => SendMessageTimeout(new IntPtr(0xffff), 0x1A, IntPtr.Zero, "ImmersiveColorSet", 2, 2000, out _);
-    private static System.Drawing.Color Pixel(Point point)
-    {
-        using var bitmap = new System.Drawing.Bitmap(1, 1); using var graphics = System.Drawing.Graphics.FromImage(bitmap);
-        graphics.CopyFromScreen((int)point.X, (int)point.Y, 0, 0, bitmap.Size); return bitmap.GetPixel(0, 0);
-    }
     [StructLayout(LayoutKind.Sequential)] private struct HighContrast { internal uint Size, Flags; internal IntPtr Scheme; }
     private sealed class NoStartup : IStartupRegistration
     { public string LaunchCommand => "隔离检查不注册自启"; public string? ReadCommand() => null; public void WriteCommand(string? command) => throw new InvalidOperationException(); }

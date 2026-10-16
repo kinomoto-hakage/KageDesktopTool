@@ -19,7 +19,7 @@ internal static class DisplayDpiChecks
     internal static int Run(bool frosted = false)
     {
         var fixture = Path.Combine(Path.GetTempPath(), "Kage-display-dpi-" + Guid.NewGuid().ToString("N"));
-        var evidence = Path.Combine(Environment.CurrentDirectory, ".scratch", "desktop-folder", "verification");
+        var evidence = DesktopCheckSession.EvidenceFor("desktop-folder");
         Directory.CreateDirectory(evidence);
         Directory.CreateDirectory(fixture);
         var log = Path.Combine(evidence, "display-dpi-session.txt");

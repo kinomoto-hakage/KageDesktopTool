@@ -1,0 +1,22 @@
+name: Windows 构建与业务检查
+
+on:
+  push:
+  pull_request:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  checks:
+    runs-on: windows-latest
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@v6
+      - uses: actions/setup-dotnet@v6
+        with:
+          dotnet-version: '10.0.x'
+      - name: 检查清单、正式代码诊断、业务行为与 Windows 构建
+        shell: pwsh
+        run: ./tools/windows/verify-ci.ps1

@@ -22,7 +22,7 @@ internal static partial class ContentInputChecks
     internal static int Run(bool identityOnly = false, bool refreshOnly = false, bool menuPlacementOnly = false, bool menuLatencyOnly = false, bool gridNamesOnly = false, bool selectionOnly = false, bool frosted = false, bool doubleClickOnly = false)
     {
         var fixture = Path.Combine(Path.GetTempPath(), "Kage-input-" + Guid.NewGuid().ToString("N"));
-        var evidence = Path.Combine(Environment.CurrentDirectory, ".scratch", "desktop-folder", "verification");
+        var evidence = DesktopCheckSession.EvidenceFor("desktop-folder");
         Directory.CreateDirectory(fixture);
         Directory.CreateDirectory(evidence);
         var log = Path.Combine(evidence, gridNamesOnly ? "content-grid-names-session.txt" : menuLatencyOnly ? "content-menu-latency-session.txt" : menuPlacementOnly ? "content-menu-placement-session.txt" : refreshOnly ? "content-refresh-session.txt" : identityOnly ? "content-identity-session.txt" : "content-input-session.txt");
@@ -533,7 +533,7 @@ internal static partial class ContentInputChecks
             using var bitmap = new System.Drawing.Bitmap(screen.Width, screen.Height);
             using var graphics = System.Drawing.Graphics.FromImage(bitmap);
             graphics.CopyFromScreen(screen.Left, screen.Top, 0, 0, screen.Size);
-            bitmap.Save(Path.Combine(Environment.CurrentDirectory, ".scratch", "desktop-folder", "verification", "content-hit-failure.png"));
+            bitmap.Save(Path.Combine(DesktopCheckSession.EvidenceFor("desktop-folder"), "content-hit-failure.png"));
             throw new IOException($"鼠标未命中夹具窗口：{point}，期望 HWND={header.Handle}，实际 HWND={hwnd}，请先结束其他桌面覆盖窗口。");
         }
     }

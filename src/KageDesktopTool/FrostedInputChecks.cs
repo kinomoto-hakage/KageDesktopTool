@@ -17,7 +17,7 @@ internal static class FrostedInputChecks
     internal static int Run(bool unavailable = false)
     {
         var fixture = Path.Combine(Path.GetTempPath(), "Kage-frosted-" + Guid.NewGuid().ToString("N"));
-        var evidence = Path.Combine(Environment.CurrentDirectory, ".scratch", "folder-frosted-background", "verification");
+        var evidence = DesktopCheckSession.EvidenceFor("folder-frosted-background");
         Directory.CreateDirectory(fixture);
         Directory.CreateDirectory(evidence);
         var log = Path.Combine(evidence, unavailable ? "01-不可用.txt" : "01-正式输入.txt");
@@ -230,10 +230,7 @@ internal static class FrostedInputChecks
         }
         void Screenshot(string name)
         {
-            using var bitmap = new System.Drawing.Bitmap(2560, 1600);
-            using var graphics = System.Drawing.Graphics.FromImage(bitmap);
-            graphics.CopyFromScreen(0, 0, 0, 0, bitmap.Size);
-            bitmap.Save(Path.Combine(evidence, name));
+            DesktopCheckSession.SaveScreenshot(Path.Combine(evidence, name));
         }
     }
 
@@ -252,10 +249,7 @@ internal static class FrostedInputChecks
     }
     private static System.Drawing.Color ScreenPixel(int x, int y)
     {
-        using var bitmap = new System.Drawing.Bitmap(1, 1);
-        using var graphics = System.Drawing.Graphics.FromImage(bitmap);
-        graphics.CopyFromScreen(x, y, 0, 0, bitmap.Size);
-        return bitmap.GetPixel(0, 0);
+        return DesktopCheckSession.Pixel(new Point(x, y));
     }
     private static void Shortcut(string path, string marker)
     {

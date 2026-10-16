@@ -17,7 +17,7 @@ internal static partial class ContentInputChecks
     internal static int RunFourWay(bool frosted = false, HeaderPosition? onlyDirection = null)
     {
         var fixture = Path.Combine(Path.GetTempPath(), "Kage-four-way-" + Guid.NewGuid().ToString("N"));
-        var evidence = Path.Combine(Environment.CurrentDirectory, ".scratch", frosted ? "folder-frosted-background" : "folder-grid-selection-and-header", "verification");
+        var evidence = DesktopCheckSession.EvidenceFor(frosted ? "folder-frosted-background" : "folder-grid-selection-and-header");
         Directory.CreateDirectory(fixture); Directory.CreateDirectory(evidence);
         var log = Path.Combine(evidence, frosted ? "02-four-way-input.txt" : "four-way-input.txt");
         File.WriteAllText(log, "四向头部真实 Windows 输入验收\n");
@@ -296,7 +296,7 @@ internal static partial class ContentInputChecks
     internal static int RunFourWayRestart(bool frosted = false)
     {
         var fixture = Path.Combine(Path.GetTempPath(), "Kage-four-way-restart-" + Guid.NewGuid().ToString("N"));
-        var evidence = Path.Combine(Environment.CurrentDirectory, ".scratch", frosted ? "folder-frosted-background" : "folder-grid-selection-and-header", "verification");
+        var evidence = DesktopCheckSession.EvidenceFor(frosted ? "folder-frosted-background" : "folder-grid-selection-and-header");
         Directory.CreateDirectory(fixture); Directory.CreateDirectory(evidence);
         var log = Path.Combine(evidence, frosted ? "02-four-way-restart.txt" : "four-way-restart.txt"); File.WriteAllText(log, "四向实际窗口重建与重启验收\n");
         var app = new Application { ShutdownMode = ShutdownMode.OnExplicitShutdown };

@@ -16,6 +16,7 @@
     <ApplicationIcon>Assets/app-d.ico</ApplicationIcon>
   </PropertyGroup>
   <ItemGroup>
+    <Content Include="../../tools/windows/checks.json" Link="checks.json" CopyToOutputDirectory="PreserveNewest" CopyToPublishDirectory="PreserveNewest" />
     <PackageReference Include="Microsoft.WindowsAppSDK" Version="1.8.260921001" />
     <Content Include="../../docs/使用说明.md" Link="使用说明.md" CopyToPublishDirectory="PreserveNewest" />
     <ProjectReference Include="../Kage.Workspace/Kage.Workspace.csproj" />

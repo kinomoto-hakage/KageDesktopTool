@@ -18,7 +18,7 @@ internal static class FrostedLifecycleChecks
     internal static int Run(bool draggingOnly = false)
     {
         var fixture = Path.Combine(Path.GetTempPath(), "Kage-frosted-lifecycle-" + Guid.NewGuid().ToString("N"));
-        var evidence = Path.Combine(Environment.CurrentDirectory, ".scratch", "folder-frosted-background", "verification");
+        var evidence = DesktopCheckSession.EvidenceFor("folder-frosted-background");
         Directory.CreateDirectory(fixture); Directory.CreateDirectory(evidence);
         var log = Path.Combine(evidence, draggingOnly ? "02-drag-resources.txt" : "02-lifecycle.txt");
         File.WriteAllText(log, "四向毛玻璃真实窗口与资源观察\n");

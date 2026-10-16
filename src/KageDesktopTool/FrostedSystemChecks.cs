@@ -19,7 +19,7 @@ internal static class FrostedSystemChecks
     {
         var fixture = Path.Combine(Path.GetTempPath(), "Kage-frosted-system-" + Guid.NewGuid().ToString("N"));
         Directory.CreateDirectory(fixture);
-        var evidence = Path.Combine(Environment.CurrentDirectory, ".scratch", "folder-frosted-background", "verification");
+        var evidence = DesktopCheckSession.EvidenceFor("folder-frosted-background");
         Directory.CreateDirectory(evidence);
         var log = Path.Combine(evidence, realEnergy ? "03-真实节能模式.txt" : realSettings ? "03-真实系统设置.txt" : "03-确定性轨迹.txt");
         File.WriteAllText(log, realEnergy ? "真实 Windows 节能设置：物理鼠标切换系统设置控件。\n" : realSettings ? "真实 Windows 系统设置：注册表透明设置＋系统广播；高对比度 SPI。\n" : "确定性 Windows 平台事实，经正式 Runtime / Folder / StyleDialog。\n");

@@ -22,7 +22,7 @@ internal static class SessionChecks
     {
         var fixture = Path.Combine(Path.GetTempPath(), "Kage-session-" + Guid.NewGuid().ToString("N"));
         Directory.CreateDirectory(fixture);
-        var evidence = Path.Combine(Environment.CurrentDirectory, ".scratch", "desktop-folder", "verification");
+        var evidence = DesktopCheckSession.EvidenceFor("desktop-folder");
         Directory.CreateDirectory(evidence);
         var log = Path.Combine(evidence, "windows-session.txt");
         var exit = 1;
