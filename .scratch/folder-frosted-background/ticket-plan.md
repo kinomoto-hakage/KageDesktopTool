@@ -1,7 +1,7 @@
 # Folder 毛玻璃背景已确认任务划分
 
-Status: approved
-Tickets: published
+Status: resolved
+Tickets: resolved
 Created: 2026-10-14
 Approved: 2026-10-14
 Published: 2026-10-14
@@ -45,5 +45,8 @@ Test-seam-review: approved（任务粒度、阻塞关系及验证边界均已确
 
 ## Comments
 
+
 - 2026-10-14：用户调用 to-tickets；已准备三张完整功能票草稿，等待确认粒度、阻塞关系和沿用的验证边界。
 - 2026-10-14：用户回复“确认”；按已批准划分发布三张独立实现 issue，全部标记 ready-for-agent，并登记验证边界已确认。尚未启动程序实现。
+
+- 2026-10-16：01、02、03 均已 resolved，合入 `codex/folder-frosted-background`。02 完成最终四向、多实例、真实系统限制及 Explorer 组合验收；审查修复提交为 `ca6ba42`，两轴复核均无遗留。详见 [审查记录](review.md)。批准和发布记录作为历史保留。

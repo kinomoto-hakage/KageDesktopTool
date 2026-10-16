@@ -1,7 +1,7 @@
 # Folder 毛玻璃背景与启用开关规格
 
 Type: spec
-Status: ready-for-agent
+Status: resolved
 Labels: ready-for-agent
 Approved: 2026-10-14（产品需求已确认）
 Published: 2026-10-14
@@ -196,5 +196,8 @@ Test-seam-review: approved（2026-10-14，用户确认任务划分时一并确�
 
 ## Comments
 
+
 - 2026-10-14：用户确认九项产品决策后调用 to-spec；本轮发布本地规格，验证边界提交确认。
 - 2026-10-14：用户确认三张任务的粒度、依赖及验证边界；登记 Test-seam-review 为 approved。产品行为、验收要求及规格状态保持原样。
+
+- 2026-10-16：三张实现票据已完成并集成，双轴审查发现均修复并复核关闭。真实背景、样式事务、透明区域输入、四向、系统暂停／恢复、Explorer 与资源组合验收完成；高对比恢复已通过受控动态像素核对。详见 [审查与收尾记录](review.md)、[01 验证](../../docs/verification/frosted-01-style-and-persistence.md)、[02 验证](../../docs/verification/frosted-02-layout-and-recovery.md)及 [03 验证](../../docs/verification/frosted-03-system-fallback.md)。当前仅为集成分支交付，尚未发布；多屏、混合 DPI 等未覆盖项按验证记录保留，不扩大实机结论。
