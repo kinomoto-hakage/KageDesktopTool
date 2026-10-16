@@ -20,7 +20,9 @@ public static class Program
         if (args.Contains("--frosted-content-check")) return ContentInputChecks.Run(frosted: true);
         if (args.Contains("--frosted-ole-check")) return FileMoveChecks.Run(true);
         if (args.Contains("--frosted-desktop-recovery-check")) return DesktopRecoveryChecks.Run(true);
-        if (args.Contains("--frosted-lifecycle-check")) return FrostedLifecycleChecks.Run();
+        if (args.Contains("--frosted-lifecycle-check")) return FrostedLifecycleChecks.Run(args.Contains("--drag-only"));
+        if (args.Contains("--frosted-combined-check")) return FrostedCombinedChecks.Run();
+        if (args.Contains("--frosted-dpi-check")) return DisplayDpiChecks.Run(true);
         if (args.Length == 2 && args[0] == "--selection-target-check") return ContentInputChecks.SelectionTarget(args[1]);
         if (args.Contains("--publish-check")) return PublishChecks.Run();
         if (args.Contains("--tray-icon-check")) return TrayIconChecks.Run();

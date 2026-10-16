@@ -141,6 +141,17 @@ internal sealed class FolderHeader : Window
         };
         PreviewMouseDown += (_, e) =>
         {
+            if (!nativeNameHover || Mouse.Captured != title) return;
+            WindowsDesktop.GetCursorPos(out var cursor);
+            if (InputHitTest(PointFromScreen(new Point(cursor.X, cursor.Y))) == title) return;
+            // 光标移动与按下可紧邻到达；按实际落点释放旧 hover，不能将这次
+            // 内容点击当作名称点击。继续同一个正式输入入口，不重发 routed event。
+            nativeNameHover = false; Mouse.Capture(null); e.Handled = true;
+            if (e.ChangedButton is MouseButton.Left or MouseButton.Right)
+                BackdropInput(e.ChangedButton == MouseButton.Right ? 0x204u : 0x201u, IntPtr.Zero, backdrop?.Handle ?? Handle);
+        };
+        PreviewMouseDown += (_, e) =>
+        {
             var hit = e.OriginalSource as DependencyObject;
             var selection = Runtime.Current.Selection;
             if (FindParent<FolderContents>(hit) == Contents
@@ -458,9 +469,10 @@ internal sealed class FolderHeader : Window
         Surface.Background = new SolidColorBrush(color);
     }
 
-    internal void RefreshFrostedEnvironment(FolderSnapshot? effective = null)
+    internal void RefreshFrostedEnvironment(FolderSnapshot? effective = null, bool recreateBackdrop = false)
     {
         // 只有系统通知／定时轮询重试能力；鼠标移动不会不断重建失败资源。
+        if (recreateBackdrop && backdrop != null) FallBackFromBackdrop();
         backdropFailed = false;
         if (effective != null) ApplyStyle(effective.Folder.Color, effective.Folder.Opacity);
         if ((effective ?? geometry) is { } current) ApplyGeometry(current, effective != null || previewingGeometry);

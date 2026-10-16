@@ -63,6 +63,22 @@ internal static partial class ContentInputChecks
                     if (element == header.ExpandButton) await WaitUntil(() => Saved().Expanded != expanded);
                     await Task.Delay(200);
                 }
+                async Task ScrollItem(ListBoxItem item)
+                {
+                    await WaitUntil(() => !runtime.Interacting);
+                    // 原地头部点击的提交和 ScrollIntoView 都会排队布局；输入前
+                    // 等待当前布局落定，再核对实际可见图像中心仍属于目标项目。
+                    await app.Dispatcher.InvokeAsync(() => { }, System.Windows.Threading.DispatcherPriority.ContextIdle);
+                    header.Contents.Items.ScrollIntoView(item);
+                    await app.Dispatcher.InvokeAsync(() => { }, System.Windows.Threading.DispatcherPriority.ContextIdle);
+                    header.UpdateLayout();
+                    var image = (Image)((Grid)item.Content).Children[0];
+                    var point = Center(image);
+                    var local = header.Contents.Viewport.PointFromScreen(point);
+                    Require(header.Contents.Items.Items.Contains(item) && new Rect(header.Contents.Viewport.RenderSize).Contains(local)
+                        && FolderHeader.FindParent<ListBoxItem>(header.InputHitTest(header.PointFromScreen(point)) as DependencyObject) == item,
+                        "真实内容输入前目标实例、可见视口与实际命中一致");
+                }
                 void Bounds()
                 {
                     WindowsDesktop.GetWindowRect(header.Handle, out var rect);
@@ -147,7 +163,7 @@ internal static partial class ContentInputChecks
                     await workspace.SetContentViewAsync(target.Id, true, 16, ContentSortKey.Name, false); runtime.Render();
                     await header.Contents.IconsLoaded; header.UpdateLayout();
                     var item = header.Contents.Items.Items.Cast<ListBoxItem>().Single(i => (string)i.Tag == longLink);
-                    header.Contents.Items.ScrollIntoView(item); header.UpdateLayout();
+                    await ScrollItem(item);
                     await Click((Image)((Grid)item.Content).Children[0]);
                     Require(header.Contents.SelectedPaths().SequenceEqual(new[] { longLink })
                         && Texts(header.Contents.Items).Any(t => t.IsVisible && t.TextTrimming == TextTrimming.None),
@@ -158,7 +174,7 @@ internal static partial class ContentInputChecks
                     await Click(header.NameDisplay); Require(header.Contents.SelectedPaths().Length == 0, "四向头部真实点击清除选择和全文");
                     var lastItem = header.Contents.Items.Items.Cast<ListBoxItem>().Single(i => (string)i.Tag == lastLink);
                     Require(header.Contents.Items.Items.Cast<ListBoxItem>().Last() == lastItem, "全文末端夹具位于真实排序最后一项");
-                    header.Contents.Items.ScrollIntoView(lastItem); header.UpdateLayout();
+                    await ScrollItem(lastItem);
                     var noFullPixels = Capture();
                     await Click((Image)((Grid)lastItem.Content).Children[0]); header.UpdateLayout();
                     Require(header.Contents.SelectedPaths().SequenceEqual(new[] { lastLink }), $"全文末项真实点击选择：{direction}，{string.Join("；", header.Contents.SelectedPaths())}");
@@ -189,12 +205,12 @@ internal static partial class ContentInputChecks
                     Require(header.Contents.SelectedPaths().SequenceEqual(new[] { lastLink }), "四向全文末端真实点击仍命中当前项：" + string.Join("；", header.Contents.SelectedPaths()));
                     Render(header, Path.Combine(evidence, $"full-name-tail-{direction}.png"));
                     await Click(header.NameDisplay);
-                    header.Contents.Items.ScrollIntoView(item); header.UpdateLayout();
+                    await ScrollItem(item);
                     await Click((Image)((Grid)item.Content).Children[0]);
                     await MouseAt(new Point(area.X + 20, area.Y + area.Height - 20), false); await Task.Delay(180);
                     Require(header.Contents.SelectedPaths().Length == 0
                         && !Texts(header.Contents.Items).Any(t => t.IsVisible && t.TextTrimming == TextTrimming.None), "四向视口外部真实点击清除选择及全文");
-                    header.Contents.Items.ScrollIntoView(item); header.UpdateLayout();
+                    await ScrollItem(item);
                     var icon = (Image)((Grid)item.Content).Children[0]; CheckHit(header, Center(icon));
                     await MouseAt(Center(icon), true); await WaitUntil(() => File.Exists(marker));
                     Require(File.Exists(marker), "四向视口真实双击打开隔离快捷方式"); File.Delete(marker);

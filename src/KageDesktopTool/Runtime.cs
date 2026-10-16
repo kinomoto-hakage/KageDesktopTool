@@ -59,6 +59,7 @@ internal sealed class Runtime : IDisposable
     private DisplayArea[] displayEnvironment = WindowsDesktop.Displays();
     private LayoutInteraction? activeInteraction;
     private readonly DispatcherTimer layoutInput = new() { Interval = TimeSpan.FromMilliseconds(25) };
+    private readonly DispatcherTimer frostedThemeRecovery = new(DispatcherPriority.ContextIdle) { Interval = TimeSpan.FromSeconds(1) };
     internal bool Interacting => activeInteraction != null;
     internal bool ContentInputActive => Headers.Values.Any(header => header.Contents.InputActive);
     internal bool DraggingFiles { get; set; }
@@ -77,6 +78,14 @@ internal sealed class Runtime : IDisposable
         Func<FrostedEnvironment>? frostedEnvironment = null)
     {
         Current = this;
+        frostedThemeRecovery.Tick += (_, _) =>
+        {
+            frostedThemeRecovery.Stop();
+            if (Exiting) return;
+            if (Interacting || ContentInputActive || DraggingFiles || !DesktopAvailable)
+            { frostedThemeRecovery.Start(); return; }
+            RefreshFrostedEnvironment(recreateBackdrop: true);
+        };
         this.frostedCapability = frostedCapability ?? (() => OperatingSystem.IsWindowsVersionAtLeast(10, 0, 22000));
         if (frostedEnvironment == null)
         {
@@ -155,7 +164,7 @@ internal sealed class Runtime : IDisposable
         if (!disposed) Application.Current.Dispatcher.BeginInvoke(action);
     }
 
-    internal void RefreshFrostedEnvironment()
+    internal void RefreshFrostedEnvironment(bool recreateBackdrop = false)
     {
         if (Exiting) return;
         try
@@ -169,13 +178,13 @@ internal sealed class Runtime : IDisposable
         {
             if (appearance is { Interaction.Closed: false } && appearance.Interaction.FolderId == header.FolderId
                 && Workspace.Snapshot.Folders.Any(folder => folder.Folder.Id == header.FolderId))
-                header.RefreshFrostedEnvironment(appearance.Interaction.Preview);
-            else header.RefreshFrostedEnvironment();
+                header.RefreshFrostedEnvironment(appearance.Interaction.Preview, recreateBackdrop);
+            else header.RefreshFrostedEnvironment(recreateBackdrop: recreateBackdrop);
         }
         appearance?.RefreshFrostedStatus();
     }
 
-    private void FrostedEnvironmentChanged() => Dispatch(RefreshFrostedEnvironment);
+    private void FrostedEnvironmentChanged() => Dispatch(() => RefreshFrostedEnvironment());
 
     private void RequestDisplayRefresh()
     {
@@ -189,6 +198,13 @@ internal sealed class Runtime : IDisposable
     private void SystemPreferenceChanged(object sender, UserPreferenceChangedEventArgs args) => Dispatch(() =>
     {
         RefreshFrostedEnvironment();
+        if (args.Category == UserPreferenceCategory.VisualStyle)
+        {
+            // 主题广播与 DWM 材质恢复并非同一帧。合并通知后延迟重建背景，
+            // 避免高对比解除时过早建立的 HostBackdrop 一直保留黑色资源。
+            frostedThemeRecovery.Stop();
+            frostedThemeRecovery.Start();
+        }
         RequestDisplayRefresh();
     });
 
@@ -562,6 +578,7 @@ internal sealed class Runtime : IDisposable
         ShellContextMenu.CancelPending();
         ShellContextMenu.InvalidatePrepared();
         refresh.Stop();
+        frostedThemeRecovery.Stop();
         source.RemoveHook(hook);
         SystemEvents.DisplaySettingsChanged -= SystemDisplayChanged;
         SystemEvents.UserPreferenceChanged -= SystemPreferenceChanged;

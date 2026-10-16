@@ -76,7 +76,7 @@ internal static partial class ContentInputChecks
                 var header = runtime.Headers[folder.Folder.Id];
                 Require(header.Host != IntPtr.Zero, "真实 Explorer 宿主可见");
                 await header.Contents.IconsLoaded;
-                Desktop(); desktopShown = true;
+                FileMoveChecks.DesktopVisibility(true); desktopShown = true;
                 await Task.Delay(650);
                 header.UpdateLayout();
                 var contents = header.Contents;
@@ -98,14 +98,14 @@ internal static partial class ContentInputChecks
                 async Task EnsureHit(Point point)
                 {
                     var hit = WindowsDesktop.WindowFromPoint(new WindowsDesktop.POINT { X = (int)point.X, Y = (int)point.Y });
-                    if (hit != header.Handle && !WindowsDesktop.IsChild(header.Handle, hit))
+                    if (!header.OwnsInputWindow(hit))
                     {
-                        Desktop();
+                        FileMoveChecks.DesktopVisibility(true);
                         for (var attempt = 0; attempt < 20; attempt++)
                         {
                             await Task.Delay(100);
                             hit = WindowsDesktop.WindowFromPoint(new WindowsDesktop.POINT { X = (int)point.X, Y = (int)point.Y });
-                            if (hit == header.Handle || WindowsDesktop.IsChild(header.Handle, hit)) break;
+                            if (header.OwnsInputWindow(hit)) break;
                         }
                     }
                     CheckHit(header, point);
@@ -287,7 +287,7 @@ internal static partial class ContentInputChecks
                 SetForegroundWindow(documentWindow); await Task.Delay(150);
                 keybd_event(0x11, 0, 0, UIntPtr.Zero); Key(0x57); keybd_event(0x11, 0, 2, UIntPtr.Zero); await Task.Delay(300);
                 // 只关闭本次打开的隔离文档标签。
-                Desktop(); await Task.Delay(300);
+                FileMoveChecks.DesktopVisibility(true); await Task.Delay(300);
                 await Click(((Grid)Item(directory).Content).Children[0] as FrameworkElement ?? throw new Exception(), true);
                 IntPtr explorer = IntPtr.Zero;
                 for (var attempt = 0; attempt < 30 && explorer == IntPtr.Zero; attempt++)
@@ -476,7 +476,7 @@ internal static partial class ContentInputChecks
                 await workspace.RefreshAsync(displays);
                 await workspace.SetContentViewAsync(folder.Folder.Id, false, 16, ContentSortKey.Name, false);
                 runtime.Render(); await contents.IconsLoaded; header.UpdateLayout();
-                Desktop(); await Task.Delay(350);
+                FileMoveChecks.DesktopVisibility(true); await Task.Delay(350);
                 contents.Items.ScrollIntoView(Item(batchPaths[0])); contents.Items.UpdateLayout();
                 await Click(((Grid)Item(batchPaths[0]).Content).Children[0] as FrameworkElement ?? throw new Exception());
                 keybd_event(0x11, 0, 0, UIntPtr.Zero);
@@ -499,7 +499,7 @@ internal static partial class ContentInputChecks
                 keybd_event(0x10, 0, 2, UIntPtr.Zero);
                 mouse_event(4, 0, 0, 0, UIntPtr.Zero);
                 runtime?.Dispose();
-                if (desktopShown) Desktop();
+                if (desktopShown) FileMoveChecks.DesktopVisibility(false);
                 app.Shutdown();
             }
             void Require(bool passed, string message)

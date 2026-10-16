@@ -18,6 +18,34 @@ namespace Kage.Desktop;
 // 验收真实 HWND 命中、物理鼠标和 OLE；Explorer 重启前拒绝存在文件操作的会话。
 internal static class DesktopRecoveryChecks
 {
+    internal static async Task RestartExplorerAsync(Func<Task> unavailable, Func<Task> restored)
+    {
+        GetWindowThreadProcessId(WindowsDesktop.Host(), out var shellId);
+        using var shell = Process.GetProcessById((int)shellId);
+        if (shell.SessionId != Process.GetCurrentProcess().SessionId) throw new InvalidOperationException("桌面宿主不属于当前交互会话。");
+        var reopen = ExplorerPaths();
+        EnsureNoFileOperations(shell.Id);
+        var attempted = false;
+        try
+        {
+            attempted = true; shell.Kill();
+            await shell.WaitForExitAsync().WaitAsync(TimeSpan.FromSeconds(8));
+            await unavailable();
+            await EnsureExplorer();
+            await restored();
+        }
+        finally
+        {
+            if (attempted)
+            {
+                await EnsureExplorer();
+                var existing = ExplorerPaths();
+                foreach (var path in reopen)
+                    if (!existing.Contains(path, StringComparer.OrdinalIgnoreCase)) OpenExplorer(path);
+            }
+        }
+    }
+
     internal static int Run(bool frosted = false)
     {
         var fixture = Path.Combine(Path.GetTempPath(), "Kage-desktop-recovery-" + Guid.NewGuid().ToString("N"));
@@ -188,10 +216,19 @@ internal static class DesktopRecoveryChecks
             Check(WindowsDesktop.IsWindowVisible(header.Handle) && header.OwnsInputWindow(Hit(HeaderPoint(header))), stage + "：头部实际命中");
             Check(header.OwnsInputWindow(Hit(header.Contents.PointToScreen(new Point(25, 20)))), stage + "：展示部分实际命中");
             var toggle = VisualChildren<Button>(header.HeaderInput).Single();
-            Click(toggle.PointToScreen(new Point(toggle.ActualWidth / 2, toggle.ActualHeight / 2)));
+            await app.Dispatcher.InvokeAsync(() => { }, System.Windows.Threading.DispatcherPriority.ContextIdle);
+            header.UpdateLayout();
+            var togglePoint = toggle.PointToScreen(new Point(toggle.ActualWidth / 2, toggle.ActualHeight / 2));
+            Check(header.OwnsInputWindow(Hit(togglePoint)), stage + "：折叠按钮真实命中");
+            Click(togglePoint);
             await WaitUntil(() => !header.Record.Expanded);
-            Click(toggle.PointToScreen(new Point(toggle.ActualWidth / 2, toggle.ActualHeight / 2)));
+            await app.Dispatcher.InvokeAsync(() => { }, System.Windows.Threading.DispatcherPriority.ContextIdle);
+            header.UpdateLayout();
+            togglePoint = toggle.PointToScreen(new Point(toggle.ActualWidth / 2, toggle.ActualHeight / 2));
+            Check(header.OwnsInputWindow(Hit(togglePoint)), stage + "：展开按钮真实命中");
+            Click(togglePoint);
             await WaitUntil(() => header.Record.Expanded);
+            await app.Dispatcher.InvokeAsync(() => { }, System.Windows.Threading.DispatcherPriority.ContextIdle);
             Check(true, stage + "：真实点击展开／折叠");
             var startX = header.Record.X;
             var start = HeaderPoint(header);
