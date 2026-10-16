@@ -1,6 +1,6 @@
 # Windows 验证流程改进验收
 
-2026-10-16，落实毛玻璃实现复盘中的六项改进。操作入口与恢复规则见 [Windows 验证与交接](../agents/windows-verification.md)。
+2026-10-16，落实毛玻璃实现复盘中的六项改进。操作入口与恢复规则见 [Windows 验证与交接](../retro/windows-verification.md)。
 
 ## 交付内容
 
