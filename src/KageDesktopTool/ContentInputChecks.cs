@@ -19,7 +19,7 @@ namespace Kage.Desktop;
 // 不注入 WPF 事件：经过系统鼠标输入、命中与 Preview 路由验收正式窗口。
 internal static partial class ContentInputChecks
 {
-    internal static int Run(bool identityOnly = false, bool refreshOnly = false, bool menuPlacementOnly = false, bool menuLatencyOnly = false, bool gridNamesOnly = false, bool selectionOnly = false, bool frosted = false)
+    internal static int Run(bool identityOnly = false, bool refreshOnly = false, bool menuPlacementOnly = false, bool menuLatencyOnly = false, bool gridNamesOnly = false, bool selectionOnly = false, bool frosted = false, bool doubleClickOnly = false)
     {
         var fixture = Path.Combine(Path.GetTempPath(), "Kage-input-" + Guid.NewGuid().ToString("N"));
         var evidence = Path.Combine(Environment.CurrentDirectory, ".scratch", "desktop-folder", "verification");
@@ -27,6 +27,7 @@ internal static partial class ContentInputChecks
         Directory.CreateDirectory(evidence);
         var log = Path.Combine(evidence, gridNamesOnly ? "content-grid-names-session.txt" : menuLatencyOnly ? "content-menu-latency-session.txt" : menuPlacementOnly ? "content-menu-placement-session.txt" : refreshOnly ? "content-refresh-session.txt" : identityOnly ? "content-identity-session.txt" : "content-input-session.txt");
         if (selectionOnly) log = Path.Combine(evidence, "selection-coordination-session.txt");
+        if (doubleClickOnly) log = Path.Combine(evidence, "content-double-click-session.txt");
         File.WriteAllText(log, "真实 Windows 内容输入验收\n");
         var app = new Application { ShutdownMode = ShutdownMode.OnExplicitShutdown };
         Runtime? runtime = null;
@@ -279,6 +280,7 @@ internal static partial class ContentInputChecks
                     await WaitUntil(() => File.Exists(marker));
                     Require(File.Exists(marker), "真实程序按关联启动");
                 }
+                if (doubleClickOnly) { exit = 0; return; }
                 await Click(((Grid)Item(document).Content).Children[1] as FrameworkElement ?? throw new Exception(), true);
                 IntPtr documentWindow = IntPtr.Zero;
                 for (var attempt = 0; attempt < 30 && documentWindow == IntPtr.Zero; attempt++)

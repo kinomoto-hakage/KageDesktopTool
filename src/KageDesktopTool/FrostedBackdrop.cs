@@ -105,6 +105,7 @@ internal sealed class FrostedBackdrop : IDisposable
     {
         if (message == 0x21) return new IntPtr(3);
         if (message == 0x84) return new IntPtr(1);
+        if (message is 0x215 or 0x1F) foregroundWindow?.BackdropCaptureLost();
         // layered 前景在 alpha=0 的空白处让原生背景命中。将实际输入送回同一
         // WPF 输入入口，不能用额外颜色 alpha 换取命中，否则改变完全透明语义。
         if (WindowsDesktop.IsWindow(foreground) && (message is >= 0x200 and <= 0x20E || message == 0x7B))
@@ -119,6 +120,7 @@ internal sealed class FrostedBackdrop : IDisposable
 
     public void Dispose()
     {
+        foregroundWindow?.BackdropCaptureLost();
         if (dropTarget != null && Handle != IntPtr.Zero) RevokeDragDrop(Handle);
         dropTarget = null;
         if (oleInitialized) { OleUninitialize(); oleInitialized = false; }

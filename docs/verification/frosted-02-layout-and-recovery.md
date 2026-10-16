@@ -77,3 +77,20 @@ dotnet run --project src/KageDesktopTool/KageDesktopTool.csproj -c Release -- --
 宿主恢复和系统组合检查会真实重启 Explorer 或临时切换 Windows 设置，必须串行等待 `finally` 完成。`--frosted-lifecycle-check --drag-only` 只补拖动开关对照与删除资源释放，不重复 30 轮。原始日志、PNG 和采样脚本在工作树被 Git 忽略的 `.scratch/folder-frosted-background/verification/`；合并归档位于集成工作树相应 `verification/ticket-02/`，保留 01／03 的独立证据。
 
 实际多屏、负坐标硬件、混合 DPI、拔屏、主屏切换、系统缩放／分辨率切换、HDR、其他 Windows／GPU 版本及第三方动态壁纸的完整行为没有实机覆盖。业务检查覆盖四向负坐标、空洞和混合 DPI 轨迹，当前真实绘制证明只限单屏 150% 与上述明确区分的注入度量。动态图案确实持续更新，不把后台存在 Wallpaper Engine 进程扩大为该第三方软件的完整验收。
+
+## 最终双轴审查修复
+
+2026-10-16 对集成提交 `53f9981` 完成 Standards／Spec 两轴审查后，集中修复以下发现：
+
+- Standards 没有硬性违反，提出一项 P3 判断性重复：原生入口和 `ContentPointerInput.PointerDown` 各自维护双击时间／坐标，还使用不同的度量。现由共用 `PointerDown` 统一识别；原生入口只传 `WM_LBUTTONDOWN`／`WM_LBUTTONDBLCLK` 的原始点击信息，删除重复字段和两个未再使用的 Win32 Interop。
+- Spec 提出一项 P2：原生 Thumb 捕获仅在鼠标松开时结束，没有处理 `WM_CAPTURECHANGED`／`WM_CANCELMODE`。真实按住完全透明分隔线、移动后通过实际 `SetCapture` 转移到控制器，首次明确复现 `activeInteraction` 不结束，证据为 `review-native-capture-red.txt`。
+
+修复接通这两个系统消息，并在背景释放时清理原生 Thumb、按钮和右键状态。结束布局先取走原会话、清理本地状态，再退出当前 Win32 消息栈提交该会话，避免 `DestroyWindow` 的同步重入递归刷新，也不会把稍后的会话当作旧会话提交。普通松开仍在 `ReleaseCapture` 之前取走状态，产生的同步丢捕获消息不会重复提交。正常右键松开也先保留当前目标，再释放捕获，避免清理覆盖该次菜单选择。
+
+最终针对性检查均退出 0，Release 构建为 0 警告／0 错误：
+
+1. `--frosted-capture-check`：真实物理按下透明 Thumb，确认 Windows 捕获确实属于原生背景，再依次执行实际捕获转移、暂停销毁背景、`EnableWindow` 产生系统取消模式和正常鼠标松开。每次都结束布局、保存当前预览，并通过正式反馈确认只提交一次；后续真实折叠／展开、样式入口和内容字节继续正常。`review-native-capture.txt` 保留最终通过轨迹。
+2. `--frosted-content-check --double-click-only`：网格／列表、未选／已选、图像／文字八种真实双击及 Shell 启动通过，见 `review-double-click.txt`。它验证用户操作结果，不要求某个固定像素在不同主题下必然变成特定 HWND。
+3. `--frosted-system-check`：原有系统限制、草稿、重启及资源释放轨迹通过，见 `review-system-fallback.txt`。捕获专项中的省电事实由已批准的平台入口提供，但销毁背景和丢捕获是实际 Windows 行为；本轮没有重新切换真实 Windows 节能设置。
+
+这轮只运行与审查修复有关的输入和暂停回归，没有重复无关的 30 轮或性能采样。额外按钮与固定像素切换的探索没有纳入通过范围，也没有为夹具前提更改产品 alpha 或放宽命中断言。

@@ -17,12 +17,13 @@ public static class Program
         if (args.Contains("--frosted-four-way-check")) return ContentInputChecks.RunFourWay(true,
             Enum.TryParse<HeaderPosition>(args.FirstOrDefault(a => a.StartsWith("--direction="))?[12..], out var checkedDirection) ? checkedDirection : null);
         if (args.Contains("--frosted-restart-check")) return ContentInputChecks.RunFourWayRestart(true);
-        if (args.Contains("--frosted-content-check")) return ContentInputChecks.Run(frosted: true);
+        if (args.Contains("--frosted-content-check")) return ContentInputChecks.Run(frosted: true, doubleClickOnly: args.Contains("--double-click-only"));
         if (args.Contains("--frosted-ole-check")) return FileMoveChecks.Run(true);
         if (args.Contains("--frosted-desktop-recovery-check")) return DesktopRecoveryChecks.Run(true);
         if (args.Contains("--frosted-lifecycle-check")) return FrostedLifecycleChecks.Run(args.Contains("--drag-only"));
         if (args.Contains("--frosted-combined-check")) return FrostedCombinedChecks.Run();
         if (args.Contains("--frosted-dpi-check")) return DisplayDpiChecks.Run(true);
+        if (args.Contains("--frosted-capture-check")) return FrostedCaptureChecks.Run();
         if (args.Length == 2 && args[0] == "--selection-target-check") return ContentInputChecks.SelectionTarget(args[1]);
         if (args.Contains("--publish-check")) return PublishChecks.Run();
         if (args.Contains("--tray-icon-check")) return TrayIconChecks.Run();

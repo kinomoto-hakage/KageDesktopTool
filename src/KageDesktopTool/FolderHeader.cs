@@ -49,8 +49,6 @@ internal sealed class FolderHeader : Window
     private bool nativeRightItem;
     private double nativeScrollOffset;
     private Point nativeScrollPoint;
-    private long lastNativeClick;
-    private Point lastNativeClickPoint;
     private bool nativeNameHover;
 
     internal FolderHeader(FolderSnapshot folder)
@@ -285,11 +283,6 @@ internal sealed class FolderHeader : Window
         var hit = InputHitTest(PointFromScreen(screen)) as DependencyObject;
         if (message is 0x201 or 0x203)
         {
-            var tick = Environment.TickCount64;
-            var doubleClick = message == 0x203 || tick - lastNativeClick <= NativeDoubleClickTime()
-                && Math.Abs(screen.X - lastNativeClickPoint.X) <= NativeMetric(36, (uint)Math.Round(96 * displayScale)) / 2.0
-                && Math.Abs(screen.Y - lastNativeClickPoint.Y) <= NativeMetric(37, (uint)Math.Round(96 * displayScale)) / 2.0;
-            lastNativeClick = tick; lastNativeClickPoint = screen;
             nativeThumb = FindParent<Thumb>(hit);
             nativeButton = FindParent<Button>(hit);
             if (nativeThumb != null && FindParent<ScrollBar>(nativeThumb) != null)
@@ -302,7 +295,7 @@ internal sealed class FolderHeader : Window
             if (FindParent<FolderContents>(hit) == Contents && FindParent<ScrollBar>(hit) == null)
             {
                 if (FindParent<Grid>(hit) == Contents.Viewport || Contents.Viewport.IsAncestorOf(hit))
-                    Contents.PointerInput.PointerDown(hit, Contents.Viewport.PointFromScreen(screen), doubleClick ? 2 : 1);
+                    Contents.PointerInput.PointerDown(hit, Contents.Viewport.PointFromScreen(screen), message == 0x203 ? 2 : 1);
                 else Runtime.Current.Selection.Clear();
                 return;
             }
@@ -341,8 +334,9 @@ internal sealed class FolderHeader : Window
         }
         else if (message == 0x205)
         {
+            var item = nativeRightItem; nativeRightItem = false;
             NativeRelease();
-            if (nativeRightItem) { nativeRightItem = false; _ = Contents.PointerInput.PointerRightUpAsync(screen); }
+            if (item) _ = Contents.PointerInput.PointerRightUpAsync(screen);
             else if (ContextMenu != null) { Runtime.Current.Selection.Clear(); ContextMenu.PlacementTarget = this; ContextMenu.IsOpen = true; }
         }
         else if (message == 0x20A && FindParent<FolderContents>(hit) == Contents)
@@ -359,10 +353,22 @@ internal sealed class FolderHeader : Window
         }
     }
 
+    internal void BackdropCaptureLost()
+    {
+        var resizing = nativeThumb != null;
+        nativeThumb = null; nativeButton = null; nativeRightItem = false;
+        // DestroyWindow／ReleaseCapture 会同步重入 WindowProc。先清理原生状态，
+        // 再退出当前系统消息栈结束布局，避免释放背景时递归 Render 或重复提交。
+        if (!resizing || closed || interaction == null) return;
+        var completed = interaction;
+        interaction = null; resizePoint = null;
+        completed.EndDrag();
+        var runtime = Runtime.Current;
+        Dispatcher.BeginInvoke(async () => { if (!runtime.Exiting) await runtime.CommitInteractionAsync(completed); });
+    }
+
     [System.Runtime.InteropServices.DllImport("user32.dll", EntryPoint = "SetCapture")] private static extern IntPtr NativeCapture(IntPtr hwnd);
     [System.Runtime.InteropServices.DllImport("user32.dll", EntryPoint = "ReleaseCapture")] private static extern bool NativeRelease();
-    [System.Runtime.InteropServices.DllImport("user32.dll", EntryPoint = "GetDoubleClickTime")] private static extern uint NativeDoubleClickTime();
-    [System.Runtime.InteropServices.DllImport("user32.dll", EntryPoint = "GetSystemMetricsForDpi")] private static extern int NativeMetric(int metric, uint dpi);
 
     internal void Attach()
     {
