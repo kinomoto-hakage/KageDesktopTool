@@ -26,7 +26,7 @@ public sealed record FolderRecord([property: JsonRequired] Guid Id, [property: J
     int ListIconSize = (int)ContentIconSize.Medium, int GridIconSize = (int)ContentIconSize.Large, ContentSortKey SortKey = ContentSortKey.Name,
     bool SortDescending = false, ContentOrderItem[]? CustomOrder = null,
     HeaderPosition HeaderPosition = HeaderPosition.Top, NameOrientation NameOrientation = NameOrientation.Horizontal,
-    double SideHeaderWidth = 96);
+    double SideHeaderWidth = 96, bool Frosted = false);
 public sealed record ContentEntry(string ActualPath, string Name, bool IsDirectory, long? ModifiedTicks, long? Length,
     string? Identity = null)
 {

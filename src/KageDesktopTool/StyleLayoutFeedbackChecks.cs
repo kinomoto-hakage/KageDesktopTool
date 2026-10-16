@@ -16,7 +16,7 @@ internal static partial class ContentInputChecks
     internal static int RunStyleLayoutFeedback()
     {
         var fixture = Path.Combine(Path.GetTempPath(), "Kage-style-feedback-" + Guid.NewGuid().ToString("N"));
-        var evidence = Path.Combine(Environment.CurrentDirectory, ".scratch", "folder-grid-selection-and-header", "verification");
+        var evidence = DesktopCheckSession.EvidenceFor("folder-grid-selection-and-header");
         Directory.CreateDirectory(fixture); Directory.CreateDirectory(evidence);
         var log = Path.Combine(evidence, "style-layout-feedback.txt");
         File.WriteAllText(log, "样式与尺寸人工反馈回归\n");

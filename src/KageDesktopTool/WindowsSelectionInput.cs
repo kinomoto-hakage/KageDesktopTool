@@ -33,7 +33,7 @@ internal sealed class WindowsSelectionInput : IDisposable
     private bool InFolder(IntPtr window)
     {
         foreach (var header in runtime.Headers.Values)
-            if (window == header.Handle || WindowsDesktop.IsChild(header.Handle, window)) return true;
+            if (header.OwnsInputWindow(window)) return true;
         return false;
     }
 

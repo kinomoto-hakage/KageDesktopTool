@@ -22,6 +22,14 @@ internal sealed class FolderHeader : Window
     internal Thumb HeaderDivider { get; }
     internal Thumb ResizeGrip { get; }
     internal FolderRecord Record { get; private set; }
+    internal bool FrostedVisible => backdrop != null && WindowsDesktop.Attached(Handle, backdrop.Handle);
+    internal bool OwnsInputWindow(IntPtr window) => window == Handle || WindowsDesktop.IsChild(Handle, window)
+        || backdrop != null && window == backdrop.Handle;
+    internal string FrostedUnavailableReason => !Record.Frosted ? ""
+        : Runtime.Current.FrostedEnvironment.Reason.Length != 0 ? Runtime.Current.FrostedEnvironment.Reason
+        : !FrostedVisible ? "当前环境无法显示毛玻璃" : "";
+    private FrostedBackdrop? backdrop;
+    private bool backdropFailed;
     private readonly Grid layout;
     private readonly Grid header;
     private readonly HeaderName title;
@@ -36,6 +44,12 @@ internal sealed class FolderHeader : Window
     private bool positioning;
     private bool previewingGeometry;
     private Point? resizePoint;
+    private Thumb? nativeThumb;
+    private Button? nativeButton;
+    private bool nativeRightItem;
+    private double nativeScrollOffset;
+    private Point nativeScrollPoint;
+    private bool nativeNameHover;
 
     internal FolderHeader(FolderSnapshot folder)
     {
@@ -83,7 +97,7 @@ internal sealed class FolderHeader : Window
             DragHeaderTo(PointToScreen(e.GetPosition(this)));
         };
         header.MouseLeftButtonUp += async (_, _) => await EndInteractionAsync();
-        header.LostMouseCapture += async (_, _) => await EndInteractionAsync();
+        header.LostMouseCapture += async (_, e) => { if (e.OriginalSource == header) await EndInteractionAsync(); };
         layout.Children.Add(header);
         Contents = new FolderContents(FolderId);
         FileDrag.Receive(this);
@@ -116,6 +130,24 @@ internal sealed class FolderHeader : Window
             BorderBrush = new SolidColorBrush(Color.FromArgb(55, 255, 255, 255)), IsHitTestVisible = false });
         Surface.Child = surfaceLayout;
         Content = Surface;
+        PreviewMouseMove += (_, e) =>
+        {
+            if (!nativeNameHover || Mouse.Captured != title) return;
+            WindowsDesktop.GetCursorPos(out var cursor);
+            if (InputHitTest(PointFromScreen(new Point(cursor.X, cursor.Y))) == title) return;
+            nativeNameHover = false; Mouse.Capture(null);
+        };
+        PreviewMouseDown += (_, e) =>
+        {
+            if (!nativeNameHover || Mouse.Captured != title) return;
+            WindowsDesktop.GetCursorPos(out var cursor);
+            if (InputHitTest(PointFromScreen(new Point(cursor.X, cursor.Y))) == title) return;
+            // 光标移动与按下可紧邻到达；按实际落点释放旧 hover，不能将这次
+            // 内容点击当作名称点击。继续同一个正式输入入口，不重发 routed event。
+            nativeNameHover = false; Mouse.Capture(null); e.Handled = true;
+            if (e.ChangedButton is MouseButton.Left or MouseButton.Right)
+                BackdropInput(e.ChangedButton == MouseButton.Right ? 0x204u : 0x201u, IntPtr.Zero, backdrop?.Handle ?? Handle);
+        };
         PreviewMouseDown += (_, e) =>
         {
             var hit = e.OriginalSource as DependencyObject;
@@ -143,7 +175,7 @@ internal sealed class FolderHeader : Window
         {
             if (!closed && !positioning && geometry != null) ApplyGeometry(geometry, previewingGeometry);
         });
-        Closed += async (_, _) => { closed = true; Contents.Dispose(); await EndInteractionAsync(); };
+        Closed += async (_, _) => { closed = true; backdrop?.Dispose(); backdrop = null; Contents.Dispose(); await EndInteractionAsync(); };
         Update(folder);
     }
 
@@ -202,6 +234,7 @@ internal sealed class FolderHeader : Window
         interaction?.EndDrag();
         interaction = null;
         resizePoint = null;
+        nativeThumb = null; nativeButton = null; NativeRelease();
         header.ReleaseMouseCapture();
         if (Mouse.Captured != null && IsAncestorOf(Mouse.Captured as DependencyObject)) Mouse.Capture(null);
     }
@@ -210,12 +243,24 @@ internal sealed class FolderHeader : Window
     {
         thumb.DragStarted += (_, _) =>
         {
-            interaction = Runtime.Current.BeginInteraction(FolderId);
-            WindowsDesktop.GetCursorPos(out var cursor);
-            resizePoint = new Point(cursor.X, cursor.Y);
+            BeginResize();
         };
         thumb.DragDelta += (_, _) =>
         {
+            ResizeFromCursor(headerOnly);
+        };
+        thumb.DragCompleted += async (_, _) => await EndInteractionAsync();
+    }
+
+    private void BeginResize()
+    {
+        interaction = Runtime.Current.BeginInteraction(FolderId);
+        WindowsDesktop.GetCursorPos(out var cursor);
+        resizePoint = new Point(cursor.X, cursor.Y);
+    }
+
+    private void ResizeFromCursor(bool headerOnly)
+    {
             if (interaction == null || resizePoint is not { } previous) return;
             WindowsDesktop.GetCursorPos(out var cursor);
             resizePoint = new Point(cursor.X, cursor.Y);
@@ -227,14 +272,129 @@ internal sealed class FolderHeader : Window
             else interaction.ResizeBy(Record.Expanded && Record.HeaderPosition == HeaderPosition.Right ? -dx : dx,
                 Record.Expanded && Record.HeaderPosition == HeaderPosition.Bottom ? -dy : dy);
             Runtime.Current.Preview(interaction);
-        };
-        thumb.DragCompleted += async (_, _) => await EndInteractionAsync();
     }
+
+    // 背景 alpha=0 像素得到真实原生消息时，以同一可视树命中和业务入口
+    // 处理初次按下。之后仍使用既有 WPF 鼠标捕获，不产生人工 routed event。
+    internal void BackdropInput(uint message, IntPtr wp, IntPtr nativeHandle)
+    {
+        WindowsDesktop.GetCursorPos(out var cursor);
+        var screen = new Point(cursor.X, cursor.Y);
+        var hit = InputHitTest(PointFromScreen(screen)) as DependencyObject;
+        if (message is 0x201 or 0x203)
+        {
+            nativeThumb = FindParent<Thumb>(hit);
+            nativeButton = FindParent<Button>(hit);
+            if (nativeThumb != null && FindParent<ScrollBar>(nativeThumb) != null)
+            {
+                nativeScrollOffset = ContentPointerInput.Descendant<ScrollViewer>(Contents.Items)?.VerticalOffset ?? 0;
+                nativeScrollPoint = screen; NativeCapture(nativeHandle); return;
+            }
+            if (nativeThumb != null) { Runtime.Current.Selection.Clear(); BeginResize(); NativeCapture(nativeHandle); return; }
+            if (nativeButton != null) { NativeCapture(nativeHandle); return; }
+            if (FindParent<FolderContents>(hit) == Contents && FindParent<ScrollBar>(hit) == null)
+            {
+                if (FindParent<Grid>(hit) == Contents.Viewport || Contents.Viewport.IsAncestorOf(hit))
+                    Contents.PointerInput.PointerDown(hit, Contents.Viewport.PointFromScreen(screen), message == 0x203 ? 2 : 1);
+                else Runtime.Current.Selection.Clear();
+                return;
+            }
+            Runtime.Current.Selection.Clear();
+            if (header.IsAncestorOf(hit) || hit == header) { BeginHeaderDrag(screen); if (interaction != null) header.CaptureMouse(); }
+        }
+        else if (message == 0x200 && nativeThumb != null)
+        {
+            var bar = FindParent<ScrollBar>(nativeThumb);
+            if (bar != null)
+            {
+                var viewer = ContentPointerInput.Descendant<ScrollViewer>(Contents.Items);
+                if (viewer != null) viewer.ScrollToVerticalOffset(nativeScrollOffset + (screen.Y - nativeScrollPoint.Y) / displayScale
+                    * viewer.ScrollableHeight / Math.Max(1, bar.ActualHeight - nativeThumb.ActualHeight));
+            }
+            else ResizeFromCursor(nativeThumb == HeaderDivider);
+        }
+        else if (message == 0x202)
+        {
+            if (nativeThumb != null) { nativeThumb = null; NativeRelease(); _ = EndInteractionAsync(); }
+            if (nativeButton != null)
+            {
+                var pressed = nativeButton; nativeButton = null; NativeRelease();
+                if (FindParent<Button>(hit) == pressed)
+                {
+                    var peer = System.Windows.Automation.Peers.UIElementAutomationPeer.CreatePeerForElement(pressed);
+                    (peer?.GetPattern(System.Windows.Automation.Peers.PatternInterface.Invoke)
+                        as System.Windows.Automation.Provider.IInvokeProvider)?.Invoke();
+                }
+            }
+        }
+        else if (message == 0x204)
+        {
+            nativeRightItem = Contents.PointerInput.PointerRightDown(hit);
+            NativeCapture(nativeHandle);
+        }
+        else if (message == 0x205)
+        {
+            var item = nativeRightItem; nativeRightItem = false;
+            NativeRelease();
+            if (item) _ = Contents.PointerInput.PointerRightUpAsync(screen);
+            else if (ContextMenu != null) { Runtime.Current.Selection.Clear(); ContextMenu.PlacementTarget = this; ContextMenu.IsOpen = true; }
+        }
+        else if (message == 0x20A && FindParent<FolderContents>(hit) == Contents)
+        {
+            var viewer = ContentPointerInput.Descendant<ScrollViewer>(Contents.Items);
+            if (viewer != null) viewer.ScrollToVerticalOffset(viewer.VerticalOffset - (short)(wp.ToInt64() >> 16) / 120.0
+                * SystemParameters.WheelScrollLines * 16);
+        }
+        else if (message == 0x200 && hit == title && Mouse.Captured == null && Mouse.LeftButton == MouseButtonState.Released)
+        {
+            // 透明名称留白无法产生 WPF MouseOver；在真实悬停期间交给名称元素
+            // 接收后续真实消息，离开其边界立即释放，仍由标准 ToolTip 显示全文。
+            nativeNameHover = title.CaptureMouse();
+        }
+    }
+
+    internal void BackdropCaptureLost()
+    {
+        var resizing = nativeThumb != null;
+        nativeThumb = null; nativeButton = null; nativeRightItem = false;
+        // DestroyWindow／ReleaseCapture 会同步重入 WindowProc。先清理原生状态，
+        // 再退出当前系统消息栈结束布局，避免释放背景时递归 Render 或重复提交。
+        if (!resizing || closed || interaction == null) return;
+        var completed = interaction;
+        interaction = null; resizePoint = null;
+        completed.EndDrag();
+        var runtime = Runtime.Current;
+        Dispatcher.BeginInvoke(async () => { if (!runtime.Exiting) await runtime.CommitInteractionAsync(completed); });
+    }
+
+    [System.Runtime.InteropServices.DllImport("user32.dll", EntryPoint = "SetCapture")] private static extern IntPtr NativeCapture(IntPtr hwnd);
+    [System.Runtime.InteropServices.DllImport("user32.dll", EntryPoint = "ReleaseCapture")] private static extern bool NativeRelease();
 
     internal void Attach()
     {
         var previous = Host;
         Host = WindowsDesktop.Attach(Handle);
+        // 先将清晰前景移回 Explorer，再释放旧背景，避免销毁其子 HWND。
+        if (backdrop != null && WindowsDesktop.Attached(Handle, backdrop.Handle))
+        {
+            Hide();
+            WindowsDesktop.SetParent(Handle, IntPtr.Zero);
+        }
+        backdrop?.Dispose(); backdrop = null;
+        backdropFailed = false;
+        if (Record.Frosted && Host != IntPtr.Zero && Runtime.Current.SupportsFrosted)
+        {
+            var candidate = FrostedBackdrop.TryCreate(Host);
+            if (candidate != null && candidate.Attach(this, Handle, FolderId)) { backdrop = candidate; Host = candidate.Handle; }
+            else
+            {
+                if (candidate != null) Host = WindowsDesktop.Attach(Handle);
+                if (candidate != null && WindowsDesktop.Attached(Handle, candidate.Handle))
+                { Hide(); WindowsDesktop.SetParent(Handle, IntPtr.Zero); }
+                candidate?.Dispose(); backdropFailed = true;
+            }
+        }
+        else backdropFailed = false;
         if (Host != IntPtr.Zero && previous != Host)
         {
             // 重新挂接后通过 WPF 重新登记 OLE 接收，不重复订阅输入事件。
@@ -276,18 +436,36 @@ internal sealed class FolderHeader : Window
         { HeaderPosition.Top => Record.Expanded ? "▴" : "▾", HeaderPosition.Bottom => Record.Expanded ? "▾" : "▴",
             HeaderPosition.Left => Record.Expanded ? "◂" : "▸", _ => Record.Expanded ? "▸" : "◂" };
         if (Handle == IntPtr.Zero) return;
-        if (!WindowsDesktop.Attached(Handle, Host)) Attach();
-        if (!folder.Visible || Host == IntPtr.Zero) { Hide(); return; }
+        if (!WindowsDesktop.Attached(Handle, Host) || backdrop != null && !WindowsDesktop.IsWindow(backdrop.DesktopHost)
+            || (!Record.Frosted || !Runtime.Current.SupportsFrosted) && backdrop != null
+            || Record.Frosted && Runtime.Current.SupportsFrosted && backdrop == null && !backdropFailed) Attach();
+        if (!folder.Visible || Host == IntPtr.Zero) { Hide(); backdrop?.Hide(); return; }
         Show();
         positioning = true;
         try
         {
+            if (backdrop != null && !backdrop.Position(bounds.X, bounds.Y, bounds.Width, bounds.Height, displayScale))
+                FallBackFromBackdrop();
             if (!WindowsDesktop.Position(Handle, Host, bounds.X, bounds.Y, bounds.Width, bounds.Height))
-            { Host = IntPtr.Zero; Hide(); }
+            {
+                FallBackFromBackdrop();
+                if (!WindowsDesktop.Position(Handle, Host, bounds.X, bounds.Y, bounds.Width, bounds.Height))
+                { Host = IntPtr.Zero; Hide(); }
+            }
         }
         finally { positioning = false; }
         // 预览复用已有内容和图标，只补偿窗口变换；结束会话后 Update 再读取目标 DPI 图标。
         if (scaleChanged && !preview) Contents.Update(folder, displayScale);
+    }
+
+    private void FallBackFromBackdrop()
+    {
+        Host = WindowsDesktop.Attach(Handle);
+        if (backdrop != null && WindowsDesktop.Attached(Handle, backdrop.Handle))
+        { Hide(); WindowsDesktop.SetParent(Handle, IntPtr.Zero); }
+        backdrop?.Dispose(); backdrop = null;
+        backdropFailed = Record.Frosted;
+        AllowDrop = false; AllowDrop = true;
     }
 
     internal void ApplyStyle(string value, double opacity)
@@ -295,6 +473,15 @@ internal sealed class FolderHeader : Window
         var color = (Color)ColorConverter.ConvertFromString(value);
         color.A = (byte)Math.Round(opacity * 255);
         Surface.Background = new SolidColorBrush(color);
+    }
+
+    internal void RefreshFrostedEnvironment(FolderSnapshot? effective = null, bool recreateBackdrop = false)
+    {
+        // 只有系统通知／定时轮询重试能力；鼠标移动不会不断重建失败资源。
+        if (recreateBackdrop && backdrop != null) FallBackFromBackdrop();
+        backdropFailed = false;
+        if (effective != null) ApplyStyle(effective.Folder.Color, effective.Folder.Opacity);
+        if ((effective ?? geometry) is { } current) ApplyGeometry(current, effective != null || previewingGeometry);
     }
 
     private HeaderPosition? arrangedDirection;

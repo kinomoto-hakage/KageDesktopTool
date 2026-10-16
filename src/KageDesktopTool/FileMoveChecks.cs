@@ -17,13 +17,13 @@ namespace Kage.Desktop;
 // 实际 OLE、桌面及 Explorer 检查；只创建并清理随机命名的隔离项目。
 internal static class FileMoveChecks
 {
-    internal static int Run()
+    internal static int Run(bool frosted = false)
     {
         var fixture = Path.Combine(Path.GetTempPath(), "Kage-file-move-" + Guid.NewGuid().ToString("N"));
         var prefix = "Kage-move-" + Guid.NewGuid().ToString("N");
         var desktop = Environment.GetFolderPath(Environment.SpecialFolder.DesktopDirectory);
         string[] desktopNames = [prefix + "-文件.bin", prefix + "-快捷方式.lnk", prefix + "-目录"];
-        var evidence = Path.Combine(Environment.CurrentDirectory, ".scratch", "desktop-folder", "verification");
+        var evidence = DesktopCheckSession.EvidenceFor("desktop-folder");
         Directory.CreateDirectory(fixture);
         Directory.CreateDirectory(evidence);
         var log = Path.Combine(evidence, "file-move-session.txt");
@@ -45,11 +45,23 @@ internal static class FileMoveChecks
                 await workspace.SelectRootAsync(Path.Combine(fixture, "内容"));
                 await workspace.CreateFolderAsync("接收");
                 await workspace.CreateFolderAsync("第二个");
+                var targetLayout = workspace.BeginLayout(workspace.Snapshot.Folders.Last().Folder.Id)!;
+                var targetRecord = workspace.Snapshot.Folders.Last().Folder;
+                targetLayout.BeginDrag(0, 0); targetLayout.DragTo(600 - targetRecord.X, 20 - targetRecord.Y); targetLayout.EndDrag();
+                Check((await workspace.CommitLayoutAsync(targetLayout)).Succeeded, "隔离第二个 Folder 预留原地展开空间");
+                if (frosted)
+                    foreach (var item in workspace.Snapshot.Folders.ToArray())
+                    {
+                        var style = workspace.BeginAppearance(item.Folder.Id)!;
+                        style.SetFrosted(true); style.SetOpacity(0);
+                        Check((await workspace.ApplyAppearanceAsync(style)).Succeeded, "OLE 验收保存完全透明毛玻璃");
+                    }
                 runtime = new Runtime(workspace);
                 var first = runtime.Headers.Values.First();
                 var second = runtime.Headers.Values.Last();
                 await first.ToggleAsync();
                 await second.ToggleAsync();
+                Check(first.Record.Expanded && second.Record.Expanded, "两个真实 OLE 展示部分均已展开");
                 var firstPath = workspace.Snapshot.Folders.First().ActualPath;
                 var secondPath = workspace.Snapshot.Folders.Last().ActualPath;
                 Check(runtime.DesktopAvailable, "真实桌面宿主可用");
@@ -69,7 +81,7 @@ internal static class FileMoveChecks
                 var incoming = ShellItem(explorer, incomingNames[0]);
                 Check(incoming != null, "资源管理器实际多选项目可定位");
                 var dropPoint = HeaderCenter(first);
-                Check(WindowsDesktop.WindowFromPoint(new WindowsDesktop.POINT { X = (int)dropPoint.X, Y = (int)dropPoint.Y }) == first.Handle, "拖入目标未被其他窗口遮挡");
+                Check(first.OwnsInputWindow(WindowsDesktop.WindowFromPoint(new WindowsDesktop.POINT { X = (int)dropPoint.X, Y = (int)dropPoint.Y })), "拖入目标未被其他窗口遮挡");
                 await PhysicalDrag(Center(incoming!.Current.BoundingRectangle), HeaderCenter(first));
                 await WaitUntil(() => Directory.Exists(Path.Combine(firstPath, incomingNames[2])) && runtime.ActiveMove == null);
                 CloseResults();

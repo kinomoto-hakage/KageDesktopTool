@@ -17,7 +17,7 @@ internal static class RootMigrationChecks
     internal static int Run()
     {
         var fixture = Path.Combine(Path.GetTempPath(), "Kage-migration-" + Guid.NewGuid().ToString("N"));
-        var evidence = Path.Combine(Environment.CurrentDirectory, ".scratch", "desktop-folder", "verification");
+        var evidence = DesktopCheckSession.EvidenceFor("desktop-folder");
         Directory.CreateDirectory(fixture);
         Directory.CreateDirectory(evidence);
         var log = Path.Combine(evidence, "root-migration-session.txt");

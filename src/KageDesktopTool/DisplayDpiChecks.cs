@@ -16,10 +16,10 @@ namespace Kage.Desktop;
 // 使用实际可用屏幕；额外 DPI 注入只验证适配器换算，不冒充系统配置验收。
 internal static class DisplayDpiChecks
 {
-    internal static int Run()
+    internal static int Run(bool frosted = false)
     {
         var fixture = Path.Combine(Path.GetTempPath(), "Kage-display-dpi-" + Guid.NewGuid().ToString("N"));
-        var evidence = Path.Combine(Environment.CurrentDirectory, ".scratch", "desktop-folder", "verification");
+        var evidence = DesktopCheckSession.EvidenceFor("desktop-folder");
         Directory.CreateDirectory(evidence);
         Directory.CreateDirectory(fixture);
         var log = Path.Combine(evidence, "display-dpi-session.txt");
@@ -37,7 +37,7 @@ internal static class DisplayDpiChecks
                 Check(displays.Length > 0, "重新枚举实际显示区域");
                 foreach (var display in displays) File.AppendAllText(log, $"环境：{display}\n");
                 var records = displays.Select((display, index) => new FolderRecord(Guid.NewGuid(), $"实际屏幕 {index + 1}",
-                    display.X + 20, display.Y + 20, Expanded: true)).ToArray();
+                    display.X + 20, display.Y + 20, Expanded: true, Frosted: frosted)).ToArray();
                 var root = Path.Combine(fixture, "内容");
                 foreach (var record in records)
                 {
@@ -76,6 +76,8 @@ internal static class DisplayDpiChecks
                     Click(itemPoint);
                     await WaitUntil(() => first.IsSelected);
                     Check(first.IsSelected, "实际鼠标选择正确内容项");
+                    await WaitUntil(() => !runtime.ContentInputActive && !runtime.Interacting);
+                    await app.Dispatcher.InvokeAsync(() => { }, System.Windows.Threading.DispatcherPriority.ContextIdle);
                     Screenshot(header, $"12-实际屏幕-{Array.IndexOf(records, record) + 1}.png");
                 }
                 var target = runtime.Headers[records[0].Id];
@@ -84,6 +86,7 @@ internal static class DisplayDpiChecks
                 {
                     var synthetic = displays.Select(d => d with { Scale = injectedScale }).ToArray();
                     Check((await workspace.RefreshAsync(synthetic)).Succeeded, "注入显示度量恢复布局");
+                    File.AppendAllText(log, $"注入渲染前：布局交互 {runtime.Interacting}，内容交互 {runtime.ContentInputActive}。\n");
                     runtime.Render();
                     await CheckContent(target, $"注入 {injectedScale:P0}（系统配置未改变）");
                     var first = (ListBoxItem)target.Contents.Items.Items[0];
@@ -192,6 +195,11 @@ internal static class DisplayDpiChecks
             header.UpdateLayout();
             var folder = runtime!.Workspace.Snapshot.Folders.Single(f => f.Folder.Id == header.FolderId);
             WindowsDesktop.GetWindowRect(header.Handle, out var rectangle);
+            if (frosted)
+            {
+                WindowsDesktop.GetWindowRect(header.Host, out var backdrop);
+                Check(header.FrostedVisible && backdrop.Equals(rectangle), label + "：毛玻璃背景与前景物理边界一致");
+            }
             File.AppendAllText(log, $"{label}：窗口={rectangle.Left},{rectangle.Top},{rectangle.Right - rectangle.Left},{rectangle.Bottom - rectangle.Top}，记录={folder.Folder.X},{folder.Folder.Y}，尺寸={folder.Folder.HeaderWidth},{folder.Folder.HeaderHeight + folder.Folder.BodyHeight}，缩放={folder.DisplayScale}\n");
             Check(folder.Visible && WindowsDesktop.IsWindow(header.Handle)
                 && rectangle.Left == folder.Folder.X && rectangle.Top == folder.Folder.Y

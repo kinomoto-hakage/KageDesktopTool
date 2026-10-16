@@ -1,5 +1,17 @@
 using Kage.Workspace;
 
+// 执行器契约检查的隔离子进程，只向执行器指定的证据目录写入。
+if (args.Length == 1 && args[0] == "--workflow-child")
+{
+    var evidence = Environment.GetEnvironmentVariable("KAGE_CHECK_EVIDENCE_DIRECTORY");
+    if (evidence == null || !Path.IsPathFullyQualified(evidence)) return 2;
+    Directory.CreateDirectory(evidence);
+    File.WriteAllText(Path.Combine(evidence, "child.txt"), Environment.ProcessId.ToString());
+    if (File.Exists(Path.Combine(Directory.GetParent(AppContext.BaseDirectory.TrimEnd(Path.DirectorySeparatorChar))!.FullName, "hold")))
+        await Task.Delay(4000);
+    return 0;
+}
+
 if (args.Length == 3 && args[0] == "--interrupt-migration")
     return await MigrationRecoveryChecks.InterruptChild(args[1], args[2]);
 if (args.Length == 2 && args[0] == "--rollback-package")
@@ -60,6 +72,8 @@ var tests = new (string Name, Func<Task> Run)[]
     ("显示环境拔屏分辨率容量不足及重启恢复", DisplayChecks.UnplugAndCapacity),
     ("显示环境恢复优先保留剩余屏位置", DisplayChecks.PreserveSurvivingScreen),
     ("显示环境混合 DPI 双向及上下跨屏", DisplayChecks.MixedDpiBothDirections),
+    ("毛玻璃默认关闭即时预览取消与结束保护", AppearanceChecks.FrostedPreview),
+    ("毛玻璃完整保存失败重试重启与并发保护", AppearanceChecks.FrostedPersistence),
     ("外观颜色同步校验及取消恢复", AppearanceChecks.InputAndCancel),
     ("外观独立保存失败及重启恢复", AppearanceChecks.Persistence),
     ("图标选择校验保存失败及重启恢复", AppearanceChecks.Icons),
@@ -88,7 +102,14 @@ var tests = new (string Name, Func<Task> Run)[]
     ("桌面会话恢复不打断或重复文件移动", DesktopSessionChecks.DuringMove)
 };
 var failures = 0;
-var selected = tests.Where(t => args.Length == 0 || t.Name.Contains(args[0], StringComparison.Ordinal)).ToArray();
+// CI 白名单仅含隔离文件系统和业务计算；Shell、回收站及真实会话留给本机串行检查。
+var ciTypes = new HashSet<Type> { typeof(ResizeBoundaryChecks), typeof(FourWayChecks),
+    typeof(UpgradeLayoutChecks), typeof(DisplayChecks), typeof(AppearanceChecks) };
+if (args.Length > 0 && args[0] == "--suite" && (args.Length != 2 || args[1] != "ci"))
+{ Console.Error.WriteLine("未知业务检查分组；可用 --suite ci。"); return 1; }
+var selected = args.Length == 2 && args[0] == "--suite"
+    ? tests.Where(t => ciTypes.Contains(t.Run.Method.DeclaringType!)).ToArray()
+    : tests.Where(t => args.Length == 0 || t.Name.Contains(args[0], StringComparison.Ordinal)).ToArray();
 if (selected.Length == 0) { Console.Error.WriteLine("没有匹配的检查名称。"); return 1; }
 foreach (var test in selected)
 {

@@ -19,7 +19,7 @@ internal static class ShellDiagnosticsChecks
 {
     internal static int Run(bool iconsOnly, bool cancelOnly = false)
     {
-        var evidence = Path.Combine(Environment.CurrentDirectory, ".scratch", "desktop-folder", "verification");
+        var evidence = DesktopCheckSession.EvidenceFor("desktop-folder");
         Directory.CreateDirectory(evidence);
         var log = Path.Combine(evidence, cancelOnly ? "shell-menu-cancel-check.txt" : "shell-response-diagnostics.txt");
         File.WriteAllText(log, "右键响应、窗口样式与真实图标诊断\n");

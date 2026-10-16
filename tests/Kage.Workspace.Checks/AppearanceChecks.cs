@@ -2,6 +2,78 @@ using Kage.Workspace;
 
 internal static class AppearanceChecks
 {
+    internal static async Task FrostedPreview()
+    {
+        using var fixture = new Fixture();
+        IDesktopWorkspace workspace = new DesktopWorkspace(fixture.Store, new TestStartup());
+        await workspace.InitializeAsync([new(0, 0, 1000, 800)]);
+        await workspace.SelectRootAsync(fixture.Content);
+        await workspace.CreateFolderAsync("毛玻璃草稿");
+        var original = workspace.Snapshot.Folders.Single();
+        Check(!original.Folder.Frosted, "新建 Folder 默认关闭毛玻璃");
+        var edit = workspace.BeginAppearance(original.Folder.Id)!;
+        Check(edit.SetFrosted(true).Succeeded && edit.Preview.Folder.Frosted
+            && workspace.Snapshot.Folders.Single() == original, "毛玻璃即时预览但正式记录、路径与几何不变");
+        Check(workspace.CancelAppearance(edit).Outcome == Outcome.Cancelled && !edit.Draft.Frosted,
+            "取消恢复打开前的毛玻璃意图");
+        Check(!edit.SetFrosted(true).Succeeded && !(await workspace.ApplyAppearanceAsync(edit)).Succeeded,
+            "已结束毛玻璃草稿不能改变或提交");
+    }
+
+    internal static async Task FrostedPersistence()
+    {
+        using var fixture = new Fixture();
+        var store = new FailingStore(fixture.Store);
+        IDesktopWorkspace workspace = new DesktopWorkspace(store, new TestStartup());
+        DisplayArea[] displays = [new(0, 0, 1200, 900)];
+        await workspace.InitializeAsync(displays);
+        await workspace.SelectRootAsync(fixture.Content);
+        await workspace.CreateFolderAsync("毛玻璃保存");
+        await workspace.CreateFolderAsync("独立设置");
+        var original = workspace.Snapshot.Folders.First();
+        var other = workspace.Snapshot.Folders.Last();
+        var file = Path.Combine(original.ActualPath, "原内容.bin");
+        File.WriteAllBytes(file, [0, 42, 255]);
+        var stale = workspace.BeginAppearance(original.Folder.Id)!;
+        var newer = workspace.BeginAppearance(original.Folder.Id)!;
+        newer.SetFrosted(true);
+        Check((await workspace.ApplyAppearanceAsync(newer)).Succeeded, "毛玻璃意图保存成功");
+        stale.SetFrosted(false);
+        Check(!(await workspace.ApplyAppearanceAsync(stale)).Succeeded && workspace.Snapshot.Folders.First().Folder.Frosted,
+            "仅毛玻璃发生变化也使旧样式草稿过期");
+        workspace.CancelAppearance(stale);
+        var edit = workspace.BeginAppearance(original.Folder.Id)!;
+        edit.SetHex("#123456");
+        edit.SetOpacity(.25);
+        edit.SetFrosted(false);
+        edit.SetFrosted(true);
+        await workspace.ToggleFolderAsync(original.Folder.Id);
+        await workspace.SetViewAsync(original.Folder.Id, false);
+        await workspace.RefreshAsync(displays);
+        var latest = workspace.Snapshot.Folders.First().Folder;
+        store.FailOnSave = store.Saves + 1;
+        Check((await workspace.ApplyAppearanceAsync(edit)).Outcome == Outcome.Failed && !edit.Closed
+            && workspace.Snapshot.Folders.First().Folder == latest, "完整样式保存失败保留正式状态与可重试草稿");
+        var saves = store.Saves;
+        Check((await workspace.ApplyAppearanceAsync(edit)).Succeeded && store.Saves == saves + 1,
+            "一次成功保存完整颜色透明度与毛玻璃意图");
+        var saved = workspace.Snapshot.Folders.First();
+        Check(saved.Folder == latest with { Color = "#123456", Opacity = .25 }
+            && saved.ActualPath == original.ActualPath && workspace.Snapshot.Folders.Last().Folder == other.Folder,
+            "开关往返保留颜色透明度，应用保留独立布局查看变化和其他 Folder");
+        workspace = new DesktopWorkspace(fixture.Store, new TestStartup());
+        await workspace.InitializeAsync(displays);
+        Check(workspace.Snapshot.Folders.First().Folder == saved.Folder
+            && workspace.Snapshot.Folders.Last().Folder == other.Folder && File.ReadAllBytes(file).SequenceEqual(new byte[] { 0, 42, 255 }),
+            "真实状态文件重启逐 Folder 恢复完整样式且内容字节不变");
+        edit = workspace.BeginAppearance(original.Folder.Id)!;
+        edit.SetFrosted(false);
+        await workspace.RefreshAsync([new(0, 0, 1200, 900, 1.25)]);
+        Check(!(await workspace.ApplyAppearanceAsync(edit)).Succeeded && workspace.Snapshot.Folders.First().Folder.Frosted,
+            "显示环境变化拒绝旧毛玻璃草稿");
+        workspace.CancelAppearance(edit);
+    }
+
     internal static async Task InputAndCancel()
     {
         using var fixture = new Fixture();

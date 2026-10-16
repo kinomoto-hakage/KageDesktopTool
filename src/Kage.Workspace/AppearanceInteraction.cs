@@ -16,6 +16,7 @@ public sealed class AppearanceInteraction
     public Guid FolderId => Original.Id;
     public string Color => Draft.Color;
     public double Opacity => Draft.Opacity;
+    public bool Frosted => Draft.Frosted;
     public byte Red => byte.Parse(Color.AsSpan(1, 2), NumberStyles.HexNumber, CultureInfo.InvariantCulture);
     public byte Green => byte.Parse(Color.AsSpan(3, 2), NumberStyles.HexNumber, CultureInfo.InvariantCulture);
     public byte Blue => byte.Parse(Color.AsSpan(5, 2), NumberStyles.HexNumber, CultureInfo.InvariantCulture);
@@ -62,6 +63,13 @@ public sealed class AppearanceInteraction
         if (opacityError.Length != 0) return new(Outcome.Failed, opacityError);
         Draft = Draft with { Opacity = value };
         return new(Outcome.Success, "透明度已预览。");
+    }
+
+    public OperationResult SetFrosted(bool value)
+    {
+        if (Closed) return Ended();
+        Draft = Draft with { Frosted = value };
+        return new(Outcome.Success, "毛玻璃已预览。");
     }
 
     internal void Finish(bool applied)

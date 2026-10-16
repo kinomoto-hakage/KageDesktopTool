@@ -19,7 +19,7 @@ internal static class AppearanceChecks
     internal static int Run()
     {
         var fixture = Path.Combine(Path.GetTempPath(), "Kage-appearance-" + Guid.NewGuid().ToString("N"));
-        var evidence = Path.Combine(Environment.CurrentDirectory, ".scratch", "desktop-folder", "verification");
+        var evidence = DesktopCheckSession.EvidenceFor("desktop-folder");
         Directory.CreateDirectory(fixture);
         Directory.CreateDirectory(evidence);
         var log = Path.Combine(evidence, "appearance-session.txt");
@@ -47,7 +47,11 @@ internal static class AppearanceChecks
                 await workspace.CreateFolderAsync("独立外观");
                 var first = workspace.Snapshot.Folders.First();
                 File.WriteAllText(Path.Combine(first.ActualPath, "Windows 原生文件图标.txt"), "保留实际内容");
-                await workspace.ToggleFolderAsync(first.Folder.Id);
+                // 原地展开不会移动其他 Folder；夹具先给展示部分留出真实空位。
+                var other = workspace.BeginLayout(workspace.Snapshot.Folders.Last().Folder.Id)!;
+                other.BeginDrag(0, 0); other.DragTo(600, 300); other.EndDrag();
+                Check((await workspace.CommitLayoutAsync(other)).Succeeded, "隔离第二个 Folder 留出展示空位");
+                Check((await workspace.ToggleFolderAsync(first.Folder.Id)).Succeeded, "真实隔离展示部分展开成功");
                 runtime = new Runtime(workspace);
                 var header = runtime.Headers[first.Folder.Id];
                 Check(header.Host != IntPtr.Zero && WindowsDesktop.IsWindowVisible(header.Handle), "真实桌面透明窗口可见");

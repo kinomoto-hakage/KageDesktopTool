@@ -14,12 +14,12 @@ namespace Kage.Desktop;
 internal static partial class ContentInputChecks
 {
     // 复用真实系统输入工具，夹具不读取正式配置、不注册自启。
-    internal static int RunFourWay()
+    internal static int RunFourWay(bool frosted = false, HeaderPosition? onlyDirection = null)
     {
         var fixture = Path.Combine(Path.GetTempPath(), "Kage-four-way-" + Guid.NewGuid().ToString("N"));
-        var evidence = Path.Combine(Environment.CurrentDirectory, ".scratch", "folder-grid-selection-and-header", "verification");
+        var evidence = DesktopCheckSession.EvidenceFor(frosted ? "folder-frosted-background" : "folder-grid-selection-and-header");
         Directory.CreateDirectory(fixture); Directory.CreateDirectory(evidence);
-        var log = Path.Combine(evidence, "four-way-input.txt");
+        var log = Path.Combine(evidence, frosted ? "02-four-way-input.txt" : "four-way-input.txt");
         File.WriteAllText(log, "四向头部真实 Windows 输入验收\n");
         var app = new Application { ShutdownMode = ShutdownMode.OnExplicitShutdown };
         Runtime? runtime = null; StyleDialog? dialog = null;
@@ -35,7 +35,7 @@ internal static partial class ContentInputChecks
                 var root = Path.Combine(fixture, "内容");
                 var name = "中文ABC123e\u0301👩‍💻-" + new string('长', 46);
                 var target = new FolderRecord(Guid.NewGuid(), name, area.X + area.Width * 2 / 5, area.Y + area.Height / 3,
-                    HeaderWidth: 360, BodyHeight: 280, Expanded: true);
+                    HeaderWidth: 360, BodyHeight: 280, Expanded: true, Frosted: frosted, Opacity: frosted ? 0 : .68);
                 var other = new FolderRecord(Guid.NewGuid(), "其他 Folder", area.X + 30, area.Y + 30);
                 foreach (var record in new[] { target, other }) Directory.CreateDirectory(Path.Combine(root, record.Name));
                 var marker = Path.Combine(fixture, "打开证据.txt");
@@ -62,6 +62,22 @@ internal static partial class ContentInputChecks
                     header.UpdateLayout(); CheckHit(header, Center(element)); await MouseAt(Center(element), false);
                     if (element == header.ExpandButton) await WaitUntil(() => Saved().Expanded != expanded);
                     await Task.Delay(200);
+                }
+                async Task ScrollItem(ListBoxItem item)
+                {
+                    await WaitUntil(() => !runtime.Interacting);
+                    // 原地头部点击的提交和 ScrollIntoView 都会排队布局；输入前
+                    // 等待当前布局落定，再核对实际可见图像中心仍属于目标项目。
+                    await app.Dispatcher.InvokeAsync(() => { }, System.Windows.Threading.DispatcherPriority.ContextIdle);
+                    header.Contents.Items.ScrollIntoView(item);
+                    await app.Dispatcher.InvokeAsync(() => { }, System.Windows.Threading.DispatcherPriority.ContextIdle);
+                    header.UpdateLayout();
+                    var image = (Image)((Grid)item.Content).Children[0];
+                    var point = Center(image);
+                    var local = header.Contents.Viewport.PointFromScreen(point);
+                    Require(header.Contents.Items.Items.Contains(item) && new Rect(header.Contents.Viewport.RenderSize).Contains(local)
+                        && FolderHeader.FindParent<ListBoxItem>(header.InputHitTest(header.PointFromScreen(point)) as DependencyObject) == item,
+                        "真实内容输入前目标实例、可见视口与实际命中一致");
                 }
                 void Bounds()
                 {
@@ -94,7 +110,7 @@ internal static partial class ContentInputChecks
                     await WaitUntil(() => dialog.Interaction.Closed); Require(dialog.Interaction.Closed, "真实应用按钮保存并关闭草稿");
                     dialog = null; await Task.Delay(200); header.UpdateLayout();
                 }
-                foreach (var direction in Enum.GetValues<HeaderPosition>())
+                foreach (var direction in Enum.GetValues<HeaderPosition>().Where(d => onlyDirection == null || d == onlyDirection))
                 {
                     foreach (var orientation in Enum.GetValues<NameOrientation>())
                     {
@@ -125,7 +141,7 @@ internal static partial class ContentInputChecks
                     var before = Saved(); var scale = workspace.Snapshot.Folders.Single(f => f.Folder.Id == target.Id).DisplayScale;
                     var dragPoint = Center(header.NameDisplay); CheckHit(header, dragPoint);
                     await Drag(dragPoint, dragPoint + new Vector(15, 12));
-                    Require(Saved().X == before.X + 15 && Saved().Y == before.Y + 12, "四向真实头部拖动保存物理像素位移"); Bounds();
+                    Require(Saved().X == before.X + 15 && Saved().Y == before.Y + 12, $"四向真实头部拖动保存物理像素位移：{before.X},{before.Y}->{Saved().X},{Saved().Y}，交互 {runtime.Interacting}"); Bounds();
                     before = Saved(); dragPoint = Center(header.NameDisplay);
                     await Drag(dragPoint, dragPoint + new Vector(23, 18), cancel: true);
                     Require(Saved() == before && header.Record == before, "四向真实 Esc 取消拖动恢复锚点");
@@ -147,7 +163,7 @@ internal static partial class ContentInputChecks
                     await workspace.SetContentViewAsync(target.Id, true, 16, ContentSortKey.Name, false); runtime.Render();
                     await header.Contents.IconsLoaded; header.UpdateLayout();
                     var item = header.Contents.Items.Items.Cast<ListBoxItem>().Single(i => (string)i.Tag == longLink);
-                    header.Contents.Items.ScrollIntoView(item); header.UpdateLayout();
+                    await ScrollItem(item);
                     await Click((Image)((Grid)item.Content).Children[0]);
                     Require(header.Contents.SelectedPaths().SequenceEqual(new[] { longLink })
                         && Texts(header.Contents.Items).Any(t => t.IsVisible && t.TextTrimming == TextTrimming.None),
@@ -158,9 +174,10 @@ internal static partial class ContentInputChecks
                     await Click(header.NameDisplay); Require(header.Contents.SelectedPaths().Length == 0, "四向头部真实点击清除选择和全文");
                     var lastItem = header.Contents.Items.Items.Cast<ListBoxItem>().Single(i => (string)i.Tag == lastLink);
                     Require(header.Contents.Items.Items.Cast<ListBoxItem>().Last() == lastItem, "全文末端夹具位于真实排序最后一项");
-                    header.Contents.Items.ScrollIntoView(lastItem); header.UpdateLayout();
+                    await ScrollItem(lastItem);
                     var noFullPixels = Capture();
                     await Click((Image)((Grid)lastItem.Content).Children[0]); header.UpdateLayout();
+                    Require(header.Contents.SelectedPaths().SequenceEqual(new[] { lastLink }), $"全文末项真实点击选择：{direction}，{string.Join("；", header.Contents.SelectedPaths())}");
                     var full = Texts(lastItem).Single(t => t.IsVisible && t.TextTrimming == TextTrimming.None
                         && t.Text == Path.GetFileNameWithoutExtension(lastLink));
                     var viewer = ContentPointerInput.Descendant<ScrollViewer>(header.Contents.Items)!;
@@ -188,12 +205,12 @@ internal static partial class ContentInputChecks
                     Require(header.Contents.SelectedPaths().SequenceEqual(new[] { lastLink }), "四向全文末端真实点击仍命中当前项：" + string.Join("；", header.Contents.SelectedPaths()));
                     Render(header, Path.Combine(evidence, $"full-name-tail-{direction}.png"));
                     await Click(header.NameDisplay);
-                    header.Contents.Items.ScrollIntoView(item); header.UpdateLayout();
+                    await ScrollItem(item);
                     await Click((Image)((Grid)item.Content).Children[0]);
                     await MouseAt(new Point(area.X + 20, area.Y + area.Height - 20), false); await Task.Delay(180);
                     Require(header.Contents.SelectedPaths().Length == 0
                         && !Texts(header.Contents.Items).Any(t => t.IsVisible && t.TextTrimming == TextTrimming.None), "四向视口外部真实点击清除选择及全文");
-                    header.Contents.Items.ScrollIntoView(item); header.UpdateLayout();
+                    await ScrollItem(item);
                     var icon = (Image)((Grid)item.Content).Children[0]; CheckHit(header, Center(icon));
                     await MouseAt(Center(icon), true); await WaitUntil(() => File.Exists(marker));
                     Require(File.Exists(marker), "四向视口真实双击打开隔离快捷方式"); File.Delete(marker);
@@ -240,7 +257,18 @@ internal static partial class ContentInputChecks
                     bitmap.Render(header); return bitmap;
                 }
             }
-            catch (Exception e) { File.AppendAllText(log, "失败：" + e + "\n"); }
+            catch (Exception e)
+            {
+                File.AppendAllText(log, "失败：" + e + "\n");
+                if (frosted)
+                {
+                    var screen = System.Windows.Forms.SystemInformation.VirtualScreen;
+                    using var bitmap = new System.Drawing.Bitmap(screen.Width, screen.Height);
+                    using var graphics = System.Drawing.Graphics.FromImage(bitmap);
+                    graphics.CopyFromScreen(screen.Left, screen.Top, 0, 0, screen.Size);
+                    bitmap.Save(Path.Combine(evidence, "02-four-way-failure.png"));
+                }
+            }
             finally
             { dialog?.Close(); mouse_event(4, 0, 0, 0, UIntPtr.Zero); runtime?.Dispose(); if (desktopShown) Desktop(); SetCursorPos(cursor.X, cursor.Y); app.Shutdown(); }
         };
@@ -265,12 +293,12 @@ internal static partial class ContentInputChecks
         public void RestoreBackup() => inner.RestoreBackup();
     }
 
-    internal static int RunFourWayRestart()
+    internal static int RunFourWayRestart(bool frosted = false)
     {
         var fixture = Path.Combine(Path.GetTempPath(), "Kage-four-way-restart-" + Guid.NewGuid().ToString("N"));
-        var evidence = Path.Combine(Environment.CurrentDirectory, ".scratch", "folder-grid-selection-and-header", "verification");
+        var evidence = DesktopCheckSession.EvidenceFor(frosted ? "folder-frosted-background" : "folder-grid-selection-and-header");
         Directory.CreateDirectory(fixture); Directory.CreateDirectory(evidence);
-        var log = Path.Combine(evidence, "four-way-restart.txt"); File.WriteAllText(log, "四向实际窗口重建与重启验收\n");
+        var log = Path.Combine(evidence, frosted ? "02-four-way-restart.txt" : "four-way-restart.txt"); File.WriteAllText(log, "四向实际窗口重建与重启验收\n");
         var app = new Application { ShutdownMode = ShutdownMode.OnExplicitShutdown };
         Runtime? runtime = null; var result = 1; var desktopShown = false;
         WindowsDesktop.GetCursorPos(out var cursor);
@@ -284,7 +312,7 @@ internal static partial class ContentInputChecks
                     area.X + 40 + i % 2 * ((int)Math.Ceiling(336 * scale) + 40) + (position == HeaderPosition.Right ? (int)Math.Ceiling(240 * scale) : 0),
                     area.Y + 40 + i / 2 * ((int)Math.Ceiling(208 * scale) + 40) + (position == HeaderPosition.Bottom ? (int)Math.Ceiling(160 * scale) : 0),
                     HeaderWidth: 240, BodyHeight: 160, Expanded: true, Color: "#2468AC", Opacity: .4, HeaderPosition: position,
-                    NameOrientation: i % 2 == 0 ? NameOrientation.Horizontal : NameOrientation.Vertical)).ToArray();
+                    NameOrientation: i % 2 == 0 ? NameOrientation.Horizontal : NameOrientation.Vertical, Frosted: frosted)).ToArray();
                 foreach (var record in records)
                 { Directory.CreateDirectory(Path.Combine(root, record.Name)); File.WriteAllText(Path.Combine(root, record.Name, "真实内容.txt"), "恢复内容"); }
                 var store = new JsonWorkspaceStore(Path.Combine(fixture, "状态")); store.Save(new WorkspaceState { Root = root, Folders = records });
@@ -303,6 +331,7 @@ internal static partial class ContentInputChecks
                             && rect.Right - rect.Left == expected.Width && rect.Bottom - rect.Top == expected.Height
                             && WindowsDesktop.IsWindowVisible(header.Handle) && header.Contents.Items.Items.Count == 1,
                             $"第 {launch + 1} 次启动 {record.HeaderPosition} 的样式、窗口原点、尺寸及内容恢复");
+                        if (frosted) Require(header.FrostedVisible, "四向多个实例实际背景同时恢复");
                         var button = header.ExpandButton.PointToScreen(new Point(header.ExpandButton.ActualWidth / 2, header.ExpandButton.ActualHeight / 2));
                         CheckHit(header, button); await MouseAt(button, false);
                         await WaitUntil(() => !workspace.Snapshot.Folders.Single(f => f.Folder.Id == record.Id).Folder.Expanded);

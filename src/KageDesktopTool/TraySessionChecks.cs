@@ -16,7 +16,7 @@ internal static class TraySessionChecks
     internal static int Run()
     {
         var fixture = Path.Combine(Path.GetTempPath(), "Kage-tray-" + Guid.NewGuid().ToString("N"));
-        var evidence = Path.Combine(Environment.CurrentDirectory, ".scratch", "desktop-folder", "verification");
+        var evidence = DesktopCheckSession.EvidenceFor("desktop-folder");
         Directory.CreateDirectory(evidence);
         var log = Path.Combine(evidence, "tray-session.txt");
         File.WriteAllText(log, $"04 真实托盘会话，{DateTimeOffset.Now:O}\n");

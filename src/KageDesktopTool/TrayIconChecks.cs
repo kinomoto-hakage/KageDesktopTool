@@ -13,7 +13,7 @@ internal static class TrayIconChecks
 {
     internal static int Run()
     {
-        var evidence = Path.Combine(Environment.CurrentDirectory, ".scratch", "desktop-folder", "verification");
+        var evidence = DesktopCheckSession.EvidenceFor("desktop-folder");
         Directory.CreateDirectory(evidence);
         var log = Path.Combine(evidence, "tray-icon-resources.txt");
         File.WriteAllText(log, "04 托盘图标包内资源检查\n");

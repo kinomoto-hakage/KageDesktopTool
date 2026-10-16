@@ -2,8 +2,18 @@
 
 ### Issue tracker
 
-本仓库使用 `.scratch/` 下的本地 Markdown 文件跟踪 issue。详见 `docs/agents/issue-tracker.md`。
+Issues are tracked as local Markdown files under `.scratch/`. See `docs/agents/issue-tracker.md`.
+
+### Triage labels
+
+Use the five default triage labels. See `docs/agents/triage-labels.md`.
 
 ### Domain docs
 
-使用 single-context 布局：根目录 `CONTEXT.md` 和 `docs/adr/`。详见 `docs/agents/domain.md`。
+Use a single-context layout: root `GLOSSARY.md` and `docs/adr/`. See `docs/agents/domain.md`.
+
+## Retro
+
+### Windows 验证与交接
+
+修改桌面交互、运行验收、恢复中断工作或交付人工检查包时，阅读 `docs/retro/windows-verification.md`。

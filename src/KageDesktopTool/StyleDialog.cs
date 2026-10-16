@@ -21,6 +21,8 @@ internal sealed class StyleDialog : Window
     internal ComboBox PositionChoice { get; }
     internal ComboBox NameChoice { get; }
     internal Slider SideWidth { get; }
+    internal CheckBox Frosted { get; }
+    internal TextBlock FrostedStatus { get; }
     private readonly Runtime runtime;
     private readonly StackPanel root = new() { Margin = new Thickness(24, 24, 24, 0) };
     private readonly Grid content = new();
@@ -51,6 +53,12 @@ internal sealed class StyleDialog : Window
             HorizontalScrollBarVisibility = ScrollBarVisibility.Disabled });
         Content = content;
         root.Children.Add(new TextBlock { Text = name, TextWrapping = TextWrapping.Wrap, Margin = new Thickness(0, 0, 0, 12) });
+        Frosted = new CheckBox { Content = "启用毛玻璃", Foreground = Brushes.WhiteSmoke, IsChecked = interaction.Frosted, Margin = new Thickness(0, 0, 0, 8) };
+        FrostedStatus = new TextBlock { Foreground = Brushes.LightGray, TextWrapping = TextWrapping.Wrap, Margin = new Thickness(0, 0, 0, 12) };
+        root.Children.Add(Frosted);
+        root.Children.Add(FrostedStatus);
+        Frosted.Checked += (_, _) => { Interaction.SetFrosted(true); UpdatePreview(); };
+        Frosted.Unchecked += (_, _) => { Interaction.SetFrosted(false); UpdatePreview(); };
         root.Children.Add(new TextBlock { Text = "头部位置", Margin = new Thickness(0, 0, 0, 6) });
         PositionChoice = new ComboBox { ItemsSource = new[] { "上方（向下展开）", "下方（向上展开）", "左侧（向右展开）", "右侧（向左展开）" },
             SelectedIndex = (int)interaction.Draft.HeaderPosition, Margin = new Thickness(0, 0, 0, 12) };
@@ -210,7 +218,11 @@ internal sealed class StyleDialog : Window
         opacityLabel.Text = $"{Transparency.Value:0}%";
         thicknessValue.Text = $"{SideWidth.Value:0.#} DIP";
         runtime.PreviewAppearance(Interaction);
+        RefreshFrostedStatus();
     }
+
+    internal void RefreshFrostedStatus()
+        => FrostedStatus.Text = runtime.Headers.TryGetValue(Interaction.FolderId, out var header) ? header.FrostedUnavailableReason : "";
 
     private void SyncLayout(OperationResult result)
     {

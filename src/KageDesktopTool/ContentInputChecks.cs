@@ -19,14 +19,15 @@ namespace Kage.Desktop;
 // 不注入 WPF 事件：经过系统鼠标输入、命中与 Preview 路由验收正式窗口。
 internal static partial class ContentInputChecks
 {
-    internal static int Run(bool identityOnly = false, bool refreshOnly = false, bool menuPlacementOnly = false, bool menuLatencyOnly = false, bool gridNamesOnly = false, bool selectionOnly = false)
+    internal static int Run(bool identityOnly = false, bool refreshOnly = false, bool menuPlacementOnly = false, bool menuLatencyOnly = false, bool gridNamesOnly = false, bool selectionOnly = false, bool frosted = false, bool doubleClickOnly = false)
     {
         var fixture = Path.Combine(Path.GetTempPath(), "Kage-input-" + Guid.NewGuid().ToString("N"));
-        var evidence = Path.Combine(Environment.CurrentDirectory, ".scratch", "desktop-folder", "verification");
+        var evidence = DesktopCheckSession.EvidenceFor("desktop-folder");
         Directory.CreateDirectory(fixture);
         Directory.CreateDirectory(evidence);
         var log = Path.Combine(evidence, gridNamesOnly ? "content-grid-names-session.txt" : menuLatencyOnly ? "content-menu-latency-session.txt" : menuPlacementOnly ? "content-menu-placement-session.txt" : refreshOnly ? "content-refresh-session.txt" : identityOnly ? "content-identity-session.txt" : "content-input-session.txt");
         if (selectionOnly) log = Path.Combine(evidence, "selection-coordination-session.txt");
+        if (doubleClickOnly) log = Path.Combine(evidence, "content-double-click-session.txt");
         File.WriteAllText(log, "真实 Windows 内容输入验收\n");
         var app = new Application { ShutdownMode = ShutdownMode.OnExplicitShutdown };
         Runtime? runtime = null;
@@ -42,6 +43,10 @@ internal static partial class ContentInputChecks
                 Require((await workspace.SelectRootAsync(Path.Combine(fixture, "content"))).Succeeded, "隔离真实内容目录");
                 await workspace.CreateFolderAsync("输入验收");
                 await workspace.CreateFolderAsync("移动目标");
+                var targetLayout = workspace.BeginLayout(workspace.Snapshot.Folders.Last().Folder.Id)!;
+                var targetRecord = workspace.Snapshot.Folders.Last().Folder;
+                targetLayout.BeginDrag(0, 0); targetLayout.DragTo(600 - targetRecord.X, 20 - targetRecord.Y); targetLayout.EndDrag();
+                Require((await workspace.CommitLayoutAsync(targetLayout)).Succeeded, "隔离移动目标预留原地展开空间");
                 var folder = workspace.Snapshot.Folders.First();
                 var marker = Path.Combine(fixture, "opened.txt");
                 var link = Path.Combine(folder.ActualPath, "01-shortcut.lnk");
@@ -55,15 +60,24 @@ internal static partial class ContentInputChecks
                 var directory = Path.Combine(folder.ActualPath, "directory");
                 Directory.CreateDirectory(directory);
                 for (var i = 1; i <= 45; i++) File.WriteAllText(Path.Combine(folder.ActualPath, $"file{i}.txt"), "内容");
-                await workspace.ToggleFolderAsync(folder.Folder.Id);
-                await workspace.ToggleFolderAsync(workspace.Snapshot.Folders.Last().Folder.Id);
+                Require((await workspace.ToggleFolderAsync(folder.Folder.Id)).Succeeded, "输入夹具原地展开");
+                Require((await workspace.ToggleFolderAsync(workspace.Snapshot.Folders.Last().Folder.Id)).Succeeded, "移动目标原地展开");
                 await workspace.RefreshAsync(displays);
+                if (frosted)
+                {
+                    foreach (var item in workspace.Snapshot.Folders.ToArray())
+                    {
+                        var style = workspace.BeginAppearance(item.Folder.Id)!;
+                        style.SetFrosted(true); style.SetOpacity(0);
+                        Require((await workspace.ApplyAppearanceAsync(style)).Succeeded, "真实内容回归保存完全透明毛玻璃");
+                    }
+                }
                 if (menuLatencyOnly) SetCursorPos(0, 0);
                 runtime = new Runtime(workspace);
                 var header = runtime.Headers[folder.Folder.Id];
                 Require(header.Host != IntPtr.Zero, "真实 Explorer 宿主可见");
                 await header.Contents.IconsLoaded;
-                Desktop(); desktopShown = true;
+                FileMoveChecks.DesktopVisibility(true); desktopShown = true;
                 await Task.Delay(650);
                 header.UpdateLayout();
                 var contents = header.Contents;
@@ -85,14 +99,14 @@ internal static partial class ContentInputChecks
                 async Task EnsureHit(Point point)
                 {
                     var hit = WindowsDesktop.WindowFromPoint(new WindowsDesktop.POINT { X = (int)point.X, Y = (int)point.Y });
-                    if (hit != header.Handle && !WindowsDesktop.IsChild(header.Handle, hit))
+                    if (!header.OwnsInputWindow(hit))
                     {
-                        Desktop();
+                        FileMoveChecks.DesktopVisibility(true);
                         for (var attempt = 0; attempt < 20; attempt++)
                         {
                             await Task.Delay(100);
                             hit = WindowsDesktop.WindowFromPoint(new WindowsDesktop.POINT { X = (int)point.X, Y = (int)point.Y });
-                            if (hit == header.Handle || WindowsDesktop.IsChild(header.Handle, hit)) break;
+                            if (header.OwnsInputWindow(hit)) break;
                         }
                     }
                     CheckHit(header, point);
@@ -266,6 +280,7 @@ internal static partial class ContentInputChecks
                     await WaitUntil(() => File.Exists(marker));
                     Require(File.Exists(marker), "真实程序按关联启动");
                 }
+                if (doubleClickOnly) { exit = 0; return; }
                 await Click(((Grid)Item(document).Content).Children[1] as FrameworkElement ?? throw new Exception(), true);
                 IntPtr documentWindow = IntPtr.Zero;
                 for (var attempt = 0; attempt < 30 && documentWindow == IntPtr.Zero; attempt++)
@@ -274,7 +289,7 @@ internal static partial class ContentInputChecks
                 SetForegroundWindow(documentWindow); await Task.Delay(150);
                 keybd_event(0x11, 0, 0, UIntPtr.Zero); Key(0x57); keybd_event(0x11, 0, 2, UIntPtr.Zero); await Task.Delay(300);
                 // 只关闭本次打开的隔离文档标签。
-                Desktop(); await Task.Delay(300);
+                FileMoveChecks.DesktopVisibility(true); await Task.Delay(300);
                 await Click(((Grid)Item(directory).Content).Children[0] as FrameworkElement ?? throw new Exception(), true);
                 IntPtr explorer = IntPtr.Zero;
                 for (var attempt = 0; attempt < 30 && explorer == IntPtr.Zero; attempt++)
@@ -463,7 +478,7 @@ internal static partial class ContentInputChecks
                 await workspace.RefreshAsync(displays);
                 await workspace.SetContentViewAsync(folder.Folder.Id, false, 16, ContentSortKey.Name, false);
                 runtime.Render(); await contents.IconsLoaded; header.UpdateLayout();
-                Desktop(); await Task.Delay(350);
+                FileMoveChecks.DesktopVisibility(true); await Task.Delay(350);
                 contents.Items.ScrollIntoView(Item(batchPaths[0])); contents.Items.UpdateLayout();
                 await Click(((Grid)Item(batchPaths[0]).Content).Children[0] as FrameworkElement ?? throw new Exception());
                 keybd_event(0x11, 0, 0, UIntPtr.Zero);
@@ -486,7 +501,7 @@ internal static partial class ContentInputChecks
                 keybd_event(0x10, 0, 2, UIntPtr.Zero);
                 mouse_event(4, 0, 0, 0, UIntPtr.Zero);
                 runtime?.Dispose();
-                if (desktopShown) Desktop();
+                if (desktopShown) FileMoveChecks.DesktopVisibility(false);
                 app.Shutdown();
             }
             void Require(bool passed, string message)
@@ -512,13 +527,13 @@ internal static partial class ContentInputChecks
     private static void CheckHit(FolderHeader header, Point point)
     {
         var hwnd = WindowsDesktop.WindowFromPoint(new WindowsDesktop.POINT { X = (int)point.X, Y = (int)point.Y });
-        if (hwnd != header.Handle && !WindowsDesktop.IsChild(header.Handle, hwnd))
+        if (!header.OwnsInputWindow(hwnd))
         {
             var screen = System.Windows.Forms.SystemInformation.VirtualScreen;
             using var bitmap = new System.Drawing.Bitmap(screen.Width, screen.Height);
             using var graphics = System.Drawing.Graphics.FromImage(bitmap);
             graphics.CopyFromScreen(screen.Left, screen.Top, 0, 0, screen.Size);
-            bitmap.Save(Path.Combine(Environment.CurrentDirectory, ".scratch", "desktop-folder", "verification", "content-hit-failure.png"));
+            bitmap.Save(Path.Combine(DesktopCheckSession.EvidenceFor("desktop-folder"), "content-hit-failure.png"));
             throw new IOException($"鼠标未命中夹具窗口：{point}，期望 HWND={header.Handle}，实际 HWND={hwnd}，请先结束其他桌面覆盖窗口。");
         }
     }

@@ -196,7 +196,7 @@ internal static class FourWayChecks
         DisplayArea[] displays = [new(0, 0, 1400, 1000)];
         Require((await workspace.InitializeAsync(displays)).Succeeded, "真实旧磁盘缺省新增字段仍可初始化");
         var saved = workspace.Snapshot.Folders.Single();
-        Require(saved.Folder.HeaderPosition == HeaderPosition.Top && saved.Folder.NameOrientation == NameOrientation.Horizontal
+        Require(!saved.Folder.Frosted && saved.Folder.HeaderPosition == HeaderPosition.Top && saved.Folder.NameOrientation == NameOrientation.Horizontal
             && saved.Folder.X == 77 && saved.Folder.Y == 88 && saved.Folder.HeaderWidth == 350 && saved.Folder.HeaderHeight == 62
             && saved.Folder.BodyHeight == 290 && saved.Folder.ListIconSize == 16 && saved.Folder.GridIconSize == 96
             && saved.Folder.SortKey == ContentSortKey.Size && saved.Folder.SortDescending && !saved.Folder.Grid

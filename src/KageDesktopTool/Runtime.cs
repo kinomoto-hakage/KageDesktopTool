@@ -21,6 +21,12 @@ internal sealed class Runtime : IDisposable
     internal static Runtime Current { get; private set; } = null!;
     internal static BitmapImage ApplicationIcon => Current?.applicationIcon ?? IconChoices.Image("d");
     internal IDesktopWorkspace Workspace { get; }
+    // 能力事实来自 Windows 边界；隔离验收可注入不可用环境而不修改系统设置。
+    private readonly Func<bool> frostedCapability;
+    private readonly Func<FrostedEnvironment> readFrostedEnvironment;
+    private readonly WindowsFrostedEnvironment? systemFrostedEnvironment;
+    internal FrostedEnvironment FrostedEnvironment { get; private set; } = new();
+    internal bool SupportsFrosted => FrostedEnvironment.AllowsFrosted;
     internal OperationFeedback Feedback { get; }
     internal SelectionCoordinator Selection { get; } = new();
     private readonly WindowsSelectionInput? selectionInput;
@@ -53,6 +59,7 @@ internal sealed class Runtime : IDisposable
     private DisplayArea[] displayEnvironment = WindowsDesktop.Displays();
     private LayoutInteraction? activeInteraction;
     private readonly DispatcherTimer layoutInput = new() { Interval = TimeSpan.FromMilliseconds(25) };
+    private readonly DispatcherTimer frostedThemeRecovery = new(DispatcherPriority.ContextIdle) { Interval = TimeSpan.FromSeconds(1) };
     internal bool Interacting => activeInteraction != null;
     internal bool ContentInputActive => Headers.Values.Any(header => header.Contents.InputActive);
     internal bool DraggingFiles { get; set; }
@@ -67,9 +74,27 @@ internal sealed class Runtime : IDisposable
     internal MoveDialog? ActiveMove => moveDialog;
     internal BatchMoveResult? LastMoveResult { get; private set; }
 
-    internal Runtime(IDesktopWorkspace workspace, string? resultDirectory = null)
+    internal Runtime(IDesktopWorkspace workspace, string? resultDirectory = null, Func<bool>? frostedCapability = null,
+        Func<FrostedEnvironment>? frostedEnvironment = null)
     {
         Current = this;
+        frostedThemeRecovery.Tick += (_, _) =>
+        {
+            frostedThemeRecovery.Stop();
+            if (Exiting) return;
+            if (Interacting || ContentInputActive || DraggingFiles || !DesktopAvailable)
+            { frostedThemeRecovery.Start(); return; }
+            RefreshFrostedEnvironment(recreateBackdrop: true);
+        };
+        this.frostedCapability = frostedCapability ?? (() => OperatingSystem.IsWindowsVersionAtLeast(10, 0, 22000));
+        if (frostedEnvironment == null)
+        {
+            systemFrostedEnvironment = new WindowsFrostedEnvironment();
+            systemFrostedEnvironment.Changed += FrostedEnvironmentChanged;
+            readFrostedEnvironment = systemFrostedEnvironment.Read;
+        }
+        else readFrostedEnvironment = frostedEnvironment;
+        RefreshFrostedEnvironment();
         layoutInput.Tick += (_, _) =>
         {
             // Explorer 子窗口不一定持有键盘焦点，Esc 仍须取消当前捕获会话。
@@ -122,6 +147,7 @@ internal sealed class Runtime : IDisposable
         refresh = new DispatcherTimer { Interval = TimeSpan.FromSeconds(3) };
         refresh.Tick += async (_, _) =>
         {
+            RefreshFrostedEnvironment();
             await RefreshDesktopSessionAsync();
             await RefreshDisplayEnvironmentAsync();
         };
@@ -138,6 +164,28 @@ internal sealed class Runtime : IDisposable
         if (!disposed) Application.Current.Dispatcher.BeginInvoke(action);
     }
 
+    internal void RefreshFrostedEnvironment(bool recreateBackdrop = false)
+    {
+        if (Exiting) return;
+        try
+        {
+            var environment = readFrostedEnvironment();
+            FrostedEnvironment = environment with { Available = environment.Available && frostedCapability() };
+        }
+        catch { FrostedEnvironment = new FrostedEnvironment(Available: false); }
+        // 效果刷新独立于目录、布局和输入刷新，保留最近显示的有效草稿／拖动几何。
+        foreach (var header in Headers.Values)
+        {
+            if (appearance is { Interaction.Closed: false } && appearance.Interaction.FolderId == header.FolderId
+                && Workspace.Snapshot.Folders.Any(folder => folder.Folder.Id == header.FolderId))
+                header.RefreshFrostedEnvironment(appearance.Interaction.Preview, recreateBackdrop);
+            else header.RefreshFrostedEnvironment(recreateBackdrop: recreateBackdrop);
+        }
+        appearance?.RefreshFrostedStatus();
+    }
+
+    private void FrostedEnvironmentChanged() => Dispatch(() => RefreshFrostedEnvironment());
+
     private void RequestDisplayRefresh()
     {
         displayRefreshPending = true;
@@ -147,7 +195,18 @@ internal sealed class Runtime : IDisposable
     }
 
     private void SystemDisplayChanged(object? sender, EventArgs args) => Dispatch(RequestDisplayRefresh);
-    private void SystemPreferenceChanged(object sender, UserPreferenceChangedEventArgs args) => Dispatch(RequestDisplayRefresh);
+    private void SystemPreferenceChanged(object sender, UserPreferenceChangedEventArgs args) => Dispatch(() =>
+    {
+        RefreshFrostedEnvironment();
+        if (args.Category == UserPreferenceCategory.VisualStyle)
+        {
+            // 主题广播与 DWM 材质恢复并非同一帧。合并通知后延迟重建背景，
+            // 避免高对比解除时过早建立的 HostBackdrop 一直保留黑色资源。
+            frostedThemeRecovery.Stop();
+            frostedThemeRecovery.Start();
+        }
+        RequestDisplayRefresh();
+    });
 
     internal async Task<OperationResult?> RefreshDisplayEnvironmentAsync(bool report = false)
     {
@@ -508,12 +567,18 @@ internal sealed class Runtime : IDisposable
     {
         if (disposed) return;
         disposed = true;
+        if (systemFrostedEnvironment != null)
+        {
+            systemFrostedEnvironment.Changed -= FrostedEnvironmentChanged;
+            systemFrostedEnvironment.Dispose();
+        }
         selectionInput?.Dispose();
         Selection.Dispose();
         layoutInput.Stop();
         ShellContextMenu.CancelPending();
         ShellContextMenu.InvalidatePrepared();
         refresh.Stop();
+        frostedThemeRecovery.Stop();
         source.RemoveHook(hook);
         SystemEvents.DisplaySettingsChanged -= SystemDisplayChanged;
         SystemEvents.UserPreferenceChanged -= SystemPreferenceChanged;

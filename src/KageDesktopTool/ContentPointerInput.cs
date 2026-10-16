@@ -30,6 +30,9 @@ internal sealed class ContentPointerInput : IDisposable
     private ContentRenameDialog? renameDialog;
     private bool disposed;
     private ScrollViewer? scroll;
+    private long lastPointerDown;
+    private Point lastPointerScreen;
+    private string? lastPointerPath;
     internal bool Active => origin != null || boxing || menuOpen;
     internal bool OwnsCommandWindow(IntPtr window) => menuOpen && (ShellContextMenu.OwnsWindow(window)
         || renameDialog != null && (window == new WindowInteropHelper(renameDialog).Handle
@@ -65,10 +68,27 @@ internal sealed class ContentPointerInput : IDisposable
     private bool OnScrollBar(DependencyObject? source) => FolderHeader.FindParent<ScrollBar>(source) != null;
     private void Down(object sender, MouseButtonEventArgs e)
     {
-        if (OnScrollBar(e.OriginalSource as DependencyObject) || Runtime.Current.Moving || Runtime.Current.Interacting) return;
-        pressed = FolderHeader.FindParent<ListBoxItem>(e.OriginalSource as DependencyObject);
+        e.Handled = PointerDown(e.OriginalSource as DependencyObject, e.GetPosition(contents.Viewport), e.ClickCount);
+    }
+
+    internal bool PointerDown(DependencyObject? source, Point point, int clickCount)
+    {
+        if (OnScrollBar(source) || Runtime.Current.Moving || Runtime.Current.Interacting) return false;
+        // 第一次透明像素由原生背景接收，选中后第二次可能落到 WPF 有色像素。
+        // 在共用输入入口记录真实屏幕轨迹，让两条原生路由组成同一次双击。
+        var screen = contents.Viewport.PointToScreen(point);
+        var tick = Environment.TickCount64;
+        var size = System.Windows.Forms.SystemInformation.DoubleClickSize;
+        pressed = FolderHeader.FindParent<ListBoxItem>(source);
+        var currentPath = pressed?.Tag as string;
+        if (tick - lastPointerDown <= System.Windows.Forms.SystemInformation.DoubleClickTime
+            && Math.Abs(screen.X - lastPointerScreen.X) <= size.Width / 2.0
+            && Math.Abs(screen.Y - lastPointerScreen.Y) <= size.Height / 2.0 && currentPath == lastPointerPath) clickCount = 2;
+        if (currentPath != lastPointerPath) clickCount = 1;
+        lastPointerDown = tick; lastPointerScreen = screen;
+        lastPointerPath = currentPath;
         Runtime.Current.Selection.Claim(contents);
-        if (e.ClickCount == 2)
+        if (clickCount == 2)
         {
             Finish();
             if (pressed?.Tag is string path)
@@ -76,14 +96,12 @@ internal sealed class ContentPointerInput : IDisposable
                 if (!pressed.IsSelected) { items.SelectedItems.Clear(); pressed.IsSelected = true; }
                 Runtime.Open(path);
             }
-            e.Handled = true;
-            return;
+            return true;
         }
         items.Focus();
         initial = contents.SelectedPaths().ToHashSet(StringComparer.OrdinalIgnoreCase);
         modifiers = Keyboard.Modifiers;
         scroll = Descendant<ScrollViewer>(items);
-        var point = e.GetPosition(contents.Viewport);
         origin = new Point(point.X, point.Y + (scroll?.VerticalOffset ?? 0));
         if (pressed?.Tag is string hit)
         {
@@ -108,7 +126,7 @@ internal sealed class ContentPointerInput : IDisposable
         }
         else if (modifiers == ModifierKeys.None) items.SelectedItems.Clear();
         contents.Viewport.CaptureMouse();
-        e.Handled = true;
+        return true;
     }
 
     private async void Move(object sender, MouseEventArgs e)
@@ -175,24 +193,30 @@ internal sealed class ContentPointerInput : IDisposable
 
     private void RightDown(object sender, MouseButtonEventArgs e)
     {
-        var item = FolderHeader.FindParent<ListBoxItem>(e.OriginalSource as DependencyObject);
-        if (item == null) return;
+        e.Handled = PointerRightDown(e.OriginalSource as DependencyObject);
+    }
+
+    internal bool PointerRightDown(DependencyObject? source)
+    {
+        var item = FolderHeader.FindParent<ListBoxItem>(source);
+        if (item == null) return false;
         Runtime.Current.Selection.Claim(contents);
         items.Focus();
         if (!item.IsSelected) { items.SelectedItems.Clear(); item.IsSelected = true; }
         anchor = (string)item.Tag;
         contents.Items.SetSelectionAnchor(item);
         contents.SetCurrentName(item);
-        e.Handled = true;
+        return true;
     }
 
     private async void RightUp(object sender, MouseButtonEventArgs e)
     {
-        var item = FolderHeader.FindParent<ListBoxItem>(e.OriginalSource as DependencyObject);
-        if (item == null) return;
+        if (FolderHeader.FindParent<ListBoxItem>(e.OriginalSource as DependencyObject) == null) return;
         e.Handled = true;
-        await ShowMenuAsync(items.PointToScreen(e.GetPosition(items)), Keyboard.Modifiers);
+        await PointerRightUpAsync(items.PointToScreen(e.GetPosition(items)));
     }
+
+    internal Task PointerRightUpAsync(Point screen) => ShowMenuAsync(screen, Keyboard.Modifiers);
 
     private async Task ShowMenuAsync(Point screen, ModifierKeys modifiers)
     {
@@ -231,6 +255,7 @@ internal sealed class ContentPointerInput : IDisposable
     { foreach (ListBoxItem item in items.Items) item.IsSelected = selected.Contains((string)item.Tag); }
     internal void ClearSelection()
     {
+        lastPointerDown = 0; lastPointerPath = null;
         if (menuOpen) ShellContextMenu.CancelPending();
         anchor = null;
         initial.Clear();

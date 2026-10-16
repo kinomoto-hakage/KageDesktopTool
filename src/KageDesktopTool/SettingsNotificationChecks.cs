@@ -20,7 +20,7 @@ internal static class SettingsNotificationChecks
     internal static int Run(bool notificationOnly = false, bool settingsOnly = false)
     {
         var fixture = Path.Combine(Path.GetTempPath(), "Kage-notifications-" + Guid.NewGuid().ToString("N"));
-        var evidence = Path.Combine(Environment.CurrentDirectory, ".scratch", "desktop-folder", "verification");
+        var evidence = DesktopCheckSession.EvidenceFor("desktop-folder");
         Directory.CreateDirectory(evidence);
         var log = Path.Combine(evidence, settingsOnly ? "upgrade-03-settings.txt" : "upgrade-03-settings-notifications.txt");
         File.WriteAllText(log, "设置、样式、结果详情与真实 Windows 通知检查\n");
@@ -210,7 +210,7 @@ internal static class SettingsNotificationChecks
             }
             System.Threading.Thread.Sleep(150);
         }
-        var evidence = Path.Combine(Environment.CurrentDirectory, ".scratch", "desktop-folder", "verification");
+        var evidence = DesktopCheckSession.EvidenceFor("desktop-folder");
         var screen = System.Windows.Forms.SystemInformation.VirtualScreen;
         using (var bitmap = new System.Drawing.Bitmap(screen.Width, screen.Height))
         {
@@ -246,7 +246,7 @@ internal static class SettingsNotificationChecks
             dpi.PixelsPerInchX, dpi.PixelsPerInchY, PixelFormats.Pbgra32);
         bitmap.Render(window);
         var encoder = new PngBitmapEncoder(); encoder.Frames.Add(BitmapFrame.Create(bitmap));
-        using var file = File.Create(Path.Combine(Environment.CurrentDirectory, ".scratch", "desktop-folder", "verification", name));
+        using var file = File.Create(Path.Combine(DesktopCheckSession.EvidenceFor("desktop-folder"), name));
         encoder.Save(file);
     }
 
