@@ -85,7 +85,17 @@ internal sealed class DesktopCheckSession : IDisposable
 
     internal static async Task CaptureAsync(string path, Func<IEnumerable<FolderHeader>> headers, Action expose)
     {
-        bool Visible() => headers().Any() && headers().All(h => OwnsPoint(h, h.HeaderInput.PointToScreen(new Point(20, 20))));
+        bool Visible() => headers().Any() && headers().All(h =>
+        {
+            if (OwnsPoint(h, h.HeaderInput.PointToScreen(new Point(20, 20)))) return true;
+            // 系统暂停会撤掉背景 HWND；完全透明着色的空白像素应穿透。
+            // 改查实际名称的清晰前景像素，不能把正确的穿透当成窗口遮挡。
+            var name = h.NameDisplay;
+            for (var y = 2.0; y < name.ActualHeight; y += 3)
+            for (var x = 2.0; x < name.ActualWidth; x += 3)
+                if (OwnsPoint(h, name.PointToScreen(new Point(x, y)))) return true;
+            return false;
+        });
         var stable = 0;
         for (var attempt = 0; attempt < 30 && stable < 3; attempt++)
         {
@@ -116,7 +126,7 @@ internal sealed class DesktopCheckSession : IDisposable
     }
 
     // 已运行的正式实例有自己的桌面子窗口；只调整检查记录，避免暂停效果时被其遮挡。
-    internal static FolderRecord[] PlaceRecords(IEnumerable<FolderRecord> records, DisplayArea area, Rect reserved)
+    internal static FolderRecord[] PlaceRecords(IEnumerable<FolderRecord> records, DisplayArea area, Rect reserved, int spacing = 10)
     {
         var occupied = new List<Rect> { reserved };
         bool Collect(IntPtr window, IntPtr parameter)
@@ -139,7 +149,7 @@ internal sealed class DesktopCheckSession : IDisposable
                     var candidate = new Rect(x, y, origin.Width, origin.Height);
                     if (occupied.Any(r => r.IntersectsWith(candidate))) continue;
                     chosen = record with { X = x - origin.X, Y = y - origin.Y };
-                    occupied.Add(new Rect(x - 10, y - 10, origin.Width + 20, origin.Height + 20));
+                    occupied.Add(new Rect(x - spacing, y - spacing, origin.Width + spacing * 2, origin.Height + spacing * 2));
                     break;
                 }
             if (chosen == null) throw new InvalidOperationException("桌面没有足够空白区域放置组合夹具，请先折叠部分 Folder。");

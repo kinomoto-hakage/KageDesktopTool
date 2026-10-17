@@ -2,6 +2,43 @@ using Kage.Workspace;
 
 internal static class AppearanceChecks
 {
+    internal static async Task StrengthRecovery()
+    {
+        using var fixture = new Fixture();
+        var records = new[] {
+            new FolderRecord(Guid.NewGuid(), "零值开启", -900, 80, Frosted: true, FrostedStrength: 0),
+            new FolderRecord(Guid.NewGuid(), "独立关闭", 300, 100, Frosted: false, FrostedStrength: 100)
+        };
+        foreach (var record in records)
+        {
+            Directory.CreateDirectory(Path.Combine(fixture.Content, record.Name));
+            File.WriteAllBytes(Path.Combine(fixture.Content, record.Name, "保留.bin"), [0, 42, 255]);
+        }
+        fixture.Store.Save(new WorkspaceState { Root = fixture.Content, Folders = records });
+        IDesktopWorkspace workspace = new DesktopWorkspace(fixture.Store, new TestStartup());
+        DisplayArea[] displays = [new(-1200, 0, 1200, 1000), new(0, 0, 1600, 1200, 1.5)];
+        Check((await workspace.InitializeAsync(displays)).Succeeded, "负坐标混合DPI隔离工作区加载");
+        var edit = workspace.BeginAppearance(records[0].Id)!;
+        edit.SetFrostedStrength(75);
+        await workspace.ReportDesktopAvailabilityAsync(false);
+        Check(edit.Preview.Folder.FrostedStrength == 75 && workspace.Snapshot.Folders[0].Folder.FrostedStrength == 0,
+            "宿主暂不可用保留有效强度草稿且不发布正式值");
+        await workspace.ReportDesktopAvailabilityAsync(true);
+        Check(edit.Preview.Folder.FrostedStrength == 75 && (await workspace.ApplyAppearanceAsync(edit)).Succeeded,
+            "宿主恢复后有效草稿仍可整体保存");
+        edit = workspace.BeginAppearance(records[0].Id)!; edit.SetFrostedStrength(25);
+        await workspace.RefreshAsync([new(0, 0, 1600, 1200, 2)]);
+        Check(edit.Preview.Folder.FrostedStrength == 75 && !(await workspace.ApplyAppearanceAsync(edit)).Succeeded,
+            "拔屏和DPI改变使旧会话失效，恢复采用正式75%而非25%草稿");
+        workspace.CancelAppearance(edit);
+        workspace = new DesktopWorkspace(fixture.Store, new TestStartup());
+        await workspace.InitializeAsync([new(0, 0, 1600, 1200, 2)]);
+        Check(workspace.Snapshot.Folders[0].Folder is { Frosted: true, FrostedStrength: 75 }
+            && workspace.Snapshot.Folders[1].Folder is { Frosted: false, FrostedStrength: 100 }
+            && workspace.Snapshot.Folders.All(f => File.ReadAllBytes(Path.Combine(f.ActualPath, "保留.bin")).SequenceEqual(new byte[] { 0, 42, 255 })),
+            "环境恢复及重启逐Folder保持强度与开关区别，内容字节不变");
+    }
+
     internal static async Task StrengthPreview()
     {
         using var fixture = new Fixture();

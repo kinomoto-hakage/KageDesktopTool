@@ -21,6 +21,7 @@ internal static partial class ContentInputChecks
 {
     internal static int Run(bool identityOnly = false, bool refreshOnly = false, bool menuPlacementOnly = false, bool menuLatencyOnly = false, bool gridNamesOnly = false, bool selectionOnly = false, bool frosted = false, bool doubleClickOnly = false)
     {
+        using var session = new DesktopCheckSession("content-input");
         var fixture = Path.Combine(Path.GetTempPath(), "Kage-input-" + Guid.NewGuid().ToString("N"));
         var evidence = DesktopCheckSession.EvidenceFor("desktop-folder");
         Directory.CreateDirectory(fixture);
@@ -33,6 +34,13 @@ internal static partial class ContentInputChecks
         Runtime? runtime = null;
         var exit = 1;
         var desktopShown = false;
+        session.Defer(() => { if (desktopShown) FileMoveChecks.DesktopVisibility(false); });
+        session.Defer(() => runtime?.Dispose());
+        session.Defer(() =>
+        {
+            keybd_event(0x11, 0, 2, UIntPtr.Zero); keybd_event(0x10, 0, 2, UIntPtr.Zero);
+            mouse_event(4, 0, 0, 0, UIntPtr.Zero);
+        });
         app.Startup += async (_, _) =>
         {
             try
@@ -65,15 +73,35 @@ internal static partial class ContentInputChecks
                 await workspace.RefreshAsync(displays);
                 if (frosted)
                 {
+                    var placed = DesktopCheckSession.PlaceRecords(workspace.Snapshot.Folders.Select(f => f.Folder), displays[0],
+                        new Rect(displays[0].X, displays[0].Y, 0, 0));
+                    foreach (var record in placed)
+                    {
+                        var layout = workspace.BeginLayout(record.Id)!;
+                        var current = layout.Folders.Single(f => f.Folder.Id == record.Id).Folder;
+                        layout.BeginDrag(0, 0); layout.DragTo(record.X - current.X, record.Y - current.Y); layout.EndDrag();
+                        Require((await workspace.CommitLayoutAsync(layout)).Succeeded, "内容输入夹具避开用户 Folder");
+                    }
                     foreach (var item in workspace.Snapshot.Folders.ToArray())
                     {
                         var style = workspace.BeginAppearance(item.Folder.Id)!;
                         style.SetFrosted(true); style.SetOpacity(0);
+                        style.SetFrostedStrength(100);
                         Require((await workspace.ApplyAppearanceAsync(style)).Succeeded, "真实内容回归保存完全透明毛玻璃");
                     }
                 }
                 if (menuLatencyOnly) SetCursorPos(0, 0);
-                runtime = new Runtime(workspace);
+                var capability = true;
+                runtime = new Runtime(workspace, frostedCapability: frosted ? () => capability : null);
+                if (frosted)
+                {
+                    await DesktopCheckSession.WaitAsync(() => runtime.Headers.Values.All(h => h.FrostedVisible), "内容输入初始背景未就绪");
+                    capability = false; runtime.RefreshFrostedEnvironment();
+                    Require(runtime.Headers.Values.All(h => !h.FrostedVisible), "内容输入前受控能力暂停；真实系统设置另有验收");
+                    capability = true; runtime.RefreshFrostedEnvironment();
+                    await DesktopCheckSession.WaitAsync(() => runtime.Headers.Values.All(h => h.FrostedVisible), "内容输入恢复背景未就绪");
+                    Require(runtime.Headers.Values.All(h => h.Record.FrostedStrength == 100), "100%强度与完全透明着色恢复后再执行真实文件打开、原生菜单及内容操作");
+                }
                 var header = runtime.Headers[folder.Folder.Id];
                 Require(header.Host != IntPtr.Zero, "真实 Explorer 宿主可见");
                 await header.Contents.IconsLoaded;
@@ -497,12 +525,9 @@ internal static partial class ContentInputChecks
             catch (Exception e) { File.AppendAllText(log, "失败：" + e + "\n"); }
             finally
             {
-                keybd_event(0x11, 0, 2, UIntPtr.Zero);
-                keybd_event(0x10, 0, 2, UIntPtr.Zero);
-                mouse_event(4, 0, 0, 0, UIntPtr.Zero);
-                runtime?.Dispose();
-                if (desktopShown) FileMoveChecks.DesktopVisibility(false);
-                app.Shutdown();
+                try { await session.RestoreAsync(); File.AppendAllText(log, "最终恢复：键鼠、Runtime和桌面可见性已恢复。\n"); }
+                catch (Exception error) { exit = 1; File.AppendAllText(log, "恢复失败：" + error + "\n"); }
+                finally { app.Shutdown(); }
             }
             void Require(bool passed, string message)
             { File.AppendAllText(log, (passed ? "通过：" : "失败：") + message + "\n"); if (!passed) throw new Exception(message); }

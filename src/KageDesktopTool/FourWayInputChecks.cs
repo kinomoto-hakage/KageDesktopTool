@@ -35,8 +35,32 @@ internal static partial class ContentInputChecks
                 var root = Path.Combine(fixture, "内容");
                 var name = "中文ABC123e\u0301👩‍💻-" + new string('长', 46);
                 var target = new FolderRecord(Guid.NewGuid(), name, area.X + area.Width * 2 / 5, area.Y + area.Height / 3,
-                    HeaderWidth: 360, BodyHeight: 280, Expanded: true, Frosted: frosted, Opacity: frosted ? 0 : .68);
+                    HeaderWidth: 360, BodyHeight: 280, Expanded: true, Frosted: frosted, Opacity: frosted ? 0 : .68, FrostedStrength: 75);
                 var other = new FolderRecord(Guid.NewGuid(), "其他 Folder", area.X + 30, area.Y + 30);
+                if (frosted)
+                {
+                    // 用四向最大操作范围的并集摆位，不能只给当前Top矩形留空。
+                    var envelope = Rect.Empty;
+                    foreach (var direction in Enum.GetValues<HeaderPosition>())
+                    {
+                        var bounds = FolderGeometry.For(target with { X = 0, Y = 0, HeaderPosition = direction,
+                            HeaderWidth = target.HeaderWidth + 80, BodyHeight = target.BodyHeight + 60,
+                            HeaderHeight = target.HeaderHeight + 40, SideHeaderWidth = target.SideHeaderWidth + 50 }, area.Scale);
+                        envelope.Union(new Rect(bounds.X, bounds.Y, bounds.Width, bounds.Height));
+                    }
+                    envelope.Inflate(40, 40); // 拖动位移和业务12px间隔均计入独立前置条件。
+                    var envelopeRecord = target with { X = 0, Y = 0, HeaderPosition = HeaderPosition.Top,
+                        HeaderWidth = envelope.Width / area.Scale, HeaderHeight = 0, BodyHeight = envelope.Height / area.Scale };
+                    var placedEnvelope = DesktopCheckSession.PlaceRecords([envelopeRecord], area, new Rect(area.X, area.Y, 0, 0))[0];
+                    var reserved = new Rect(placedEnvelope.X, placedEnvelope.Y, envelope.Width, envelope.Height);
+                    target = target with { X = placedEnvelope.X - (int)envelope.X, Y = placedEnvelope.Y - (int)envelope.Y };
+                    other = DesktopCheckSession.PlaceRecords([other], area, reserved)[0];
+                    var otherBounds = FolderGeometry.For(other, area.Scale);
+                    Require(new Rect(area.X, area.Y, area.Width, area.Height).Contains(reserved)
+                        && !reserved.IntersectsWith(new Rect(otherBounds.X, otherBounds.Y, otherBounds.Width, otherBounds.Height)),
+                        "四向最大几何、后续调尺寸和真实拖动范围均在实际屏内，且不与对照Folder重叠");
+                    File.AppendAllText(log, $"四向夹具预留：{reserved}；目标锚点 {target.X},{target.Y}；对照 {other.X},{other.Y}。\n");
+                }
                 foreach (var record in new[] { target, other }) Directory.CreateDirectory(Path.Combine(root, record.Name));
                 var marker = Path.Combine(fixture, "打开证据.txt");
                 var path = Path.Combine(root, target.Name);
@@ -86,6 +110,8 @@ internal static partial class ContentInputChecks
                     var expected = FolderGeometry.For(header.Record, scale);
                     Require(rect.Left == expected.X && rect.Top == expected.Y && rect.Right - rect.Left == expected.Width
                         && rect.Bottom - rect.Top == expected.Height, "HWND 物理原点与四向可见边界一致");
+                    if (frosted) Require(header.FrostedVisible && header.Record.FrostedStrength == 75,
+                        "四向与横竖名称、折叠、拖动、调尺寸后保持非默认75%强度");
                 }
                 async Task OpenStyle()
                 {
@@ -102,7 +128,7 @@ internal static partial class ContentInputChecks
                     await MouseAt(Center(combo), false); await Task.Delay(80); Key(0x24);
                     for (var i = 0; i < index; i++) Key(0x28);
                     Key(0x0D); await Task.Delay(200);
-                    Require(combo.SelectedIndex == index, "真实鼠标与键盘选择样式选项");
+                    Require(combo.SelectedIndex == index, $"真实鼠标与键盘选择样式选项：期望{index}，实际{combo.SelectedIndex}，错误={dialog?.Error.Text}");
                 }
                 async Task ApplyStyle()
                 {
@@ -137,6 +163,8 @@ internal static partial class ContentInputChecks
                             "八组合真实悬停显示完整 Folder 名称");
                         SetCursorPos(area.X + 10, area.Y + 10); await Task.Delay(100);
                         Render(header, Path.Combine(evidence, $"header-{direction}-{orientation}.png"));
+                        if (frosted) await DesktopCheckSession.CaptureAsync(Path.Combine(evidence, $"03-实际四向-{direction}-{orientation}.png"),
+                            () => [header], () => FileMoveChecks.DesktopVisibility(true));
                     }
                     var before = Saved(); var scale = workspace.Snapshot.Folders.Single(f => f.Folder.Id == target.Id).DisplayScale;
                     var dragPoint = Center(header.NameDisplay); CheckHit(header, dragPoint);

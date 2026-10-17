@@ -75,6 +75,7 @@ var tests = new (string Name, Func<Task> Run)[]
     ("毛玻璃强度默认零值预览校验与取消", AppearanceChecks.StrengthPreview),
     ("毛玻璃强度整体保存重试并发和重启", AppearanceChecks.StrengthPersistence),
     ("毛玻璃强度旧配置兼容与无效配置恢复", AppearanceChecks.StrengthConfiguration),
+    ("毛玻璃强度宿主恢复与混合DPI失效保护", AppearanceChecks.StrengthRecovery),
     ("毛玻璃默认关闭即时预览取消与结束保护", AppearanceChecks.FrostedPreview),
     ("毛玻璃完整保存失败重试重启与并发保护", AppearanceChecks.FrostedPersistence),
     ("外观颜色同步校验及取消恢复", AppearanceChecks.InputAndCancel),

@@ -37,7 +37,9 @@ internal static class DisplayDpiChecks
                 Check(displays.Length > 0, "重新枚举实际显示区域");
                 foreach (var display in displays) File.AppendAllText(log, $"环境：{display}\n");
                 var records = displays.Select((display, index) => new FolderRecord(Guid.NewGuid(), $"实际屏幕 {index + 1}",
-                    display.X + 20, display.Y + 20, Expanded: true, Frosted: frosted)).ToArray();
+                    display.X + 20, display.Y + 20, Expanded: true, Frosted: frosted, FrostedStrength: 75)).ToArray();
+                records = displays.SelectMany((display, index) => DesktopCheckSession.PlaceRecords([records[index]], display,
+                    new Rect(display.X, display.Y, 0, 0))).ToArray();
                 var root = Path.Combine(fixture, "内容");
                 foreach (var record in records)
                 {
@@ -101,10 +103,11 @@ internal static class DisplayDpiChecks
                 }
                 // 在实际宿主中注入两个逻辑工作区，只核对跨 DPI 预览路径，不改变系统配置。
                 var actualArea = displays[0];
-                DisplayArea[] previewAreas = [actualArea with { Width = actualArea.Width / 3, Scale = 1.25 },
-                    actualArea with { X = actualArea.X + actualArea.Width / 3, Width = actualArea.Width - actualArea.Width / 3, Scale = 2 }];
+                DisplayArea[] previewAreas = [actualArea with { Width = actualArea.Width / 2, Scale = 1.25 },
+                    actualArea with { X = actualArea.X + actualArea.Width / 2, Width = actualArea.Width - actualArea.Width / 2, Scale = 2 }];
                 Check((await workspace.RefreshAsync(previewAreas)).Succeeded, "跨 DPI 预览夹具初始化");
                 runtime.Render();
+                var sourceScale = workspace.Snapshot.Folders.Single(f => f.Folder.Id == target.FolderId).DisplayScale;
                 var previewRow = target.Contents.Items.Items[0];
                 var previewIcons = target.Contents.IconsLoaded;
                 var preview = runtime.BeginInteraction(target.FolderId)!;
@@ -112,6 +115,8 @@ internal static class DisplayDpiChecks
                 preview.DragTo(actualArea.Width / 2, 0);
                 runtime.Preview(preview);
                 Check(target.Record.X >= previewAreas[1].X, "注入轨迹进入不同 DPI 工作区");
+                Check(preview.Folders.Single(f => f.Folder.Id == target.FolderId).DisplayScale != sourceScale,
+                    "安全摆位后的虚拟轨迹确实从源DPI跨越到不同目标DPI");
                 Check(ReferenceEquals(previewRow, target.Contents.Items.Items[0]) && ReferenceEquals(previewIcons, target.Contents.IconsLoaded),
                     "跨 DPI 鼠标预览保留内容项目及图标任务，不读取 Shell 图标");
                 await runtime.CommitInteractionAsync(preview);
@@ -198,7 +203,8 @@ internal static class DisplayDpiChecks
             if (frosted)
             {
                 WindowsDesktop.GetWindowRect(header.Host, out var backdrop);
-                Check(header.FrostedVisible && backdrop.Equals(rectangle), label + "：毛玻璃背景与前景物理边界一致");
+                Check(header.FrostedVisible && header.Record.FrostedStrength == 75 && backdrop.Equals(rectangle),
+                    label + "：非默认75%强度在DPI通知及尺寸恢复后保持，背景与前景物理边界一致");
             }
             File.AppendAllText(log, $"{label}：窗口={rectangle.Left},{rectangle.Top},{rectangle.Right - rectangle.Left},{rectangle.Bottom - rectangle.Top}，记录={folder.Folder.X},{folder.Folder.Y}，尺寸={folder.Folder.HeaderWidth},{folder.Folder.HeaderHeight + folder.Folder.BodyHeight}，缩放={folder.DisplayScale}\n");
             Check(folder.Visible && WindowsDesktop.IsWindow(header.Handle)

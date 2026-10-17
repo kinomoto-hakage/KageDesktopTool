@@ -6,6 +6,7 @@ using System.Runtime.InteropServices;
 using System.Threading.Tasks;
 using System.Windows;
 using System.Windows.Automation;
+using System.Windows.Controls.Primitives;
 using Kage.Workspace;
 using Microsoft.Win32;
 using Windows.UI.ViewManagement;
@@ -17,20 +18,22 @@ internal static class FrostedSystemChecks
 {
     internal static int Run(bool realSettings = false, bool realEnergy = false)
     {
-        var fixture = Path.Combine(Path.GetTempPath(), "Kage-frosted-system-" + Guid.NewGuid().ToString("N"));
-        Directory.CreateDirectory(fixture);
+        using var session = new DesktopCheckSession("frosted-system");
+        var fixture = session.DirectoryPath;
         var evidence = DesktopCheckSession.EvidenceFor("folder-frosted-background");
         Directory.CreateDirectory(evidence);
         var log = Path.Combine(evidence, realEnergy ? "03-真实节能模式.txt" : realSettings ? "03-真实系统设置.txt" : "03-确定性轨迹.txt");
         File.WriteAllText(log, realEnergy ? "真实 Windows 节能设置：物理鼠标切换系统设置控件。\n" : realSettings ? "真实 Windows 系统设置：注册表透明设置＋系统广播；高对比度 SPI。\n" : "确定性 Windows 平台事实，经正式 Runtime / Folder / StyleDialog。\n");
         var app = new Application { ShutdownMode = ShutdownMode.OnExplicitShutdown };
         Runtime? runtime = null;
+        session.Defer(() => runtime?.Dispose());
         var exit = 1;
         app.Startup += async (_, _) =>
         {
             try
             {
-                IDesktopWorkspace workspace = new DesktopWorkspace(new JsonWorkspaceStore(Path.Combine(fixture, "状态")), new NoStartup());
+                var store = new FaultStore(new JsonWorkspaceStore(Path.Combine(fixture, "状态")));
+                IDesktopWorkspace workspace = new DesktopWorkspace(store, new NoStartup());
                 await workspace.InitializeAsync(WindowsDesktop.Displays());
                 await workspace.SelectRootAsync(Path.Combine(fixture, "内容"));
                 await workspace.CreateFolderAsync("系统限制轨迹");
@@ -42,6 +45,7 @@ internal static class FrostedSystemChecks
                 await workspace.CommitLayoutAsync(move);
                 var style = workspace.BeginAppearance(id)!;
                 style.SetFrosted(true);
+                style.SetFrostedStrength(25);
                 await workspace.ApplyAppearanceAsync(style);
                 var saved = workspace.Snapshot.Folders.Single().Folder;
                 if (realSettings || realEnergy)
@@ -58,18 +62,21 @@ internal static class FrostedSystemChecks
                 await Task.Delay(300);
                 Require(header.FrostedVisible, "无限制时显示毛玻璃");
                 var dialog = runtime.CreateAppearance(id)!;
+                dialog.Interaction.SetFrostedStrength(75);
+                dialog.UpdatePreview();
                 environment = environment with { TransparencyEnabled = false, HighContrast = true };
                 runtime.RefreshFrostedEnvironment();
                 Require(!header.FrostedVisible && header.IsVisible && dialog.FrostedStatus.Text.Contains("透明效果")
                     && dialog.FrostedStatus.Text.Contains("高对比度") && dialog.Frosted.IsChecked == true
-                    && workspace.Snapshot.Folders.Single().Folder == saved, "多限制释放效果、刷新提示并保留意图与前景");
+                    && header.Record.FrostedStrength == 75 && dialog.FrostedStrength.IsEnabled
+                    && workspace.Snapshot.Folders.Single().Folder == saved, "多限制释放效果、刷新提示并保留独立的有效75%草稿与正式25%意图");
                 environment = environment with { TransparencyEnabled = true };
                 runtime.RefreshFrostedEnvironment();
                 Require(!header.FrostedVisible && !dialog.FrostedStatus.Text.Contains("透明效果")
                     && dialog.FrostedStatus.Text.Contains("高对比度"), "只解除一项限制仍暂停并清除过期原因");
                 environment = new FrostedEnvironment();
                 runtime.RefreshFrostedEnvironment();
-                Require(header.FrostedVisible && dialog.FrostedStatus.Text == "", "全部解除自动重建并清除原因");
+                Require(header.FrostedVisible && header.Record.FrostedStrength == 75 && dialog.FrostedStatus.Text == "", "全部解除自动重建最新75%草稿并清除原因");
                 var oldHost = header.Host;
                 environment = environment with { EnergySaver = 1 };
                 runtime.RefreshFrostedEnvironment();
@@ -89,11 +96,12 @@ internal static class FrostedSystemChecks
                 dialog.Interaction.SetFrosted(false);
                 dialog.SelectColor("#A02040");
                 dialog.Interaction.SetOpacity(.35);
+                dialog.Interaction.SetFrostedStrength(0);
                 dialog.UpdatePreview();
                 runtime.RefreshFrostedEnvironment();
                 runtime.Render();
                 Require(!header.Record.Frosted && header.Record.Color == "#A02040" && header.Record.Opacity == .35
-                    && !header.FrostedVisible && dialog.FrostedStatus.Text == ""
+                    && header.Record.FrostedStrength == 0 && !header.FrostedVisible && dialog.FrostedStatus.Text == ""
                     && workspace.Snapshot.Folders.Single().Folder == saved, "后台刷新和限制变化保持当前有效关闭、颜色与透明度草稿");
                 dialog.Close();
                 Require(header.Record == saved && !header.FrostedVisible && header.FrostedUnavailableReason.Contains("透明效果"),
@@ -102,10 +110,17 @@ internal static class FrostedSystemChecks
                 dialog.Interaction.SetFrosted(true);
                 dialog.SelectColor("#4080C0");
                 dialog.Interaction.SetOpacity(.45);
+                dialog.Interaction.SetFrostedStrength(100);
                 dialog.UpdatePreview();
+                store.FailNext = true;
+                await dialog.ApplyAsync();
+                runtime.RefreshFrostedEnvironment();
+                Require(!dialog.Interaction.Closed && workspace.Snapshot.Folders.Single().Folder == saved
+                    && header.Record.FrostedStrength == 100 && !header.FrostedVisible,
+                    "暂停期间保存故障不发布正式值，环境刷新仍保留可重试100%有效草稿");
                 await dialog.ApplyAsync();
                 saved = workspace.Snapshot.Folders.Single().Folder;
-                Require(saved.Frosted && saved.Color == "#4080C0" && saved.Opacity == .45 && !header.FrostedVisible,
+                Require(saved.Frosted && saved.FrostedStrength == 100 && saved.Color == "#4080C0" && saved.Opacity == .45 && !header.FrostedVisible,
                     "暂停期间完整样式一次保存且前景正常");
                 environment = new FrostedEnvironment();
                 runtime.RefreshFrostedEnvironment();
@@ -125,13 +140,13 @@ internal static class FrostedSystemChecks
                 dialog.Interaction.SetFrosted(false);
                 dialog.SelectColor("#FF0000");
                 var newer = workspace.BeginAppearance(id)!;
-                newer.SetHex("#208060");
+                newer.SetFrostedStrength(0);
                 await workspace.ApplyAppearanceAsync(newer);
                 saved = workspace.Snapshot.Folders.Single().Folder;
                 environment = new FrostedEnvironment(HighContrast: true);
                 runtime.RefreshFrostedEnvironment();
                 Require(header.Record == saved && !header.FrostedVisible && dialog.FrostedStatus.Text.Contains("高对比度"),
-                    "环境变化重新核对草稿有效性，过期关闭草稿不能覆盖更新的正式样式");
+                    "仅正式强度变化也使旧草稿过期，暂停刷新不能复活旧关闭草稿");
                 dialog.Close();
                 environment = new FrostedEnvironment();
                 runtime.RefreshFrostedEnvironment();
@@ -162,7 +177,12 @@ internal static class FrostedSystemChecks
                 exit = 0;
             }
             catch (Exception error) { File.AppendAllText(log, "失败：" + error + "\n"); }
-            finally { runtime?.Dispose(); app.Shutdown(); }
+            finally
+            {
+                try { await session.RestoreAsync(); File.AppendAllText(log, "恢复完成：运行时、鼠标与临时资源。\n"); }
+                catch (Exception error) { exit = 1; File.AppendAllText(log, "恢复失败：" + error + "\n"); }
+                app.Shutdown();
+            }
         };
         app.Run();
         return exit;
@@ -195,16 +215,31 @@ internal static class FrostedSystemChecks
             await WaitFor(() => !ui.AdvancedEffectsEnabled, "真实系统透明效果已关闭");
             await Task.Delay(500);
             Require(!header.FrostedVisible && header.IsVisible && dialog.FrostedStatus.Text.Contains("透明效果"), "真实关闭透明效果后自动暂停并提示原因");
+            await Strength(75);
+            Require(dialog.FrostedStrength.IsEnabled && header.Record.FrostedStrength == 75 && dialog.FrostedStatus.Text.Contains("透明效果"),
+                "真实系统暂停时鼠标可调整75%且保持原因提示");
+            await dialog.ApplyAsync();
+            Require(runtime.Workspace.Snapshot.Folders.Single().Folder.FrostedStrength == 75 && !header.FrostedVisible,
+                "真实暂停期间整体保存75%而不绕过系统设置");
+            dialog = runtime.CreateAppearance(id)!; dialog.Left = 10; dialog.Top = 10; dialog.Show();
             Screenshot("03-真实透明效果关闭.png");
             key.SetValue("EnableTransparency", 1, RegistryValueKind.DWord);
             await Task.Run(Broadcast);
             await WaitFor(() => ui.AdvancedEffectsEnabled && header.FrostedVisible && dialog.FrostedStatus.Text == "", "真实透明效果恢复后自动重建");
+            Require(header.Record.FrostedStrength == 75, "真实透明恢复使用暂停期间最新已保存75%");
             Screenshot("03-真实透明效果恢复.png");
             var highContrast = originalHighContrast;
             highContrast.Flags |= 1;
             contrastChanged = true;
             Require(await Task.Run(() => SystemParametersInfo(0x43, highContrast.Size, ref highContrast, 3)), "Windows 接受真实高对比度设置");
             await WaitFor(() => SystemParameters.HighContrast && !header.FrostedVisible && dialog.FrostedStatus.Text.Contains("高对比度"), "真实高对比度开启自动暂停并提示");
+            await Task.Delay(2500);
+            await Strength(0);
+            Require(header.Record.FrostedStrength == 0 && header.Record.Frosted, $"真实高对比暂停时零强度预览仍保留启用意图：滑块={dialog.FrostedStrength.Value}，显示={header.Record.FrostedStrength}，错误={dialog.Error.Text}");
+            dialog.Close();
+            Require(header.Record.FrostedStrength == 75 && !header.FrostedVisible && SystemParameters.HighContrast,
+                "真实暂停期间取消恢复正式75%，不会撤销当前系统高对比设置");
+            dialog = runtime.CreateAppearance(id)!; dialog.Left = 10; dialog.Top = 10; dialog.Show();
             await Task.Delay(2500);
             Screenshot("03-真实高对比度开启.png");
             Require(await Task.Run(() => SystemParametersInfo(0x43, originalHighContrast.Size, ref originalHighContrast, 3)), "Windows 恢复原高对比度设置");
@@ -229,6 +264,16 @@ internal static class FrostedSystemChecks
         {
             if (!condition) throw new InvalidOperationException(message);
             File.AppendAllText(log, "通过：" + message + "\n");
+        }
+        async Task Strength(int value)
+        {
+            dialog.Activate(); dialog.UpdateLayout(); var slider = dialog.FrostedStrength;
+            var track = (Track)slider.Template.FindName("PART_Track", slider); var thumb = track.Thumb;
+            var from = await DesktopCheckSession.InputPointAsync(runtime, dialog, thumb, new Point(thumb.ActualWidth / 2, thumb.ActualHeight / 2));
+            var to = track.PointToScreen(new Point(thumb.ActualWidth / 2 + (track.ActualWidth - thumb.ActualWidth) * value / 100.0, track.ActualHeight / 2));
+            SetCursorPos((int)from.X, (int)from.Y); mouse_event(2, 0, 0, 0, UIntPtr.Zero);
+            for (var i = 1; i <= 8; i++) { SetCursorPos((int)Math.Round(from.X + (to.X - from.X) * i / 8), (int)Math.Round(to.Y)); await Task.Delay(30); }
+            mouse_event(4, 0, 0, 0, UIntPtr.Zero); await Task.Delay(300);
         }
         async Task WaitFor(Func<bool> condition, string message)
         {
@@ -291,12 +336,26 @@ internal static class FrostedSystemChecks
             File.AppendAllText(log, $"实际开启读数：EnergySaver={runtime.FrostedEnvironment.EnergySaver}；完整原因={dialog.FrostedStatus.Text.Replace("\n", "；")}。\n");
             ShowWindow(new IntPtr(window.Current.NativeWindowHandle), 6);
             await Task.Delay(500);
+            dialog.Activate(); dialog.UpdateLayout(); var slider = dialog.FrostedStrength;
+            var track = (Track)slider.Template.FindName("PART_Track", slider); var thumb = track.Thumb;
+            var start = await DesktopCheckSession.InputPointAsync(runtime, dialog, thumb, new Point(thumb.ActualWidth / 2, thumb.ActualHeight / 2));
+            var end = track.PointToScreen(new Point(thumb.ActualWidth / 2 + (track.ActualWidth - thumb.ActualWidth) * .75, track.ActualHeight / 2));
+            SetCursorPos((int)start.X, (int)start.Y); mouse_event(2, 0, 0, 0, UIntPtr.Zero);
+            for (var i = 1; i <= 8; i++) { SetCursorPos((int)Math.Round(start.X + (end.X - start.X) * i / 8), (int)Math.Round(end.Y)); await Task.Delay(30); }
+            mouse_event(4, 0, 0, 0, UIntPtr.Zero); await Task.Delay(300);
+            Require(dialog.FrostedStrength.IsEnabled && header.Record.FrostedStrength == 75 && dialog.FrostedStatus.Text.Contains("省电模式"),
+                "真实节能暂停期间滑块可调整75%且保留原因提示");
+            await dialog.ApplyAsync();
+            Require(runtime.Workspace.Snapshot.Folders.Single().Folder.FrostedStrength == 75 && !header.FrostedVisible,
+                "真实节能暂停期间可保存75%并继续尊重系统限制");
+            dialog = runtime.CreateAppearance(id)!; dialog.Left = 10; dialog.Top = 10; dialog.Show();
             Screenshot("03-真实节能模式开启.png");
             ShowWindow(new IntPtr(window.Current.NativeWindowHandle), 9);
             await Task.Delay(300);
             await Click(toggle);
             await WaitFor(() => runtime.FrostedEnvironment.EnergySaver == 0 && header.FrostedVisible && dialog.FrostedStatus.Text == "",
                 "物理关闭真实节能模式后自动恢复当前启用样式");
+            Require(header.Record.FrostedStrength == 75, "真实节能解除后使用暂停期间最新保存75%");
             ShowWindow(new IntPtr(window.Current.NativeWindowHandle), 6);
             await Task.Delay(500);
             Screenshot("03-真实节能模式恢复.png");
@@ -326,6 +385,8 @@ internal static class FrostedSystemChecks
             if (!condition()) throw new InvalidOperationException(message);
             File.AppendAllText(log, "通过：" + message + "\n");
         }
+        void Require(bool condition, string message)
+        { if (!condition) throw new InvalidOperationException(message); File.AppendAllText(log, "通过：" + message + "\n"); }
         void Screenshot(string name)
         {
             using var bitmap = new System.Drawing.Bitmap(2560, 1600);
@@ -357,5 +418,16 @@ internal static class FrostedSystemChecks
         public string LaunchCommand => "隔离系统限制验收不注册自启";
         public string? ReadCommand() => null;
         public void WriteCommand(string? command) => throw new InvalidOperationException();
+    }
+    private sealed class FaultStore(IWorkspaceStore inner) : IWorkspaceStore
+    {
+        internal bool FailNext;
+        public StateRead Read() => inner.Read();
+        public void Save(WorkspaceState state)
+        {
+            if (FailNext) { FailNext = false; throw new IOException("指定系统暂停期间强度保存故障"); }
+            inner.Save(state);
+        }
+        public void RestoreBackup() => inner.RestoreBackup();
     }
 }
