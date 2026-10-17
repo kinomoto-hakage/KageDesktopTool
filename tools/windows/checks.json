@@ -22,6 +22,7 @@
     { "name": "migration-recovery", "arguments": ["--migration-recovery-check"], "suites": ["release"], "interactive": true, "changesSystem": false },
     { "name": "display-dpi", "arguments": ["--display-dpi-check"], "suites": ["release"], "interactive": true, "changesSystem": false },
     { "name": "desktop-recovery", "arguments": ["--desktop-recovery-check"], "suites": ["release"], "interactive": true, "changesSystem": true },
+    { "name": "frosted-strength", "arguments": ["--frosted-strength-check"], "suites": ["release", "frosted"], "interactive": true, "changesSystem": false },
     { "name": "frosted-system", "arguments": ["--frosted-system-check"], "suites": ["release", "frosted"], "interactive": true, "changesSystem": false },
     { "name": "frosted-input", "arguments": ["--frosted-input-check"], "suites": ["release", "frosted"], "interactive": true, "changesSystem": false },
     { "name": "frosted-four-way", "arguments": ["--frosted-four-way-check"], "suites": ["release", "frosted"], "interactive": true, "changesSystem": false },

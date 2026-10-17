@@ -2,14 +2,16 @@ using System;
 using System.Numerics;
 using System.Runtime.InteropServices;
 using System.Windows;
+using Microsoft.Graphics.Canvas;
+using Microsoft.Graphics.Canvas.Effects;
 using Windows.UI.Composition;
 using Windows.UI.Composition.Desktop;
 using WinRT;
 
 namespace Kage.Desktop;
 
-// Explorer 的透明子窗口不能实时使用 HostBackdrop。独立背景由桌面拥有，
-// 清晰的 WPF 前景仍作为子窗口；Composition 位于子窗口下方，不采样自身。
+// 独立背景由桌面拥有，清晰的 WPF 前景仍作为子窗口。
+// 共享 Explorer 的实时 GPU 帧仅绘制背景，强度不改变着色或前景透明度。
 internal sealed class FrostedBackdrop : IDisposable
 {
     internal IntPtr Handle { get; private set; }
@@ -17,6 +19,12 @@ internal sealed class FrostedBackdrop : IDisposable
     private Compositor? compositor;
     private DesktopWindowTarget? target;
     private SpriteVisual? visual;
+    private DesktopBackdropSource? source;
+    private CanvasSwapChain? swapChain;
+    private GaussianBlurEffect? blur;
+    private Action<CanvasBitmap>? renderer;
+    private volatile bool renderFailed;
+    private int sampleX, sampleY, sampleWidth = 1, sampleHeight = 1;
     private readonly WindowProcedure procedure;
     private IntPtr previousProcedure;
     private IntPtr foreground;
@@ -51,7 +59,24 @@ internal sealed class FrostedBackdrop : IDisposable
             try { target = MarshalInterface<DesktopWindowTarget>.FromAbi(pointer); }
             finally { Marshal.Release(pointer); }
             visual = compositor.CreateSpriteVisual();
-            visual.Brush = compositor.CreateHostBackdropBrush();
+            source = DesktopBackdropSource.Acquire(owner);
+            swapChain = new CanvasSwapChain(source.Canvas, 1, 1, 96);
+            var iid = new Guid("790a45f7-0d42-4876-983a-0a55cfe6f4aa");
+            swapChain.As<ICanvasResourceWrapperNative>().GetNativeResource(IntPtr.Zero, 96, in iid, out var chainPointer);
+            try
+            {
+                compositor.As<ICompositorInterop>().CreateCompositionSurfaceForSwapChain(chainPointer, out var surfacePointer);
+                try
+                {
+                    var surface = MarshalInterface<ICompositionSurface>.FromAbi(surfacePointer);
+                    visual.Brush = compositor.CreateSurfaceBrush(surface);
+                }
+                finally { Marshal.Release(surfacePointer); }
+            }
+            finally { Marshal.Release(chainPointer); }
+            blur = new GaussianBlurEffect { BorderMode = EffectBorderMode.Hard };
+            renderer = Draw;
+            source.Register(renderer);
             target.Root = visual;
         }
         catch { Dispose(); throw; }
@@ -87,9 +112,27 @@ internal sealed class FrostedBackdrop : IDisposable
         return RegisterDragDrop(Handle, dropTarget) >= 0;
     }
 
-    internal bool Position(int x, int y, int width, int height, double scale)
+    internal bool Position(int x, int y, int width, int height, double scale, int strength)
     {
-        if (!WindowsDesktop.IsWindow(Handle) || visual == null) return false;
+        if (!WindowsDesktop.IsWindow(Handle) || visual == null || source == null || renderFailed || source.Failed
+            || !WindowsDesktop.GetWindowRect(source.Root, out var rootBounds)) return false;
+        try
+        {
+            lock (source.Sync)
+            {
+                if (swapChain == null || blur == null || renderer == null) return false;
+                if (sampleWidth != width || sampleHeight != height) swapChain.ResizeBuffers(width, height, 96);
+                sampleWidth = width; sampleHeight = height;
+                sampleX = x - rootBounds.Left; sampleY = y - rootBounds.Top;
+                // 本机 150% 的多频条纹实测，以 32 为原固定效果的观感基准；
+                // 0 保持清晰，增强端 96。百分比不是物理像素半径。
+                var blurScale = (float)Math.Min(scale / 1.5, 250d / 96);
+                blur.BlurAmount = (strength <= 50 ? 32f * strength / 50 : 32f + 64f * (strength - 50) / 50) * blurScale;
+                source.RenderCurrent(renderer);
+                if (renderFailed) return false;
+            }
+        }
+        catch (Exception) { renderFailed = true; return false; }
         visual.Size = new Vector2(width, height);
         var diameter = Math.Max(1, (int)Math.Round(20 * scale));
         var region = CreateRoundRectRgn(0, 0, width + 1, height + 1, diameter, diameter);
@@ -97,6 +140,20 @@ internal sealed class FrostedBackdrop : IDisposable
         // 成功时窗口取得 HRGN 所有权；失败时由本适配器释放。
         if (SetWindowRgn(Handle, region, true) == 0) { DeleteObject(region); return false; }
         return WindowsDesktop.SetWindowPos(Handle, new IntPtr(1), x, y, width, height, 0x10 | 0x40);
+    }
+
+    private void Draw(CanvasBitmap bitmap)
+    {
+        if (renderFailed || swapChain == null || blur == null) return;
+        try
+        {
+            blur.Source = bitmap;
+            using (var drawing = swapChain.CreateDrawingSession(default))
+                drawing.DrawImage(blur, new Vector2(-sampleX, -sampleY));
+            swapChain.Present(0);
+            blur.Source = null;
+        }
+        catch (Exception) { renderFailed = true; }
     }
 
     internal void Hide() { if (Handle != IntPtr.Zero) ShowWindow(Handle, 0); }
@@ -124,6 +181,13 @@ internal sealed class FrostedBackdrop : IDisposable
         if (dropTarget != null && Handle != IntPtr.Zero) RevokeDragDrop(Handle);
         dropTarget = null;
         if (oleInitialized) { OleUninitialize(); oleInitialized = false; }
+        if (source != null)
+        {
+            source.Release(renderer);
+            blur?.Dispose(); blur = null;
+            swapChain?.Dispose(); swapChain = null;
+            source = null; renderer = null;
+        }
         if (target != null) { target.Root = null; target.Dispose(); target = null; }
         visual?.Brush?.Dispose();
         visual?.Dispose(); visual = null;
@@ -131,6 +195,13 @@ internal sealed class FrostedBackdrop : IDisposable
         if (Handle != IntPtr.Zero) { DestroyWindow(Handle); Handle = IntPtr.Zero; }
         GC.KeepAlive(procedure);
     }
+
+    [ComImport, Guid("5F10688D-EA55-4D55-A3B0-4DDB55C0C20A"), InterfaceType(ComInterfaceType.InterfaceIsIUnknown)]
+    private interface ICanvasResourceWrapperNative
+    { void GetNativeResource(IntPtr device, float dpi, in Guid iid, out IntPtr resource); }
+    [ComImport, Guid("25297D5C-3AD4-4C9C-B5CF-E36A38512330"), InterfaceType(ComInterfaceType.InterfaceIsIUnknown)]
+    private interface ICompositorInterop
+    { void CreateCompositionSurfaceForHandle(IntPtr handle, out IntPtr surface); void CreateCompositionSurfaceForSwapChain(IntPtr chain, out IntPtr surface); void CreateGraphicsDevice(IntPtr device, out IntPtr graphics); }
 
     [ComImport, Guid("29E691FA-4567-4DCA-B319-D0F207EB6807"), InterfaceType(ComInterfaceType.InterfaceIsIUnknown)]
     private interface ICompositorDesktopInterop

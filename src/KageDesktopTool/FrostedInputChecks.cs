@@ -103,6 +103,7 @@ internal static class FrostedInputChecks
                     exit = 0;
                     return;
                 }
+                await DesktopCheckSession.WaitAsync(() => header.FrostedVisible, "异步平台背景尚未就绪");
                 Require(header.FrostedVisible && header.Record.Frosted && workspace.Snapshot.Folders.Single().Folder == original,
                     "真实开关立即显示毛玻璃，正式值及布局不变");
                 await workspace.RefreshAsync(areas);

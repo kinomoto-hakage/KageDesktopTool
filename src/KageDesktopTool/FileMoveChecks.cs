@@ -111,16 +111,23 @@ internal static class FileMoveChecks
                 Check(workspace.Snapshot.Folders.Last().Entries.Count == 0 && File.ReadAllBytes(Path.Combine(explorerPath, incomingNames[0])).SequenceEqual(new byte[] { 0, 42, 255 }), "拖出 Explorer 明确目标，真实字节与源消失一致");
 
                 // 桌面夹具均有随机前缀，不选择或改动其他桌面内容。
-                File.WriteAllBytes(Path.Combine(desktop, desktopNames[0]), [7, 0, 255]);
-                MakeShortcut(Path.Combine(desktop, desktopNames[1]), fixture);
-                Directory.CreateDirectory(Path.Combine(desktop, desktopNames[2]));
-                File.WriteAllText(Path.Combine(desktop, desktopNames[2], "内容.txt"), "桌面子目录");
-                SHChangeNotify(0x1000, 5, desktop, IntPtr.Zero);
+                var desktopFixture = Path.Combine(fixture, "桌面夹具源"); Directory.CreateDirectory(desktopFixture);
+                File.WriteAllBytes(Path.Combine(desktopFixture, desktopNames[0]), [7, 0, 255]);
+                MakeShortcut(Path.Combine(desktopFixture, desktopNames[1]), fixture);
+                Directory.CreateDirectory(Path.Combine(desktopFixture, desktopNames[2]));
+                File.WriteAllText(Path.Combine(desktopFixture, desktopNames[2], "内容.txt"), "桌面子目录");
                 ShowWindow(explorer, 6);
                 await Task.Delay(1200);
                 // 把夹具 Folder 放到右侧，避免遮挡 Windows 自动安排在左侧的桌面源图标。
                 await PositionFolder(first, screen.X + screen.Width - 320, screen.Y + screen.Height - 340);
                 await PositionFolder(second, screen.X + screen.Width - 320, screen.Y + 20);
+                // 只安排本次真实移到桌面的随机夹具，避开用户 Folder 遮挡的默认左列。
+                var desktopSetup = await workspace.MoveAsync(desktopNames.Select(name => Path.Combine(desktopFixture, name)).ToArray(), MoveTarget.Desktop);
+                Check(desktopSetup.Items.All(item => item.Outcome == Outcome.Success), "真实建立桌面拖入夹具");
+                var desktopPoint = DesktopBackground();
+                Check(await DesktopIconPlacement.PlaceAsync(desktopSetup, new WindowsDesktop.POINT { X = (int)desktopPoint.X, Y = (int)desktopPoint.Y }) == null,
+                    "只将随机桌面夹具安排到可见空白区域，不移动用户 Folder 或图标");
+                await Task.Delay(700);
                 var desktopView = AutomationElement.FromHandle(WindowsDesktop.Host());
                 AutomationElement? desktopItem = null;
                 foreach (var name in desktopNames)
@@ -133,7 +140,8 @@ internal static class FileMoveChecks
                 }
                 var desktopStart = Center(desktopItem!.Current.BoundingRectangle);
                 var sourceWindow = WindowsDesktop.WindowFromPoint(new WindowsDesktop.POINT { X = (int)desktopStart.X, Y = (int)desktopStart.Y });
-                Check(sourceWindow != first.Handle && sourceWindow != second.Handle, "真实桌面源图标未被 Folder 遮挡");
+                var sourceClass = new System.Text.StringBuilder(128); GetClassName(sourceWindow, sourceClass, sourceClass.Capacity);
+                Check(sourceClass.ToString() == "SysListView32", "真实桌面源图标命中 Explorer 桌面，不被任何 Folder 遮挡");
                 await PhysicalDrag(desktopStart, HeaderCenter(first));
                 await WaitUntil(() => workspace.Snapshot.Folders.First().FileCount == 2 && runtime.ActiveMove == null);
                 CloseResults();
@@ -274,12 +282,19 @@ internal static class FileMoveChecks
             await header.Contents.IconsLoaded;
             header.UpdateLayout();
             var items = header.Contents.Items;
+            var selected = items.Items.Cast<ListBoxItem>().Single(item => Path.GetFileName((string)item.Tag) == names[0]);
+            var image = (Image)((Grid)selected.Content).Children[0];
+            image.BringIntoView();
+            var start = await DesktopCheckSession.InputPointAsync(runtime!, header, image,
+                new Point(image.ActualWidth / 2, image.ActualHeight / 2));
+            // 先等待真实窗口与滚动稳定，再建立本次拖动的选择归属。
+            // 等待期间排队的外部前台通知不能清除随后新建的选择。
+            runtime!.Selection.Claim(header.Contents);
             items.SelectedItems.Clear();
             foreach (var name in names)
                 items.Items.Cast<ListBoxItem>().Single(item => Path.GetFileName((string)item.Tag) == name).IsSelected = true;
             Check(items.SelectedItems.Count == names.Length, "正式展示部分实际多选集合");
-            var selected = (ListBoxItem)items.SelectedItems[0]!;
-            var start = selected.PointToScreen(new Point(selected.ActualWidth / 2, selected.ActualHeight / 2));
+            File.AppendAllText(log, $"OLE 真实源图像 {start}，目标 {destination}，选中 {names.Length} 项。\n");
             await PhysicalDrag(start, destination, escape);
         }
         async Task PositionFolder(FolderHeader header, int x, int y)

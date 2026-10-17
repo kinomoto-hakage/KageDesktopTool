@@ -93,6 +93,7 @@ public sealed class JsonWorkspaceStore(string directory) : IWorkspaceStore
                 || !double.IsFinite(folder.SideHeaderWidth) || folder.SideHeaderWidth is < 64 or > 360
                 || folder.HeaderWidth is < 240 or > 760 || folder.HeaderHeight is < 42 or > 82 || folder.BodyHeight is < 160 or > 720
                 || !double.IsFinite(folder.Opacity) || folder.Opacity is < 0 or > 1
+                || folder.FrostedStrength is < 0 or > 100
                 || folder.Color == null || !System.Text.RegularExpressions.Regex.IsMatch(folder.Color, "^#[0-9a-fA-F]{6}$"))
                 throw new InvalidDataException("Folder 尺寸或外观无效。");
         }

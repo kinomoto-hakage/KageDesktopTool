@@ -444,7 +444,7 @@ internal sealed class FolderHeader : Window
         positioning = true;
         try
         {
-            if (backdrop != null && !backdrop.Position(bounds.X, bounds.Y, bounds.Width, bounds.Height, displayScale))
+            if (backdrop != null && !backdrop.Position(bounds.X, bounds.Y, bounds.Width, bounds.Height, displayScale, Record.FrostedStrength))
                 FallBackFromBackdrop();
             if (!WindowsDesktop.Position(Handle, Host, bounds.X, bounds.Y, bounds.Width, bounds.Height))
             {

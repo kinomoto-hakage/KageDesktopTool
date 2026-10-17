@@ -449,6 +449,7 @@ public sealed partial class DesktopWorkspace(IWorkspaceStore store, IStartupRegi
         var current = snapshot.Folders.FirstOrDefault(f => f.Folder.Id == interaction.FolderId)?.Folder;
         var original = interaction.Original;
         if (current == null || current.Color != original.Color || current.Opacity != original.Opacity || current.Frosted != original.Frosted
+            || current.FrostedStrength != original.FrostedStrength
             || current.HeaderPosition != original.HeaderPosition || current.NameOrientation != original.NameOrientation
             || current.SideHeaderWidth != original.SideHeaderWidth)
             return new(Outcome.Failed, "Folder 样式已变化，请取消后重新打开。");
@@ -486,7 +487,7 @@ public sealed partial class DesktopWorkspace(IWorkspaceStore store, IStartupRegi
     private static FolderRecord MergeAppearance(FolderRecord current, AppearanceInteraction interaction)
     {
         var draft = interaction.Draft;
-        return current with { Color = draft.Color, Opacity = draft.Opacity, Frosted = draft.Frosted, NameOrientation = draft.NameOrientation,
+        return current with { Color = draft.Color, Opacity = draft.Opacity, Frosted = draft.Frosted, FrostedStrength = draft.FrostedStrength, NameOrientation = draft.NameOrientation,
             HeaderPosition = draft.HeaderPosition, SideHeaderWidth = draft.SideHeaderWidth,
             HeaderHeight = interaction.GeometryChanged ? draft.HeaderHeight : current.HeaderHeight,
             X = interaction.GeometryChanged ? draft.X : current.X, Y = interaction.GeometryChanged ? draft.Y : current.Y };
