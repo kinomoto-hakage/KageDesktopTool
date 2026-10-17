@@ -1,8 +1,8 @@
 # Folder 毛玻璃背景模糊强度滑块规格
 
 Type: spec
-Status: ready-for-agent
-Labels: ready-for-agent
+Status: resolved
+Labels: resolved
 Publication: published
 Published: 2026-10-16
 Product-approval: confirmed（2026-10-16，用户确认全部需求及键盘操作悬浮提示）
@@ -176,3 +176,9 @@ Test-seam-review: approved（2026-10-16，用户确认复用现有业务入口�
 - 2026-10-16，用户确认 Q1—Q10 的推荐方案，并补充通过鼠标悬浮提示解释 Q8 键盘用法；随后确认包含该提示的完整需求汇总。
 - 已确认的是默认值 50% 及以现有效果为观感基准的产品目标。实际可调路线、数值映射和上限校准仍需实现时取得真实桌面证据，不属于本次访谈已验证的事实。
 - 2026-10-16，用户确认业务测试与真实 Windows 桌面验证边界；本规格据此发布至本地 issue tracker，状态与标签为 ready-for-agent，测试边界为 approved。
+
+## Answer
+
+2026-10-17：三张实现票据均已完成并合入 `codex/folder-frosted-strength`。逐 Folder 实时 0–100% 强度、50% 校准默认、完整样式事务、旧配置兼容、键盘操作、恢复默认及系统／Explorer 恢复均已实现并通过适用验收。
+
+30 项隔离业务、仓库约束、Windows 构建和执行器契约通过；真实桌面覆盖鼠标与键盘、蓝绿实时像素、四向、生命周期、恢复后内容及 0%／100% OLE。双轴审查的唯一规范问题已修复并复核，规格轴无可行动发现。详细记录、证据归档和硬件边界见[最终交付与双轴审查](../../docs/verification/frosted-strength-final.md)。
