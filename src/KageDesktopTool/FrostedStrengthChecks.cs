@@ -153,6 +153,25 @@ internal static class FrostedStrengthChecks
                     var result = runtime.CreateAppearance(id)!; result.WindowStartupLocation = WindowStartupLocation.Manual;
                     result.Left = area.X / area.Scale + 20; result.Top = area.Y / area.Scale + 20; result.Show(); result.Activate(); return result;
                 }
+                async Task Click(FrameworkElement element)
+                {
+                    var point = await DesktopCheckSession.InputPointAsync(runtime, dialog, element,
+                        new Point(element.ActualWidth / 2, element.ActualHeight / 2));
+                    await ClickAt(point);
+                }
+                async Task DragSlider(Slider slider, int value)
+                {
+                    slider.UpdateLayout();
+                    var track = (Track)slider.Template.FindName("PART_Track", slider); var thumb = track.Thumb;
+                    var end = await DesktopCheckSession.InputPointAsync(runtime, dialog, track,
+                        new Point(thumb.ActualWidth / 2 + (track.ActualWidth - thumb.ActualWidth) * value / 100.0, track.ActualHeight / 2));
+                    // 最后确认当前 Thumb 的真实命中，避免布局或遮挡变化时误按其他窗口。
+                    var start = await DesktopCheckSession.InputPointAsync(runtime, dialog, thumb,
+                        new Point(thumb.ActualWidth / 2, thumb.ActualHeight / 2));
+                    SetCursorPos((int)start.X, (int)start.Y); await Task.Delay(70); mouse_event(2, 0, 0, 0, UIntPtr.Zero);
+                    for (var step = 1; step <= 8; step++) { SetCursorPos((int)Math.Round(start.X + (end.X - start.X) * step / 8), (int)Math.Round(end.Y)); await Task.Delay(25); }
+                    mouse_event(4, 0, 0, 0, UIntPtr.Zero); await Task.Delay(250);
+                }
             }
             catch (Exception error) { File.AppendAllText(log, "失败：" + error + "\n"); }
             finally
@@ -166,24 +185,10 @@ internal static class FrostedStrengthChecks
         void Require(bool value, string message) { if (!value) throw new InvalidOperationException(message); File.AppendAllText(log, "通过：" + message + "\n"); }
     }
 
-    private static async Task Click(FrameworkElement element)
-    {
-        element.UpdateLayout(); await ClickAt(element.PointToScreen(new Point(element.ActualWidth / 2, element.ActualHeight / 2)));
-    }
     private static async Task ClickAt(Point point)
     {
         SetCursorPos((int)point.X, (int)point.Y); await Task.Delay(80); mouse_event(2, 0, 0, 0, UIntPtr.Zero);
         mouse_event(4, 0, 0, 0, UIntPtr.Zero); await Task.Delay(200);
-    }
-    private static async Task DragSlider(Slider slider, int value)
-    {
-        slider.UpdateLayout();
-        var track = (Track)slider.Template.FindName("PART_Track", slider);
-        var thumb = track.Thumb; var start = thumb.PointToScreen(new Point(thumb.ActualWidth / 2, thumb.ActualHeight / 2));
-        var end = track.PointToScreen(new Point(thumb.ActualWidth / 2 + (track.ActualWidth - thumb.ActualWidth) * value / 100.0, track.ActualHeight / 2));
-        SetCursorPos((int)start.X, (int)start.Y); await Task.Delay(70); mouse_event(2, 0, 0, 0, UIntPtr.Zero);
-        for (var step = 1; step <= 8; step++) { SetCursorPos((int)Math.Round(start.X + (end.X - start.X) * step / 8), (int)Math.Round(end.Y)); await Task.Delay(25); }
-        mouse_event(4, 0, 0, 0, UIntPtr.Zero); await Task.Delay(250);
     }
     private static double Deviation(int x, int y, int width)
     {
