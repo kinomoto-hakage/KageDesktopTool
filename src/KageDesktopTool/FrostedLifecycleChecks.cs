@@ -38,7 +38,9 @@ internal static class FrostedLifecycleChecks
                     area.X + (draggingOnly ? 900 : 300) + i % 2 * 650 + (direction == HeaderPosition.Right ? 360 : 0),
                     area.Y + 160 + i / 2 * 520 + (direction == HeaderPosition.Bottom ? 270 : 0),
                     HeaderWidth: 240, BodyHeight: 180, Expanded: true, HeaderPosition: direction,
-                    NameOrientation: i % 2 == 0 ? NameOrientation.Horizontal : NameOrientation.Vertical, Opacity: 0, Frosted: true)).ToArray();
+                    NameOrientation: i % 2 == 0 ? NameOrientation.Horizontal : NameOrientation.Vertical, Opacity: 0, Frosted: true,
+                    FrostedStrength: new[] { 0, 25, 75, 100 }[i])).ToArray();
+                records = DesktopCheckSession.PlaceRecords(records, area, new Rect(area.X, area.Y, 0, 0));
                 foreach (var record in records)
                 { Directory.CreateDirectory(Path.Combine(root, record.Name)); File.WriteAllText(Path.Combine(root, record.Name, "清晰内容.txt"), "真实字节"); }
                 var store = new JsonWorkspaceStore(Path.Combine(fixture, "状态")); store.Save(new WorkspaceState { Root = root, Folders = records });
@@ -125,6 +127,8 @@ internal static class FrostedLifecycleChecks
                         Check(header.FrostedVisible && foreground.Left == expected.X && foreground.Top == expected.Y
                             && foreground.Right - foreground.Left == expected.Width && foreground.Bottom - foreground.Top == expected.Height
                             && foreground.Equals(backdrop), "四向前景和背景物理边界完全一致");
+                        Check(header.Record.FrostedStrength == records.Single(r => r.Id == header.FolderId).FrostedStrength,
+                            "多实例与反复重建保持各自0/25/75/100%强度");
                     }
                 }
                 async Task Sample(string stage, bool dynamic, bool dragging = false)

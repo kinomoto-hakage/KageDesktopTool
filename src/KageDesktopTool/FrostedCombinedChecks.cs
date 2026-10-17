@@ -5,6 +5,7 @@ using System.Runtime.InteropServices;
 using System.Threading.Tasks;
 using System.Windows;
 using System.Windows.Controls;
+using System.Windows.Controls.Primitives;
 using System.Windows.Interop;
 using System.Windows.Media;
 using Kage.Workspace;
@@ -20,9 +21,9 @@ internal static class FrostedCombinedChecks
     {
         using var session = new DesktopCheckSession("frosted-combined");
         var fixture = session.DirectoryPath;
-        var evidence = DesktopCheckSession.EvidenceFor("folder-frosted-background");
+        var evidence = DesktopCheckSession.EvidenceFor("folder-frosted-strength");
         Directory.CreateDirectory(fixture); Directory.CreateDirectory(evidence);
-        var log = Path.Combine(evidence, "02-03-combined.txt"); File.WriteAllText(log, "四向＋真实系统限制＋Explorer 生命周期组合\n");
+        var log = Path.Combine(evidence, "03-combined.txt"); File.WriteAllText(log, "独立0/25/100/75%四向＋真实系统限制＋Explorer 生命周期组合\n");
         var app = new Application { ShutdownMode = ShutdownMode.OnExplicitShutdown };
         Runtime? runtime = null; StyleDialog? dialog = null; Window? patternWindow = null; var exit = 1;
         session.Defer(() => patternWindow?.Close());
@@ -56,7 +57,8 @@ internal static class FrostedCombinedChecks
                     area.X + 280 + i % 2 * 650 + (direction == HeaderPosition.Right ? 360 : 0),
                     area.Y + 150 + i / 2 * 520 + (direction == HeaderPosition.Bottom ? 270 : 0),
                     HeaderWidth: 240, BodyHeight: 180, Expanded: true, HeaderPosition: direction,
-                    NameOrientation: i % 2 == 0 ? NameOrientation.Horizontal : NameOrientation.Vertical, Color: "#426A7F", Opacity: .4, Frosted: i != 3)).ToArray();
+                    NameOrientation: i % 2 == 0 ? NameOrientation.Horizontal : NameOrientation.Vertical, Color: "#426A7F", Opacity: 0,
+                    Frosted: i != 3, FrostedStrength: new[] { 0, 25, 100, 75 }[i])).ToArray();
                 records = DesktopCheckSession.PlaceRecords(records, area, new Rect(area.X + 1580, area.Y + 60, 800, 1320));
                 File.AppendAllText(log, "避开已有实例后的夹具锚点：" + string.Join("；", records.Select(r => $"{r.Name}={r.X},{r.Y}")) + "\n");
                 foreach (var record in records)
@@ -68,12 +70,17 @@ internal static class FrostedCombinedChecks
                 runtime = new Runtime(workspace);
                 await Wait(() => runtime.Headers.Values.Count(h => h.FrostedVisible) == 3, "三个正式开启实例显示毛玻璃，正式关闭实例保持关闭");
                 var previewId = records[3].Id;
+                var statePath = Path.Combine(fixture, "状态", "workspace.json");
+                var originalJson = File.ReadAllBytes(statePath);
                 dialog = runtime.CreateAppearance(previewId)!; dialog.WindowStartupLocation = WindowStartupLocation.Manual;
                 dialog.Left = (area.X + 1600) / scale; dialog.Top = (area.Y + 80) / scale;
                 dialog.Show(); await Task.Delay(250);
                 var point = dialog.Frosted.PointToScreen(new Point(15, dialog.Frosted.ActualHeight / 2));
                 SetCursorPos((int)point.X, (int)point.Y); mouse_event(2, 0, 0, 0, UIntPtr.Zero); mouse_event(4, 0, 0, 0, UIntPtr.Zero);
                 await Wait(() => runtime.Headers.Values.All(h => h.FrostedVisible), "真实开关使第四个实例即时预览，四向同时显示");
+                await DragStrength(25);
+                Require(runtime.Headers[previewId].Record.FrostedStrength == 25 && dialog.StrengthValue.Text == "25%"
+                    && File.ReadAllBytes(statePath).SequenceEqual(originalJson), "真实强度草稿25%不改变正式75%与磁盘");
                 Require(!workspace.Snapshot.Folders.Single(f => f.Folder.Id == previewId).Folder.Frosted, "有效开启草稿没有提前保存");
                 await Screenshot("02-03-四向预览开启.png");
                 var oldBackdrops = runtime.Headers.Values.Select(h => h.Host).ToArray();
@@ -81,6 +88,14 @@ internal static class FrostedCombinedChecks
                 await Wait(() => !ui.AdvancedEffectsEnabled && runtime.Headers.Values.All(h => !h.FrostedVisible), "真实关闭透明效果后四向全部暂停");
                 Require(oldBackdrops.All(h => !WindowsDesktop.IsWindow(h)) && runtime.Headers.Values.All(h => WindowsDesktop.IsWindowVisible(h.Handle))
                     && dialog.FrostedStatus.Text.Contains("透明效果"), "暂停销毁四个旧背景，前景可见并实时解释原因");
+                Require(dialog.FrostedStrength.IsEnabled, "真实系统暂停时正式滑块仍可编辑");
+                await DragStrength(100);
+                await Click(dialog.ApplyButton);
+                Require(workspace.Snapshot.Folders.Single(f => f.Folder.Id == previewId).Folder is { Frosted: true, FrostedStrength: 100 }
+                    && !runtime.Headers[previewId].FrostedVisible, "真实暂停期间应用保存100%，继续保留系统回退");
+                dialog = runtime.CreateAppearance(previewId)!; dialog.WindowStartupLocation = WindowStartupLocation.Manual;
+                dialog.Left = (area.X + 1600) / scale; dialog.Top = (area.Y + 80) / scale; dialog.Show(); dialog.Activate();
+                await DragStrength(25);
                 await Task.Delay(1000); await Screenshot("02-03-四向真实透明暂停.png");
                 await DesktopRecoveryChecks.RestartExplorerAsync(async () =>
                 {
@@ -91,29 +106,39 @@ internal static class FrostedCombinedChecks
                     await Wait(() => runtime.DesktopAvailable && workspace.Snapshot.DesktopAvailable, "Explorer 新宿主恢复四个前景");
                     runtime.Render();
                     Require(runtime.Headers.Count == 4 && runtime.Headers.Values.All(h => !h.FrostedVisible && WindowsDesktop.IsWindowVisible(h.Handle))
-                        && runtime.Headers[previewId].Record.Frosted && !workspace.Snapshot.Folders.Single(f => f.Folder.Id == previewId).Folder.Frosted,
-                        "真实 Explorer 重启后保持暂停与有效开启草稿，正式记录不变");
-                    Require(workspace.Snapshot.Folders.Select(f => f.Folder).SequenceEqual(records), "Explorer 恢复不改变任何正式布局和样式");
+                        && runtime.Headers[previewId].Record is { Frosted: true, FrostedStrength: 25 }
+                        && workspace.Snapshot.Folders.Single(f => f.Folder.Id == previewId).Folder.FrostedStrength == 100,
+                        "真实 Explorer 重启后保持暂停、有效25%草稿及正式100%记录");
+                    Require(workspace.Snapshot.Folders.Select(f => f.Folder).SequenceEqual(records.Select(r => r.Id == previewId ? r with { Frosted = true, FrostedStrength = 100 } : r)),
+                        "Explorer 恢复不改变任何正式布局和样式");
                 await Task.Delay(800); await Screenshot("02-03-Explorer恢复仍暂停.png");
                 key.SetValue("EnableTransparency", 1, RegistryValueKind.DWord); await Task.Run(Broadcast);
                 await Wait(() => ui.AdvancedEffectsEnabled && runtime.Headers.Values.All(h => h.FrostedVisible), "真实限制解除后按有效草稿自动恢复四向效果");
+                Require(runtime.Headers[previewId].Record.FrostedStrength == 25, "限制解除选择最新有效25%而非已存100%");
                 await Screenshot("02-03-Explorer后自动恢复.png");
                 dialog.Close(); dialog = null;
-                Require(!runtime.Headers[previewId].Record.Frosted && !runtime.Headers[previewId].FrostedVisible
-                    && runtime.Headers.Values.Count(h => h.FrostedVisible) == 3, "Explorer 重建后取消恢复正式关闭，其他三个实例不受影响");
-                var apply = workspace.BeginAppearance(previewId)!; apply.SetFrosted(true);
-                Require((await workspace.ApplyAppearanceAsync(apply)).Succeeded, "完整样式正式应用第四个实例"); runtime.Render();
+                Require(runtime.Headers[previewId].Record is { Frosted: true, FrostedStrength: 100 } && runtime.Headers[previewId].FrostedVisible
+                    && runtime.Headers.Values.Count(h => h.FrostedVisible) == 4, "Explorer 重建后取消恢复正式100%，其他三个实例不受影响");
                 var pattern = new Canvas { Background = Brushes.DarkBlue };
-                for (var x = 0; x < 1500; x += 12)
-                { var stripe = new Border { Width = 6, Height = 1000, Background = Brushes.White }; Canvas.SetLeft(stripe, x); pattern.Children.Add(stripe); }
+                foreach (var record in records)
+                {
+                    var bounds = FolderGeometry.For(record, scale);
+                    var stripe = new Border { Width = bounds.Width / scale / 2, Height = bounds.Height / scale + 160, Background = Brushes.White };
+                    Canvas.SetLeft(stripe, (bounds.X - area.X) / scale); Canvas.SetTop(stripe, (bounds.Y - area.Y) / scale - 80);
+                    pattern.Children.Add(stripe);
+                }
                 patternWindow = new Window { WindowStyle = WindowStyle.None, ShowInTaskbar = false, ShowActivated = false,
-                    Width = 1500, Height = 1000, Content = pattern }; patternWindow.Show();
+                    Width = area.Width / scale, Height = area.Height / scale, Content = pattern }; patternWindow.Show();
                 var patternHandle = new WindowInteropHelper(patternWindow).Handle;
                 var patternHost = WindowsDesktop.Attach(patternHandle);
-                Require(WindowsDesktop.Position(patternHandle, patternHost, area.X + 180, area.Y + 100, 1800, 1300), "真实动态背景图案置于四向实例后方");
+                Require(WindowsDesktop.Position(patternHandle, patternHost, area.X, area.Y, area.Width, area.Height), "真实宽边缘背景图案置于四向实例后方");
+                key.SetValue("EnableTransparency", 0, RegistryValueKind.DWord); await Task.Run(Broadcast);
                 var high = contrast; high.Flags |= 1; contrastChanged = true;
                 Require(await Task.Run(() => SystemParametersInfo(0x43, high.Size, ref high, 3)), "Windows 接受真实高对比度开启");
                 await Wait(() => SystemParameters.HighContrast && runtime.Headers.Values.All(h => !h.FrostedVisible), "真实高对比度暂停全部四向实例");
+                key.SetValue("EnableTransparency", 1, RegistryValueKind.DWord); await Task.Run(Broadcast);
+                await Wait(() => ui.AdvancedEffectsEnabled && runtime.FrostedEnvironment.HighContrast, "真实透明限制解除，高对比仍存在");
+                Require(runtime.Headers.Values.All(h => !h.FrostedVisible), "同时存在的真实限制只解除透明一项时仍暂停");
                 await Task.Delay(4000); await Screenshot("02-03-四向高对比稳定暂停.png");
                 Require(await Task.Run(() => SystemParametersInfo(0x43, contrast.Size, ref contrast, 3)), "恢复原高对比度设置"); contrastChanged = false;
                 await Wait(() => !SystemParameters.HighContrast && runtime.Headers.Values.All(h => h.FrostedVisible), "真实高对比度解除自动恢复四向效果");
@@ -121,7 +146,7 @@ internal static class FrostedCombinedChecks
                 async Task<bool> LivePixels(string stage)
                 {
                     var points = workspace.Snapshot.Folders.Select(f => FolderGeometry.For(f.Folder, f.DisplayScale))
-                        .Select(b => new Point(b.X + b.Width * .65, b.Y + b.Height * .65)).ToArray();
+                        .Select(b => new Point(b.X + b.Width * .85, b.Y + b.Height * .70)).ToArray();
                     pattern.Background = Brushes.DarkBlue; await Task.Delay(400);
                     var blue = points.Select(DesktopCheckSession.Pixel).ToArray(); await Screenshot("02-03-" + stage + "蓝.png");
                     pattern.Background = Brushes.DarkGreen; await Task.Delay(400);
@@ -131,11 +156,34 @@ internal static class FrostedCombinedChecks
                 }
                 var live = await LivePixels("高对比恢复");
                 Require(live, "高对比解除后四向实际模糊继续跟随真实动态背景，不能仅以HWND挂接判定恢复");
-                Require(workspace.Snapshot.Folders.Select(f => f.Folder).SequenceEqual(records.Select(f => f with { Frosted = true }))
+                var deviations = workspace.Snapshot.Folders.Select(f => FolderGeometry.For(f.Folder, f.DisplayScale))
+                    .Select(b => Deviation(b.X + 20, b.Y + (int)(b.Height * .7), b.Width - 40)).ToArray();
+                File.AppendAllText(log, "恢复后0/25/100/100%实际宽边缘红通道标准差：" + string.Join(" / ", deviations.Select(d => d.ToString("F3"))) + "\n");
+                Require(deviations[0] > deviations[1] + 2 && deviations[1] > deviations[2] + 2,
+                    "恢复后的实际0/25/100%强度保留清晰到柔和方向与端点差别");
+                Require(workspace.Snapshot.Folders.Select(f => f.Folder).SequenceEqual(records.Select(f => f.Id == previewId ? f with { Frosted = true, FrostedStrength = 100 } : f))
                     && workspace.Snapshot.Folders.All(f => File.ReadAllBytes(Path.Combine(f.ActualPath, "原内容.bin")).SequenceEqual(new byte[] { 0, 42, 255 })),
                     "组合系统与宿主变化不改变布局、其他样式和真实内容字节");
                 exit = 0;
                 });
+
+                async Task Click(FrameworkElement element)
+                {
+                    element.UpdateLayout();
+                    var point = element.PointToScreen(new Point(element.ActualWidth / 2, element.ActualHeight / 2));
+                    SetCursorPos((int)point.X, (int)point.Y); mouse_event(2, 0, 0, 0, UIntPtr.Zero); mouse_event(4, 0, 0, 0, UIntPtr.Zero);
+                    await Task.Delay(300);
+                }
+                async Task DragStrength(int value)
+                {
+                    var slider = dialog!.FrostedStrength; slider.UpdateLayout();
+                    var track = (Track)slider.Template.FindName("PART_Track", slider); var thumb = track.Thumb;
+                    var from = thumb.PointToScreen(new Point(thumb.ActualWidth / 2, thumb.ActualHeight / 2));
+                    var to = track.PointToScreen(new Point(thumb.ActualWidth / 2 + (track.ActualWidth - thumb.ActualWidth) * value / 100.0, track.ActualHeight / 2));
+                    SetCursorPos((int)from.X, (int)from.Y); mouse_event(2, 0, 0, 0, UIntPtr.Zero);
+                    for (var step = 1; step <= 8; step++) { SetCursorPos((int)Math.Round(from.X + (to.X - from.X) * step / 8), (int)Math.Round(to.Y)); await Task.Delay(30); }
+                    mouse_event(4, 0, 0, 0, UIntPtr.Zero); await Task.Delay(300);
+                }
             }
             catch (Exception error) { File.AppendAllText(log, "失败：" + error + "\n"); await Screenshot("02-03-combined-failure.png", false); }
             finally
@@ -168,6 +216,12 @@ internal static class FrostedCombinedChecks
             }
             else DesktopCheckSession.SaveScreenshot(Path.Combine(evidence, name));
         }
+    }
+    private static double Deviation(int x, int y, int width)
+    {
+        using var bitmap = new System.Drawing.Bitmap(width, 1); using (var graphics = System.Drawing.Graphics.FromImage(bitmap)) graphics.CopyFromScreen(x, y, 0, 0, bitmap.Size);
+        double sum = 0, squares = 0; for (var i = 0; i < width; i++) { var value = bitmap.GetPixel(i, 0).R; sum += value; squares += value * value; }
+        return Math.Sqrt(Math.Max(0, squares / width - sum / width * (sum / width)));
     }
     private static void Broadcast() => SendMessageTimeout(new IntPtr(0xffff), 0x1A, IntPtr.Zero, "ImmersiveColorSet", 2, 2000, out _);
     [StructLayout(LayoutKind.Sequential)] private struct HighContrast { internal uint Size, Flags; internal IntPtr Scheme; }

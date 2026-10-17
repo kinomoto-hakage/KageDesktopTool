@@ -37,7 +37,7 @@ internal static class DisplayDpiChecks
                 Check(displays.Length > 0, "重新枚举实际显示区域");
                 foreach (var display in displays) File.AppendAllText(log, $"环境：{display}\n");
                 var records = displays.Select((display, index) => new FolderRecord(Guid.NewGuid(), $"实际屏幕 {index + 1}",
-                    display.X + 20, display.Y + 20, Expanded: true, Frosted: frosted)).ToArray();
+                    display.X + 20, display.Y + 20, Expanded: true, Frosted: frosted, FrostedStrength: 75)).ToArray();
                 var root = Path.Combine(fixture, "内容");
                 foreach (var record in records)
                 {
@@ -198,7 +198,8 @@ internal static class DisplayDpiChecks
             if (frosted)
             {
                 WindowsDesktop.GetWindowRect(header.Host, out var backdrop);
-                Check(header.FrostedVisible && backdrop.Equals(rectangle), label + "：毛玻璃背景与前景物理边界一致");
+                Check(header.FrostedVisible && header.Record.FrostedStrength == 75 && backdrop.Equals(rectangle),
+                    label + "：非默认75%强度在DPI通知及尺寸恢复后保持，背景与前景物理边界一致");
             }
             File.AppendAllText(log, $"{label}：窗口={rectangle.Left},{rectangle.Top},{rectangle.Right - rectangle.Left},{rectangle.Bottom - rectangle.Top}，记录={folder.Folder.X},{folder.Folder.Y}，尺寸={folder.Folder.HeaderWidth},{folder.Folder.HeaderHeight + folder.Folder.BodyHeight}，缩放={folder.DisplayScale}\n");
             Check(folder.Visible && WindowsDesktop.IsWindow(header.Handle)

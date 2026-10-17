@@ -84,7 +84,17 @@ internal sealed class DesktopCheckSession : IDisposable
 
     internal static async Task CaptureAsync(string path, Func<IEnumerable<FolderHeader>> headers, Action expose)
     {
-        bool Visible() => headers().Any() && headers().All(h => OwnsPoint(h, h.HeaderInput.PointToScreen(new Point(20, 20))));
+        bool Visible() => headers().Any() && headers().All(h =>
+        {
+            if (OwnsPoint(h, h.HeaderInput.PointToScreen(new Point(20, 20)))) return true;
+            // 系统暂停会撤掉背景 HWND；完全透明着色的空白像素应穿透。
+            // 改查实际名称的清晰前景像素，不能把正确的穿透当成窗口遮挡。
+            var name = h.NameDisplay;
+            for (var y = 2.0; y < name.ActualHeight; y += 3)
+            for (var x = 2.0; x < name.ActualWidth; x += 3)
+                if (OwnsPoint(h, name.PointToScreen(new Point(x, y)))) return true;
+            return false;
+        });
         var stable = 0;
         for (var attempt = 0; attempt < 30 && stable < 3; attempt++)
         {
