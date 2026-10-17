@@ -24,6 +24,7 @@ internal sealed class StyleDialog : Window
     internal CheckBox Frosted { get; }
     internal Slider FrostedStrength { get; }
     internal TextBlock StrengthValue { get; }
+    internal Button ResetStrengthButton { get; }
     internal TextBlock FrostedStatus { get; }
     private readonly Runtime runtime;
     private readonly StackPanel root = new() { Margin = new Thickness(24, 24, 24, 0) };
@@ -62,15 +63,22 @@ internal sealed class StyleDialog : Window
         FrostedStrength = new Slider { Minimum = 0, Maximum = 100, Value = interaction.FrostedStrength,
             TickFrequency = 1, IsSnapToTickEnabled = true, SmallChange = 1, LargeChange = 10,
             IsEnabled = interaction.Frosted };
+        FrostedStrength.ToolTip = new TextBlock { Text = "单击滑块或按 Tab 将焦点移到滑块后：方向键调整 1%，Page Up／Down 调整 10%，Home 调至 0%，End 调至 100%。",
+            TextWrapping = TextWrapping.Wrap, MaxWidth = 330 };
         StrengthValue = new TextBlock { Text = interaction.FrostedStrength + "%", MinWidth = 48, Margin = new Thickness(14, 0, 0, 0) };
+        ResetStrengthButton = new Button { Content = "恢复默认", Padding = new Thickness(8, 3, 8, 3),
+            Margin = new Thickness(8, 0, 0, 0), IsEnabled = interaction.Frosted };
         var strengthRow = new Grid { Margin = new Thickness(0, 0, 0, 10) };
         strengthRow.ColumnDefinitions.Add(new ColumnDefinition());
         strengthRow.ColumnDefinitions.Add(new ColumnDefinition { Width = GridLength.Auto });
+        strengthRow.ColumnDefinitions.Add(new ColumnDefinition { Width = GridLength.Auto });
         strengthRow.Children.Add(FrostedStrength); Grid.SetColumn(StrengthValue, 1); strengthRow.Children.Add(StrengthValue);
+        Grid.SetColumn(ResetStrengthButton, 2); strengthRow.Children.Add(ResetStrengthButton);
         root.Children.Add(strengthRow);
         root.Children.Add(FrostedStatus);
-        Frosted.Checked += (_, _) => { Interaction.SetFrosted(true); FrostedStrength.IsEnabled = true; UpdatePreview(); };
-        Frosted.Unchecked += (_, _) => { Interaction.SetFrosted(false); FrostedStrength.IsEnabled = false; UpdatePreview(); };
+        Frosted.Checked += (_, _) => { Interaction.SetFrosted(true); FrostedStrength.IsEnabled = ResetStrengthButton.IsEnabled = true; UpdatePreview(); };
+        Frosted.Unchecked += (_, _) => { Interaction.SetFrosted(false); FrostedStrength.IsEnabled = ResetStrengthButton.IsEnabled = false; UpdatePreview(); };
+        ResetStrengthButton.Click += (_, _) => FrostedStrength.Value = 50;
         FrostedStrength.ValueChanged += (_, _) =>
         {
             Interaction.SetFrostedStrength((int)Math.Round(FrostedStrength.Value));
