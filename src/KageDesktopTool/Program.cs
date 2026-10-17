@@ -13,6 +13,7 @@ public static class Program
     public static int Main(string[] args)
     {
         if (args.Contains("--frosted-strength-check")) return FrostedStrengthChecks.Run();
+        if (args.Contains("--frosted-strength-controls-check")) return FrostedStrengthControlsChecks.Run();
         if (args.Contains("--frosted-system-check")) return FrostedSystemChecks.Run(args.Contains("--real-settings"), args.Contains("--real-energy"));
         if (args.Contains("--frosted-input-check")) return FrostedInputChecks.Run(args.Contains("--unavailable"));
         if (args.Contains("--frosted-four-way-check")) return ContentInputChecks.RunFourWay(true,
