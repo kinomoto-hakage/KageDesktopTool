@@ -79,6 +79,9 @@ internal static class FrostedCombinedChecks
                 SetCursorPos((int)point.X, (int)point.Y); mouse_event(2, 0, 0, 0, UIntPtr.Zero); mouse_event(4, 0, 0, 0, UIntPtr.Zero);
                 await Wait(() => runtime.Headers.Values.All(h => h.FrostedVisible), "真实开关使第四个实例即时预览，四向同时显示");
                 await DragStrength(25);
+                await Click(dialog.ResetStrengthButton);
+                Require(runtime.Headers[previewId].Record.FrostedStrength == 50 && dialog.StrengthValue.Text == "50%", "正式恢复默认即时预览50%");
+                await KeyboardStrength25();
                 Require(runtime.Headers[previewId].Record.FrostedStrength == 25 && dialog.StrengthValue.Text == "25%"
                     && File.ReadAllBytes(statePath).SequenceEqual(originalJson), "真实强度草稿25%不改变正式75%与磁盘");
                 Require(!workspace.Snapshot.Folders.Single(f => f.Folder.Id == previewId).Folder.Frosted, "有效开启草稿没有提前保存");
@@ -95,7 +98,9 @@ internal static class FrostedCombinedChecks
                     && !runtime.Headers[previewId].FrostedVisible, "真实暂停期间应用保存100%，继续保留系统回退");
                 dialog = runtime.CreateAppearance(previewId)!; dialog.WindowStartupLocation = WindowStartupLocation.Manual;
                 dialog.Left = (area.X + 1600) / scale; dialog.Top = (area.Y + 80) / scale; dialog.Show(); dialog.Activate();
-                await DragStrength(25);
+                await Click(dialog.ResetStrengthButton);
+                Require(dialog.StrengthValue.Text == "50%" && dialog.FrostedStatus.Text.Contains("透明效果"), "真实暂停期间恢复默认仍可预览50%并显示原因");
+                await KeyboardStrength25();
                 await Task.Delay(1000); await Screenshot("02-03-四向真实透明暂停.png");
                 await DesktopRecoveryChecks.RestartExplorerAsync(async () =>
                 {
@@ -169,8 +174,7 @@ internal static class FrostedCombinedChecks
 
                 async Task Click(FrameworkElement element)
                 {
-                    element.UpdateLayout();
-                    var point = element.PointToScreen(new Point(element.ActualWidth / 2, element.ActualHeight / 2));
+                    var point = await DesktopCheckSession.InputPointAsync(runtime, dialog!, element, new Point(element.ActualWidth / 2, element.ActualHeight / 2));
                     SetCursorPos((int)point.X, (int)point.Y); mouse_event(2, 0, 0, 0, UIntPtr.Zero); mouse_event(4, 0, 0, 0, UIntPtr.Zero);
                     await Task.Delay(300);
                 }
@@ -178,11 +182,21 @@ internal static class FrostedCombinedChecks
                 {
                     var slider = dialog!.FrostedStrength; slider.UpdateLayout();
                     var track = (Track)slider.Template.FindName("PART_Track", slider); var thumb = track.Thumb;
-                    var from = thumb.PointToScreen(new Point(thumb.ActualWidth / 2, thumb.ActualHeight / 2));
+                    var from = await DesktopCheckSession.InputPointAsync(runtime, dialog, thumb, new Point(thumb.ActualWidth / 2, thumb.ActualHeight / 2));
                     var to = track.PointToScreen(new Point(thumb.ActualWidth / 2 + (track.ActualWidth - thumb.ActualWidth) * value / 100.0, track.ActualHeight / 2));
                     SetCursorPos((int)from.X, (int)from.Y); mouse_event(2, 0, 0, 0, UIntPtr.Zero);
                     for (var step = 1; step <= 8; step++) { SetCursorPos((int)Math.Round(from.X + (to.X - from.X) * step / 8), (int)Math.Round(to.Y)); await Task.Delay(30); }
                     mouse_event(4, 0, 0, 0, UIntPtr.Zero); await Task.Delay(300);
+                }
+                async Task KeyboardStrength25()
+                {
+                    var slider = dialog!.FrostedStrength; slider.UpdateLayout();
+                    var track = (Track)slider.Template.FindName("PART_Track", slider);
+                    await Click(track.Thumb);
+                    foreach (var key in new byte[] { 0x24, 0x21, 0x21, 0x27, 0x27, 0x27, 0x27, 0x27 })
+                    { WindowsDesktop.keybd_event(key, 0, 0, UIntPtr.Zero); WindowsDesktop.keybd_event(key, 0, 2, UIntPtr.Zero); await Task.Delay(60); }
+                    Require(slider.IsKeyboardFocusWithin && runtime.Headers[previewId].Record.FrostedStrength == 25,
+                        "实际聚焦滑块后Home、大步进和方向键预览25%，后续系统与Explorer恢复应使用该有效草稿");
                 }
             }
             catch (Exception error) { File.AppendAllText(log, "失败：" + error + "\n"); await Screenshot("02-03-combined-failure.png", false); }

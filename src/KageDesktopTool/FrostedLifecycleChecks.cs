@@ -17,6 +17,7 @@ internal static class FrostedLifecycleChecks
 {
     internal static int Run(bool draggingOnly = false)
     {
+        using var session = new DesktopCheckSession("frosted-lifecycle");
         var fixture = Path.Combine(Path.GetTempPath(), "Kage-frosted-lifecycle-" + Guid.NewGuid().ToString("N"));
         var evidence = DesktopCheckSession.EvidenceFor("folder-frosted-background");
         Directory.CreateDirectory(fixture); Directory.CreateDirectory(evidence);
@@ -25,6 +26,9 @@ internal static class FrostedLifecycleChecks
         File.WriteAllText(Path.Combine(evidence, "02-process-id.txt"), Environment.ProcessId.ToString());
         var app = new Application { ShutdownMode = ShutdownMode.OnExplicitShutdown };
         Runtime? runtime = null; Window? background = null; string? retainedShortcut = null; string? retainedName = null; var exit = 1;
+        session.Defer(() => runtime?.Dispose());
+        session.Defer(() => background?.Close());
+        session.Defer(() => mouse_event(4, 0, 0, 0, UIntPtr.Zero));
         WindowsDesktop.GetCursorPos(out var cursor);
         app.Startup += async (_, _) =>
         {
@@ -40,13 +44,13 @@ internal static class FrostedLifecycleChecks
                     HeaderWidth: 240, BodyHeight: 180, Expanded: true, HeaderPosition: direction,
                     NameOrientation: i % 2 == 0 ? NameOrientation.Horizontal : NameOrientation.Vertical, Opacity: 0, Frosted: true,
                     FrostedStrength: new[] { 0, 25, 75, 100 }[i])).ToArray();
-                records = DesktopCheckSession.PlaceRecords(records, area, new Rect(area.X, area.Y, 0, 0));
+                records = DesktopCheckSession.PlaceRecords(records, area, new Rect(area.X, area.Y, 0, 0), spacing: 80);
                 foreach (var record in records)
                 { Directory.CreateDirectory(Path.Combine(root, record.Name)); File.WriteAllText(Path.Combine(root, record.Name, "清晰内容.txt"), "真实字节"); }
                 var store = new JsonWorkspaceStore(Path.Combine(fixture, "状态")); store.Save(new WorkspaceState { Root = root, Folders = records });
                 IDesktopWorkspace workspace = new DesktopWorkspace(store, new NoStartup());
                 Check((await workspace.InitializeAsync(displays)).Succeeded, "四向隔离工作区初始化");
-                FileMoveChecks.DesktopVisibility(true);
+                session.ShowDesktop();
                 var pattern = new Canvas { Background = Brushes.DarkBlue };
                 for (var x = 0; x < 1500; x += 12)
                 { var stripe = new Border { Width = 6, Height = 1000, Background = Brushes.White }; Canvas.SetLeft(stripe, x); pattern.Children.Add(stripe); }
@@ -84,10 +88,10 @@ internal static class FrostedLifecycleChecks
                         "删除后旧背景销毁无残留、另一个开启实例不受影响且保留内容字节不变");
                     exit = 0; return;
                 }
-                Screenshot("02-四向蓝白背景.png");
-                pattern.Background = Brushes.DarkGreen; await Task.Delay(350); Screenshot("02-四向绿白实时背景.png");
-                pattern.Background = Brushes.Black; await Task.Delay(350); Screenshot("02-四向暗背景.png");
-                pattern.Background = Brushes.WhiteSmoke; await Task.Delay(350); Screenshot("02-四向明背景.png");
+                await Screenshot("02-四向蓝白背景.png");
+                pattern.Background = Brushes.DarkGreen; await Task.Delay(350); await Screenshot("02-四向绿白实时背景.png");
+                pattern.Background = Brushes.Black; await Task.Delay(350); await Screenshot("02-四向暗背景.png");
+                pattern.Background = Brushes.WhiteSmoke; await Task.Delay(350); await Screenshot("02-四向明背景.png");
                 await Sample("开启-静置", false);
                 await Sample("开启-动态背景", true);
                 await Sample("开启-拖动", false, true);
@@ -154,7 +158,9 @@ internal static class FrostedLifecycleChecks
                                 if (WindowsDesktop.WindowFromPoint(new WindowsDesktop.POINT { X = (int)candidate.X, Y = (int)candidate.Y }) == header.Handle) start = candidate;
                             }
                             Check(start != null, "资源拖动场景真实命中名称前景");
-                            SetCursorPos((int)start!.Value.X, (int)start.Value.Y); await Task.Delay(80);
+                            start = await DesktopCheckSession.InputPointAsync(runtime, header, header.NameDisplay,
+                                header.NameDisplay.PointFromScreen(start!.Value));
+                            SetCursorPos((int)start.Value.X, (int)start.Value.Y); await Task.Delay(80);
                             var oldX = header.Record.X; var distance = i % 2 == 0 ? 50 : -50;
                             await FileMoveChecks.PhysicalDrag(start!.Value, start.Value + new Vector(distance, 0));
                             for (var wait = 0; wait < 30 && runtime.Interacting; wait++) await Task.Delay(50);
@@ -168,9 +174,13 @@ internal static class FrostedLifecycleChecks
                     File.WriteAllText(Path.Combine(evidence, "02-resource-stage.txt"), "阶段间切换");
                 }
             }
-            catch (Exception e) { File.AppendAllText(log, "失败：" + e + "\n"); Screenshot("02-lifecycle-failure.png"); }
+            catch (Exception e) { File.AppendAllText(log, "失败：" + e + "\n"); DesktopCheckSession.SaveScreenshot(Path.Combine(evidence, "02-lifecycle-failure.png")); }
             finally
-            { runtime?.Dispose(); background?.Close(); FileMoveChecks.DesktopVisibility(false); SetCursorPos(cursor.X, cursor.Y); app.Shutdown(); }
+            {
+                try { await session.RestoreAsync(); File.AppendAllText(log, "最终恢复：临时背景、Runtime、鼠标和桌面可见性已恢复。\n"); }
+                catch (Exception error) { exit = 1; File.AppendAllText(log, "恢复失败：" + error + "\n"); }
+                finally { app.Shutdown(); }
+            }
         };
         try { app.Run(); }
         finally
@@ -192,12 +202,7 @@ internal static class FrostedLifecycleChecks
         return exit;
         void Check(bool condition, string message)
         { if (!condition) throw new Exception(message); File.AppendAllText(log, "通过：" + message + "\n"); }
-        void Screenshot(string name)
-        {
-            var screen = System.Windows.Forms.SystemInformation.VirtualScreen;
-            using var bitmap = new System.Drawing.Bitmap(screen.Width, screen.Height); using var graphics = System.Drawing.Graphics.FromImage(bitmap);
-            graphics.CopyFromScreen(screen.Left, screen.Top, 0, 0, screen.Size); bitmap.Save(Path.Combine(evidence, name));
-        }
+        Task Screenshot(string name) => DesktopCheckSession.CaptureAsync(Path.Combine(evidence, name), () => runtime!.Headers.Values, session.ShowDesktop);
     }
     private static (int Handles, uint Gdi, uint User, long PrivateMiB) Resources()
     { using var process = Process.GetCurrentProcess(); return (process.HandleCount, GetGuiResources(process.Handle, 0), GetGuiResources(process.Handle, 1), process.PrivateMemorySize64 / 1048576); }
@@ -205,4 +210,5 @@ internal static class FrostedLifecycleChecks
     { public string LaunchCommand => "隔离检查不注册自启"; public string? ReadCommand() => null; public void WriteCommand(string? command) => throw new InvalidOperationException(); }
     [DllImport("user32.dll")] private static extern uint GetGuiResources(IntPtr process, uint flags);
     [DllImport("user32.dll")] private static extern bool SetCursorPos(int x, int y);
+    [DllImport("user32.dll")] private static extern void mouse_event(uint flags, uint x, uint y, uint data, UIntPtr extra);
 }

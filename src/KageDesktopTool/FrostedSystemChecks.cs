@@ -233,8 +233,9 @@ internal static class FrostedSystemChecks
             contrastChanged = true;
             Require(await Task.Run(() => SystemParametersInfo(0x43, highContrast.Size, ref highContrast, 3)), "Windows 接受真实高对比度设置");
             await WaitFor(() => SystemParameters.HighContrast && !header.FrostedVisible && dialog.FrostedStatus.Text.Contains("高对比度"), "真实高对比度开启自动暂停并提示");
+            await Task.Delay(2500);
             await Strength(0);
-            Require(header.Record.FrostedStrength == 0 && header.Record.Frosted, "真实高对比暂停时零强度预览仍保留启用意图");
+            Require(header.Record.FrostedStrength == 0 && header.Record.Frosted, $"真实高对比暂停时零强度预览仍保留启用意图：滑块={dialog.FrostedStrength.Value}，显示={header.Record.FrostedStrength}，错误={dialog.Error.Text}");
             dialog.Close();
             Require(header.Record.FrostedStrength == 75 && !header.FrostedVisible && SystemParameters.HighContrast,
                 "真实暂停期间取消恢复正式75%，不会撤销当前系统高对比设置");
@@ -268,7 +269,7 @@ internal static class FrostedSystemChecks
         {
             dialog.Activate(); dialog.UpdateLayout(); var slider = dialog.FrostedStrength;
             var track = (Track)slider.Template.FindName("PART_Track", slider); var thumb = track.Thumb;
-            var from = thumb.PointToScreen(new Point(thumb.ActualWidth / 2, thumb.ActualHeight / 2));
+            var from = await DesktopCheckSession.InputPointAsync(runtime, dialog, thumb, new Point(thumb.ActualWidth / 2, thumb.ActualHeight / 2));
             var to = track.PointToScreen(new Point(thumb.ActualWidth / 2 + (track.ActualWidth - thumb.ActualWidth) * value / 100.0, track.ActualHeight / 2));
             SetCursorPos((int)from.X, (int)from.Y); mouse_event(2, 0, 0, 0, UIntPtr.Zero);
             for (var i = 1; i <= 8; i++) { SetCursorPos((int)Math.Round(from.X + (to.X - from.X) * i / 8), (int)Math.Round(to.Y)); await Task.Delay(30); }
@@ -337,7 +338,7 @@ internal static class FrostedSystemChecks
             await Task.Delay(500);
             dialog.Activate(); dialog.UpdateLayout(); var slider = dialog.FrostedStrength;
             var track = (Track)slider.Template.FindName("PART_Track", slider); var thumb = track.Thumb;
-            var start = thumb.PointToScreen(new Point(thumb.ActualWidth / 2, thumb.ActualHeight / 2));
+            var start = await DesktopCheckSession.InputPointAsync(runtime, dialog, thumb, new Point(thumb.ActualWidth / 2, thumb.ActualHeight / 2));
             var end = track.PointToScreen(new Point(thumb.ActualWidth / 2 + (track.ActualWidth - thumb.ActualWidth) * .75, track.ActualHeight / 2));
             SetCursorPos((int)start.X, (int)start.Y); mouse_event(2, 0, 0, 0, UIntPtr.Zero);
             for (var i = 1; i <= 8; i++) { SetCursorPos((int)Math.Round(start.X + (end.X - start.X) * i / 8), (int)Math.Round(end.Y)); await Task.Delay(30); }

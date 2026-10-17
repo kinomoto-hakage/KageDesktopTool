@@ -19,6 +19,7 @@ internal static class FileMoveChecks
 {
     internal static int Run(bool frosted = false)
     {
+        using var session = new DesktopCheckSession("file-move-input");
         var fixture = Path.Combine(Path.GetTempPath(), "Kage-file-move-" + Guid.NewGuid().ToString("N"));
         var prefix = "Kage-move-" + Guid.NewGuid().ToString("N");
         var desktop = Environment.GetFolderPath(Environment.SpecialFolder.DesktopDirectory);
@@ -50,18 +51,45 @@ internal static class FileMoveChecks
                 targetLayout.BeginDrag(0, 0); targetLayout.DragTo(600 - targetRecord.X, 20 - targetRecord.Y); targetLayout.EndDrag();
                 Check((await workspace.CommitLayoutAsync(targetLayout)).Succeeded, "隔离第二个 Folder 预留原地展开空间");
                 if (frosted)
+                {
+                    var placementScreen = WindowsDesktop.Displays().First();
+                    var placementRecords = DesktopCheckSession.PlaceRecords(workspace.Snapshot.Folders.Select(f => f.Folder with { Expanded = true }),
+                        placementScreen with { Width = placementScreen.Width / 2 - 30 }, new Rect(placementScreen.X, placementScreen.Y, 0, 0));
+                    // 先移开下方记录，避免旧600,20锚点使第一个计划位置触发最近空位调整。
+                    foreach (var record in placementRecords.Reverse())
+                    {
+                        var layout = workspace.BeginLayout(record.Id)!;
+                        var current = layout.Folders.Single(f => f.Folder.Id == record.Id).Folder;
+                        layout.BeginDrag(0, 0); layout.DragTo(record.X - current.X, record.Y - current.Y); layout.EndDrag();
+                        Check((await workspace.CommitLayoutAsync(layout)).Succeeded, "OLE 夹具只移动隔离记录并避开用户 Folder");
+                    }
+                    Check(workspace.Snapshot.Folders.All(f => placementRecords.Any(p => p.Id == f.Folder.Id
+                        && p.X == f.Folder.X && p.Y == f.Folder.Y)), "OLE 两条实际锚点精确符合独立展开空间预置");
                     foreach (var item in workspace.Snapshot.Folders.ToArray())
                     {
                         var style = workspace.BeginAppearance(item.Folder.Id)!;
                         style.SetFrosted(true); style.SetOpacity(0);
+                        style.SetFrostedStrength(item.Folder.Id == placementRecords[0].Id ? 0 : 100);
                         Check((await workspace.ApplyAppearanceAsync(style)).Succeeded, "OLE 验收保存完全透明毛玻璃");
                     }
-                runtime = new Runtime(workspace);
+                }
+                var capability = true;
+                runtime = new Runtime(workspace, frostedCapability: frosted ? () => capability : null);
                 var first = runtime.Headers.Values.First();
                 var second = runtime.Headers.Values.Last();
                 await first.ToggleAsync();
                 await second.ToggleAsync();
                 Check(first.Record.Expanded && second.Record.Expanded, "两个真实 OLE 展示部分均已展开");
+                if (frosted)
+                {
+                    await DesktopCheckSession.WaitAsync(() => runtime.Headers.Values.All(h => h.FrostedVisible), "OLE 初始背景未就绪");
+                    capability = false; runtime.RefreshFrostedEnvironment();
+                    Check(runtime.Headers.Values.All(h => !h.FrostedVisible), "OLE 输入前受控能力暂停释放背景；真实系统设置另有验收");
+                    capability = true; runtime.RefreshFrostedEnvironment();
+                    await DesktopCheckSession.WaitAsync(() => runtime.Headers.Values.All(h => h.FrostedVisible), "OLE 恢复背景未就绪");
+                    Check(first.Record.FrostedStrength == 0 && second.Record.FrostedStrength == 100,
+                        "完全透明0%与100%独立恢复后再执行真实Explorer、Folder、桌面OLE移入移出");
+                }
                 var firstPath = workspace.Snapshot.Folders.First().ActualPath;
                 var secondPath = workspace.Snapshot.Folders.Last().ActualPath;
                 Check(runtime.DesktopAvailable, "真实桌面宿主可用");
@@ -252,11 +280,14 @@ internal static class FileMoveChecks
             }
             finally
             {
-                if (explorer != IntPtr.Zero) WindowsDesktop.PostMessage(explorer, 0x10, IntPtr.Zero, IntPtr.Zero);
-                CloseResults();
-                runtime?.Dispose();
-                DesktopVisibility(false);
-                app.Shutdown();
+                try
+                {
+                    if (explorer != IntPtr.Zero) WindowsDesktop.PostMessage(explorer, 0x10, IntPtr.Zero, IntPtr.Zero);
+                    CloseResults(); runtime?.Dispose(); DesktopVisibility(false);
+                    await session.RestoreAsync(); File.AppendAllText(log, "最终恢复：隔离Explorer、Runtime、鼠标和桌面可见性已恢复。\n");
+                }
+                catch (Exception error) { exit = 1; File.AppendAllText(log, "恢复失败：" + error + "\n"); }
+                finally { app.Shutdown(); }
             }
         };
         try { app.Run(); }
