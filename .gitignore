@@ -1,18 +1,18 @@
-# 正式程序、检查工具的构建与隔离验收输出
+# .NET 构建输出、Python 缓存与本机 IDE 状态
 **/bin/
 **/obj/
 **/__pycache__/
 .vs/
-local-backups/
-.scratch/check-runs/
-.scratch/manual-review/
-.scratch/desktop-folder/verification/
-.scratch/folder-grid-selection-and-header/verification/
-.scratch/folder-frosted-background/verification/
-.scratch/folder-frosted-strength/verification/
-# 原地现代菜单的隔离能力探针、符号、编译器与缓存，不属于产品。
-.scratch/native-menu-capability/
-releases/
-# 系统菜单诊断的本机日志、包／用户数据备份及一次性探针，保留本地票据。
-.scratch/windows-shell-latency/*
-!.scratch/windows-shell-latency/issues/
+
+# 完整发布目录、ZIP、逐文件清单与校验文件通过 GitHub Releases 分发
+/releases/
+
+# 仅供本机使用的系统还原备份，不进入源码或发布包
+/local-backups/
+
+# 临时构建、验收证据、人工检查包与隔离工作树
+# 规格、票据及 docs/verification 下的最终验收文档仍可正常跟踪
+/.scratch/check-runs/
+/.scratch/manual-review/
+/.scratch/worktrees/
+/.scratch/**/verification/
