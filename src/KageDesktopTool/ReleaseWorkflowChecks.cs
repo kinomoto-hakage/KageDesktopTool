@@ -35,6 +35,9 @@ internal static class ReleaseWorkflowChecks
             var root = Path.Combine(fixture, "内容");
             await Require(workspace.SelectRootAsync(root));
             await Require(workspace.CreateFolderAsync("工作"));
+            // 先展开首个 Folder，再创建第二个，避免折叠头部下方的新记录占用展示区域。
+            var firstId = workspace.Snapshot.Folders.Single().Folder.Id;
+            await Require(workspace.ToggleFolderAsync(firstId));
             await Require(workspace.CreateFolderAsync("灵感"));
             var first = workspace.Snapshot.Folders.Single(f => f.Folder.Name == "工作");
             var second = workspace.Snapshot.Folders.Single(f => f.Folder.Name == "灵感");
@@ -56,7 +59,6 @@ internal static class ReleaseWorkflowChecks
             Check(moved.Items.All(item => item.Outcome == Outcome.Success)
                 && File.ReadAllText(Path.Combine(input, "子目录", "嵌套.txt")) == "嵌套内容保持"
                 && !File.Exists(Path.Combine(second.ActualPath, "内容 (2).bin")) && !Directory.Exists(Path.Combine(second.ActualPath, "子目录")), "批量移出后核对目录、字节与源消失");
-            await Require(workspace.ToggleFolderAsync(first.Folder.Id));
             await Require(workspace.SetContentViewAsync(first.Folder.Id, false, 96, ContentSortKey.Modified, true));
             await Require(workspace.RefreshAsync(displays));
             await Require(workspace.ReorderContentsAsync(first.Folder.Id, [Path.Combine(first.ActualPath, "实际链接.lnk")], null));

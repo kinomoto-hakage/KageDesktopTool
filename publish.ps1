@@ -20,7 +20,7 @@ try {
     $buildDirectory = Join-Path $repoDirectory ('.scratch/desktop-folder/verification/build-' + [Guid]::NewGuid().ToString('N') + '/')
     # 只有维护者构建需要 SDK 和下载运行时；日常使用只需解压、双击。
     & dotnet publish src/KageDesktopTool/KageDesktopTool.csproj --disable-build-servers `
-        -p:PublishProfile=WindowsX64 "-p:BaseOutputPath=$buildDirectory" --source https://api.nuget.org/v3/index.json -o $releaseDirectory
+        -p:PublishProfile=WindowsX64 -p:DebugType=none -p:DebugSymbols=false "-p:BaseOutputPath=$buildDirectory" --source https://api.nuget.org/v3/index.json -o $releaseDirectory
     if ($LASTEXITCODE -ne 0) { throw '发布失败，未生成压缩包。' }
     $metadata = [Diagnostics.FileVersionInfo]::GetVersionInfo((Join-Path $releaseDirectory 'KageDesktopTool.exe'))
     if ($metadata.ProductVersion.Split('+')[0] -ne $version) { throw '发布 EXE 版本与项目版本不一致。' }

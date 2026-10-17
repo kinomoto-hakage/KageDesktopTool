@@ -3,7 +3,7 @@
 # 故障仅来自这个现代卸载菜单稀疏包，不卸载 PCAppStore 主软件或传统菜单扩展。
 $ErrorActionPreference = 'Stop'
 $repoRoot = Split-Path (Split-Path $PSScriptRoot -Parent) -Parent
-$backupRoot = Join-Path $repoRoot '.scratch/windows-shell-latency/final-backup-v2'
+$backupRoot = Join-Path $repoRoot 'local-backups/windows-shell-latency/final-backup-v2'
 $statePath = Join-Path $backupRoot 'state.json'
 $installerPath = Join-Path $backupRoot 'PCAppStoreExtPkg64.msix'
 $externalLocation = 'C:\Program Files (x86)\PCAppStore\AppStore'

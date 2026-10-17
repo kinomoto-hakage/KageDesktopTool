@@ -4,7 +4,7 @@
 
 每个桌面 Folder 都对应一个真实文件夹。你可以直接在桌面查看、打开和整理内容，也可以随时在资源管理器中访问它们。
 
-**[下载 Windows x64 版 · 1.1.1](https://github.com/kinomoto-hakage/KageDesktopTool/releases/download/v1.1.1/KageDesktopTool-win-x64-1.1.1.zip)** · [发布说明](https://github.com/kinomoto-hakage/KageDesktopTool/releases/tag/v1.1.1) · [SHA256 校验文件](https://github.com/kinomoto-hakage/KageDesktopTool/releases/download/v1.1.1/KageDesktopTool-win-x64-1.1.1.zip.sha256)
+**[下载 Windows x64 版 · 1.1.3](https://github.com/kinomoto-hakage/KageDesktopTool/releases/download/v1.1.3/KageDesktopTool-win-x64-1.1.3.zip)** · [发布说明](https://github.com/kinomoto-hakage/KageDesktopTool/releases/tag/v1.1.3) · [SHA256 校验文件](https://github.com/kinomoto-hakage/KageDesktopTool/releases/download/v1.1.3/KageDesktopTool-win-x64-1.1.3.zip.sha256)
 
 ## 软件特色
 
@@ -13,14 +13,14 @@
 - **自由安排布局**：拖动头部调整位置，松手后自动寻找附近空位，其他 Folder 保持原位；宽度、内容区高度和头部高度均可调整。
 - **按习惯查看内容**：网格与列表随时切换，提供四档图标尺寸，可按名称、修改日期、大小或自定义顺序排列。
 - **保留熟悉的 Windows 操作**：双击打开文件，右键显示原生传统文件菜单，支持 Ctrl／Shift 多选和框选。
-- **每个 Folder 都有自己的样式**：独立设置四向头部、横排／竖排名称、头部高度／宽度、背景颜色与透明度，实时预览，取消恢复样式与位置；另有四套应用／托盘图标方案可选。
+- **每个 Folder 都有自己的样式**：独立设置四向头部、横排／竖排名称、头部高度／宽度、背景颜色与透明度，支持实时毛玻璃和 0–100% 模糊强度；实时预览，取消恢复样式与位置，另有四套应用／托盘图标方案可选。
 - **保存布局与操作结果**：重启恢复布局和偏好，文件操作结果可从通知查看；支持开机自启、整体存储目录迁移和中断恢复。
 
 ## 安装与首次使用
 
-当前版本为 **1.1.1**，适用于 **Windows x64**。完整发布包为 `KageDesktopTool-win-x64-1.1.1.zip`，自带所需运行环境，无需另外安装 .NET。
+当前版本为 **1.1.3**，适用于 **Windows x64**。完整发布包为 `KageDesktopTool-win-x64-1.1.3.zip`，自带所需运行环境，无需另外安装 .NET。
 
-点击上方下载链接获取完整发布包，也可进入仓库右侧的 **Releases**，在 **Assets** 中选择 `KageDesktopTool-win-x64-1.1.1.zip`。下载后按以下步骤使用：
+点击上方下载链接获取完整发布包，也可进入仓库右侧的 **Releases**，在 **Assets** 中选择 `KageDesktopTool-win-x64-1.1.3.zip`。下载后按以下步骤使用：
 
 1. 将整个 ZIP 解压到固定目录，例如 `D:\工具\KageDesktopTool\`，保留包内全部文件。
 2. 双击 `KageDesktopTool.exe`，在系统托盘找到程序图标。
@@ -60,7 +60,7 @@
 
 右键托盘图标打开“设置”，可以管理 Folder、文件存放位置、开机自启和消息提示。
 
-- **外观**：右键 Folder 头部选择“样式…”，调整头部位置、名称方向、头部高度／宽度、颜色和透明度。厚度滑块按方向显示高度或宽度及当前数值，预览满意后点击“应用”。取消恢复打开前的样式与几何，各 Folder 可使用不同样式。
+- **外观**：右键 Folder 头部选择“样式…”，调整头部位置、名称方向、头部高度／宽度、颜色和透明度，也可启用毛玻璃，调整 0–100% 模糊强度（默认 50%）。厚度滑块按方向显示高度或宽度及当前数值，预览满意后点击“应用”。取消恢复打开前的样式与几何，各 Folder 可使用不同样式。
 - **托盘图标**：从托盘“图标方案”选择喜欢的图标。
 - **开机自启**：在“通用”中选择开关，再点击“应用自启选择”。
 - **消息提示**：在“通知”中选择开关，再点击“保存消息提示选择”。关闭提示后，仍可在这里查看操作详情。
