@@ -17,13 +17,15 @@ public sealed class AppearanceInteraction
     public string Color => Draft.Color;
     public double Opacity => Draft.Opacity;
     public bool Frosted => Draft.Frosted;
+    public int FrostedStrength => Draft.FrostedStrength;
     public byte Red => byte.Parse(Color.AsSpan(1, 2), NumberStyles.HexNumber, CultureInfo.InvariantCulture);
     public byte Green => byte.Parse(Color.AsSpan(3, 2), NumberStyles.HexNumber, CultureInfo.InvariantCulture);
     public byte Blue => byte.Parse(Color.AsSpan(5, 2), NumberStyles.HexNumber, CultureInfo.InvariantCulture);
     public bool Closed { get; private set; }
     private string colorError = "";
     private string opacityError = "";
-    public string Error => string.Join(" ", new[] { colorError, opacityError }.Where(value => value.Length != 0));
+    private string strengthError = "";
+    public string Error => string.Join(" ", new[] { colorError, opacityError, strengthError }.Where(value => value.Length != 0));
 
     internal AppearanceInteraction(DesktopWorkspace owner, FolderRecord original, DisplayArea[] displays)
     {
@@ -70,6 +72,15 @@ public sealed class AppearanceInteraction
         if (Closed) return Ended();
         Draft = Draft with { Frosted = value };
         return new(Outcome.Success, "毛玻璃已预览。");
+    }
+
+    public OperationResult SetFrostedStrength(int value)
+    {
+        if (Closed) return Ended();
+        strengthError = value is >= 0 and <= 100 ? "" : "模糊强度必须为 0–100 的整数。";
+        if (strengthError.Length != 0) return new(Outcome.Failed, strengthError);
+        Draft = Draft with { FrostedStrength = value };
+        return new(Outcome.Success, "模糊强度已预览。");
     }
 
     internal void Finish(bool applied)

@@ -87,6 +87,7 @@ internal sealed class Runtime : IDisposable
             RefreshFrostedEnvironment(recreateBackdrop: true);
         };
         this.frostedCapability = frostedCapability ?? (() => OperatingSystem.IsWindowsVersionAtLeast(10, 0, 22000));
+        DesktopBackdropSource.ReadinessChanged += FrostedEnvironmentChanged;
         if (frostedEnvironment == null)
         {
             systemFrostedEnvironment = new WindowsFrostedEnvironment();
@@ -572,6 +573,7 @@ internal sealed class Runtime : IDisposable
             systemFrostedEnvironment.Changed -= FrostedEnvironmentChanged;
             systemFrostedEnvironment.Dispose();
         }
+        DesktopBackdropSource.ReadinessChanged -= FrostedEnvironmentChanged;
         selectionInput?.Dispose();
         Selection.Dispose();
         layoutInput.Stop();

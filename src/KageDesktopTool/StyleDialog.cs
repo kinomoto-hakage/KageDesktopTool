@@ -22,6 +22,8 @@ internal sealed class StyleDialog : Window
     internal ComboBox NameChoice { get; }
     internal Slider SideWidth { get; }
     internal CheckBox Frosted { get; }
+    internal Slider FrostedStrength { get; }
+    internal TextBlock StrengthValue { get; }
     internal TextBlock FrostedStatus { get; }
     private readonly Runtime runtime;
     private readonly StackPanel root = new() { Margin = new Thickness(24, 24, 24, 0) };
@@ -56,9 +58,25 @@ internal sealed class StyleDialog : Window
         Frosted = new CheckBox { Content = "启用毛玻璃", Foreground = Brushes.WhiteSmoke, IsChecked = interaction.Frosted, Margin = new Thickness(0, 0, 0, 8) };
         FrostedStatus = new TextBlock { Foreground = Brushes.LightGray, TextWrapping = TextWrapping.Wrap, Margin = new Thickness(0, 0, 0, 12) };
         root.Children.Add(Frosted);
+        root.Children.Add(new TextBlock { Text = "模糊强度", Margin = new Thickness(0, 0, 0, 6) });
+        FrostedStrength = new Slider { Minimum = 0, Maximum = 100, Value = interaction.FrostedStrength,
+            TickFrequency = 1, IsSnapToTickEnabled = true, SmallChange = 1, LargeChange = 10,
+            IsEnabled = interaction.Frosted };
+        StrengthValue = new TextBlock { Text = interaction.FrostedStrength + "%", MinWidth = 48, Margin = new Thickness(14, 0, 0, 0) };
+        var strengthRow = new Grid { Margin = new Thickness(0, 0, 0, 10) };
+        strengthRow.ColumnDefinitions.Add(new ColumnDefinition());
+        strengthRow.ColumnDefinitions.Add(new ColumnDefinition { Width = GridLength.Auto });
+        strengthRow.Children.Add(FrostedStrength); Grid.SetColumn(StrengthValue, 1); strengthRow.Children.Add(StrengthValue);
+        root.Children.Add(strengthRow);
         root.Children.Add(FrostedStatus);
-        Frosted.Checked += (_, _) => { Interaction.SetFrosted(true); UpdatePreview(); };
-        Frosted.Unchecked += (_, _) => { Interaction.SetFrosted(false); UpdatePreview(); };
+        Frosted.Checked += (_, _) => { Interaction.SetFrosted(true); FrostedStrength.IsEnabled = true; UpdatePreview(); };
+        Frosted.Unchecked += (_, _) => { Interaction.SetFrosted(false); FrostedStrength.IsEnabled = false; UpdatePreview(); };
+        FrostedStrength.ValueChanged += (_, _) =>
+        {
+            Interaction.SetFrostedStrength((int)Math.Round(FrostedStrength.Value));
+            StrengthValue.Text = Interaction.FrostedStrength + "%";
+            UpdatePreview();
+        };
         root.Children.Add(new TextBlock { Text = "头部位置", Margin = new Thickness(0, 0, 0, 6) });
         PositionChoice = new ComboBox { ItemsSource = new[] { "上方（向下展开）", "下方（向上展开）", "左侧（向右展开）", "右侧（向左展开）" },
             SelectedIndex = (int)interaction.Draft.HeaderPosition, Margin = new Thickness(0, 0, 0, 12) };
