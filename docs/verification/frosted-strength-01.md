@@ -56,6 +56,18 @@ OLE 夹具最初把随机源图标留在默认左列，曾误拖遮挡图标的�
 
 原始运行记录位于工作树 `.scratch/check-runs/<运行 ID>/run.json`，截图和日志在其检查名／尝试编号子目录；清理工作树前由集成流程复制归档。Explorer 重启、真实系统限制全组合、四向布局与 DPI 全矩阵由 03 扩展；未声称已经验证多屏、混合 DPI、拔屏、HDR、其他 Windows 版本或第三方动态壁纸的所有宿主方式。
 
+## 最终审查修复与复验
+
+2026-10-17，集成基点 `4c50f256` 的独立审查发现正式强度夹具的点击和滑块拖动直接通过 `PointToScreen` 加固定延迟发物理输入，尚未遵守共用输入等待约定。修复仅涉及 `FrostedStrengthChecks`：点击通过 `DesktopCheckSession.InputPointAsync(Runtime, Window, FrameworkElement, Point)` 等待布局、手势结束和当前样式窗口的真实 HWND 命中；拖动目标按当前 Track 计算并等待同一窗口命中，按下前最后等待当前 Thumb 位置与命中稳定。既有 Folder 折叠／展开入口已使用对应的 Folder 重载。未修改产品界面、业务语义或增加镜像单元测试。
+
+修复后完整 `verify-ci.ps1` 通过仓库约束、30 项隔离业务检查、Windows Rebuild（0 警告、0 错误）及执行器契约。构建目录为 `.scratch/check-runs/build-dd1cfbeff0c94ea09bf843cfe37cb63f/`，完整日志为 `.scratch/check-runs/review-ci.txt`。首次沙箱运行因映射临时目录中的文件 Move／Replace 被拒绝失败；随后在正常 Windows 用户环境完整复跑，未将沙箱失败当成产品结论。
+
+独立完整包保留在主工作区 `.scratch/manual-review/20261017T153823-4c50f256-385e38fd/`；包内 `manual-review.json` 与运行记录保存基点和修复中的工作树状态。EXE SHA256 为 `D70874D1796AC7EDFF13C5432A193A5BA51CD13804A5466EB923D4079D589C4D`，完整包摘要为 `FBB371F2E7CBCE8B182112B979E1A54C25F950ABE8BB78F914D98A8B5E0BEE8A`。
+
+使用该原包运行 `verify-release.ps1 -OnlyCheck frosted-strength`，运行 ID `20261017T153845-111ea7a3`，检查退出码 0。完整轨迹再次通过五档蓝／绿实时像素、完整事务、重启恢复、独立 Folder、透明度组合、连续 12 次全范围拖动及平台不可用回退；五档红通道标准差仍为 `127.429 / 123.590 / 119.681 / 111.347 / 102.943`。连续拖动因增加命中稳定等待耗时 13082 ms、CPU 1375 ms，私有内存 273.0→243.8 MiB，最终值与可操作性通过。
+
+日志确认临时窗口、鼠标和 GPU 资源恢复完成，检查进程 PID 41500 已退出。原用户 1.1.1 实例 PID 27144、启动时刻 `2026-10-17 14:11:27.4181574 +08:00` 和路径均保持一致。正式状态目录的 `operation-results.json`、`workspace.json`、`workspace.json.bak` 三个文件前后 SHA256 全部一致；其中完整 `workspace.json` 为 `11CCD5B4D4F8666AB15F0E3D4FC6A1FFB6CE58AC291E139BD23813EEC11C0B2B`。前后摘要、实例身份和原 JSON 快照保存在 `.scratch/check-runs/review-safety/`，运行记录及截图位于 `.scratch/check-runs/20261017T153845-111ea7a3/`。本轮仅复验输入夹具修复，既有硬件与系统覆盖边界不变。
+
 ## 平台依据
 
 - [CreateHostBackdropBrush](https://learn.microsoft.com/en-us/uwp/api/windows.ui.composition.compositor.createhostbackdropbrush)：窗口绘制前的后方来源与系统控制。
