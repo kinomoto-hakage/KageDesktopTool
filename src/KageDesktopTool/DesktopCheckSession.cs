@@ -7,6 +7,7 @@ using System.Text;
 using System.Threading.Tasks;
 using System.Windows;
 using System.Windows.Threading;
+using System.Windows.Interop;
 using Kage.Workspace;
 
 namespace Kage.Desktop;
@@ -97,6 +98,23 @@ internal sealed class DesktopCheckSession : IDisposable
         SaveScreenshot(path);
     }
 
+    internal static async Task<Point> InputPointAsync(Runtime runtime, Window window, FrameworkElement element, Point offset)
+    {
+        var handle = new WindowInteropHelper(window).Handle;
+        var stable = 0; Point? previous = null; var point = new Point();
+        for (var attempt = 0; attempt < 60 && stable < 3; attempt++)
+        {
+            await element.Dispatcher.InvokeAsync(() => { }, DispatcherPriority.ContextIdle);
+            element.BringIntoView(); element.UpdateLayout(); point = element.PointToScreen(offset);
+            var hit = WindowsDesktop.WindowFromPoint(new WindowsDesktop.POINT { X = (int)point.X, Y = (int)point.Y });
+            var ready = !runtime.Interacting && !runtime.ContentInputActive && GetAncestor(hit, 2) == handle;
+            stable = ready && previous == point ? stable + 1 : 0;
+            previous = point; await Task.Delay(50);
+        }
+        if (stable < 3) throw new InvalidOperationException("样式窗口真实输入目标未稳定或被遮挡。");
+        return point;
+    }
+
     // 已运行的正式实例有自己的桌面子窗口；只调整检查记录，避免暂停效果时被其遮挡。
     internal static FolderRecord[] PlaceRecords(IEnumerable<FolderRecord> records, DisplayArea area, Rect reserved)
     {
@@ -165,6 +183,7 @@ internal sealed class DesktopCheckSession : IDisposable
     }
 
     [DllImport("user32.dll")] private static extern bool SetCursorPos(int x, int y);
+    [DllImport("user32.dll")] private static extern IntPtr GetAncestor(IntPtr window, uint flags);
     private delegate bool EnumProc(IntPtr window, IntPtr parameter);
     [DllImport("user32.dll")] private static extern bool EnumWindows(EnumProc callback, IntPtr parameter);
     [DllImport("user32.dll")] private static extern bool EnumChildWindows(IntPtr parent, EnumProc callback, IntPtr parameter);
